@@ -2,3 +2,10 @@ venv/
 .env
 *.pem
 __pycache__/
+repohealvenv/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+env/
+venv/
+__pycache__/
