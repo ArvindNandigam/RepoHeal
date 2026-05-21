@@ -167,7 +167,10 @@ async def github_callback(
     })
 
     redirect = RedirectResponse(
-        url="/dashboard"
+        url=(
+            f"/dashboard/"
+            f"{github_user['login']}-repoheal"
+        )
     )
 
     redirect.set_cookie(

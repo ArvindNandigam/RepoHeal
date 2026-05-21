@@ -46,6 +46,10 @@ from app.github.repository_fetcher import (
     cleanup_repository
 )
 
+from app.github.installed_repositories import (
+    fetch_repoheal_installed_repositories
+)
+
 from app.analysis.repository_analyzer import (
     analyze_repository
 )
@@ -251,21 +255,56 @@ def healthz():
     }
 
 
-@app.get("/dashboard")
+@app.get(
+    "/dashboard/{dashboard_id}",
+    response_class=HTMLResponse
+)
 async def dashboard(
+    request: Request,
+    dashboard_id: str,
     user=Depends(
         verify_session_token
     )
 ):
 
-    return {
-        "message": (
-            "RepoHeal authenticated"
-        ),
-        "github_user": (
-            user["github_login"]
+    expected_dashboard = (
+        f"{user['github_login']}-repoheal"
+    )
+
+    if dashboard_id != expected_dashboard:
+
+        raise HTTPException(
+            status_code=403,
+            detail="Unauthorized dashboard"
         )
-    }
+
+    session_data = (
+        session_store.get_session(
+            user["session_id"]
+        )
+    )
+
+    if not session_data:
+
+        raise HTTPException(
+            status_code=401,
+            detail="Session expired"
+        )
+
+    repositories = (
+        fetch_repoheal_installed_repositories(
+            session_data["github_token"]
+        )
+    )
+
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "user": user,
+            "repositories": repositories
+        }
+    )
 
 # ---------------------------
 # Protected Endpoints
