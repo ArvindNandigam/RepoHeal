@@ -1,14 +1,41 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-
+import jwt
+from app.auth.authorization import (
+    verify_repository_access
+)
 from fastapi import (
     FastAPI,
     Request,
-    HTTPException
+    HTTPException,
+    Depends
 )
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+
+from fastapi.responses import (
+    HTMLResponse,
+    RedirectResponse
+)
+
+from fastapi.templating import (
+    Jinja2Templates
+)
+
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
+
+from app.auth.github_oauth import (
+    router as auth_router
+)
+
+from app.auth.session_store import (
+    session_store
+)
+
+from app.auth.jwt_manager import (
+    verify_session_token
+)
 
 from app.github.webhooks import (
     verify_github_signature
@@ -22,10 +49,12 @@ from app.github.repository_fetcher import (
 from app.analysis.repository_analyzer import (
     analyze_repository
 )
+
 from app.storage.metadata_store import (
     MetadataStore,
     save_analysis_to_metadata
 )
+
 from app.visualization.graph_api import (
     GraphVisualizer
 )
@@ -41,50 +70,164 @@ from app.graph.graph_builder import (
 from app.utils.logger import (
     get_logger
 )
+from app.config import (
+    settings
+)
 
 logger = get_logger(__name__)
-templates = Jinja2Templates(directory="app/visualization/templates")
-REPO_CACHE_ROOT = Path(".repoheal_cache")
+
+templates = Jinja2Templates(
+    directory="app/visualization/templates"
+)
+
+REPO_CACHE_ROOT = Path(
+    ".repoheal_cache"
+)
+
+limiter = Limiter(
+    key_func=get_remote_address
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
-    logger.info("Starting RepoHeal backend")
+    logger.info(
+        "Starting RepoHeal backend"
+    )
 
     neo4j_connection.connect()
+    session_store.cleanup_expired_sessions()
 
     yield
 
     neo4j_connection.close()
 
-    logger.info("Shutting down RepoHeal backend")
+    logger.info(
+        "Shutting down RepoHeal backend"
+    )
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan
+)
+
+# ---------------------------
+# Middleware
+# ---------------------------
+
+app.state.limiter = limiter
+
+app.add_middleware(
+    SlowAPIMiddleware
+)
+
+# ---------------------------
+# OAuth Router
+# ---------------------------
+
+app.include_router(
+    auth_router,
+    prefix="/auth/github",
+    tags=["auth"]
+)
 
 
-def get_repo_cache_path(repo_owner: str, repo_name: str) -> Path:
+# ---------------------------
+# Helpers
+# ---------------------------
 
-    return REPO_CACHE_ROOT / repo_owner / repo_name
+def get_repo_cache_path(
+    repo_owner: str,
+    repo_name: str
+) -> Path:
+
+    return (
+        REPO_CACHE_ROOT
+        / repo_owner
+        / repo_name
+    )
 
 
-def load_cached_analysis(repo_owner: str, repo_name: str):
+def load_cached_analysis(
+    repo_owner: str,
+    repo_name: str
+):
 
-    cache_store = MetadataStore(str(get_repo_cache_path(repo_owner, repo_name)))
+    cache_store = MetadataStore(
+        str(
+            get_repo_cache_path(
+                repo_owner,
+                repo_name
+            )
+        )
+    )
 
-    imports = cache_store.load_imports() or {"files": {}, "summary": {}}
-    dependencies = cache_store.load_packages() or {"declared": {}, "count": 0}
-    dependency_graph = cache_store.load_dependency_graph() or {}
-    summary = cache_store.load_analysis_snapshot() or {}
+    imports = (
+        cache_store.load_imports()
+        or {
+            "files": {},
+            "summary": {}
+        }
+    )
+
+    dependencies = (
+        cache_store.load_packages()
+        or {
+            "declared": {},
+            "count": 0
+        }
+    )
+
+    dependency_graph = (
+        cache_store.load_dependency_graph()
+        or {}
+    )
+
+    summary = (
+        cache_store.load_analysis_snapshot()
+        or {}
+    )
 
     return {
         "imports": imports,
         "dependencies": dependencies,
         "dependency_graph": dependency_graph,
-        "issues": summary.get("issues", {})
+        "issues": summary.get(
+            "issues",
+            {}
+        )
     }
 
+
+def get_session_data(
+    user: dict
+):
+
+    session_data = session_store.get_session(
+        user["session_id"]
+    )
+
+    if not session_data:
+
+        raise HTTPException(
+            status_code=401,
+            detail="Session expired"
+        )
+
+    if session_data.get("github_id") != user.get("github_id"):
+
+        raise HTTPException(
+            status_code=401,
+            detail="Session mismatch"
+        )
+
+    return session_data
+
+
+# ---------------------------
+# Public Endpoints
+# ---------------------------
 
 @app.get("/")
 def root():
@@ -92,60 +235,52 @@ def root():
     return {
         "status": "RepoHeal running",
         "version": "1.0",
-        "architecture": (
-            "On-demand repository intelligence system"
+        "authentication": "GitHub OAuth",
+        "documentation": (
+            "Login required for protected endpoints"
         ),
-        "features": [
-            "GitHub App",
-            "Webhook Verification",
-            "AST Import Analysis",
-            "Dependency Detection",
-            "Neo4j Knowledge Graph",
-            "Repository Visualization"
-        ],
-        "endpoints": {
-            "analyze": (
-                "/analyze/{repo_owner}/{repo_name}"
-            ),
-            "graph": (
-                "/graph/{repo_owner}/{repo_name}"
-            ),
-            "visualize": (
-                "/visualize/{repo_owner}/{repo_name}"
-            ),
-            "status": (
-                "/status/{repo_owner}/{repo_name}"
-            ),
-            "webhook": (
-                "/webhook/github"
-            ),
-            "graph_test": (
-                "/graph-test"
-            )
-        }
+        "login_url": "/auth/github/login"
     }
 
 
+@app.get("/healthz")
+def healthz():
+
+    return {
+        "status": "healthy"
+    }
+
+
+@app.get("/dashboard")
+async def dashboard(
+    user=Depends(
+        verify_session_token
+    )
+):
+
+    return {
+        "message": (
+            "RepoHeal authenticated"
+        ),
+        "github_user": (
+            user["github_login"]
+        )
+    }
+
+# ---------------------------
+# Protected Endpoints
+# ---------------------------
+
 @app.post("/webhook/github")
-async def github_webhook(request: Request):
-
-    """
-    GitHub App webhook endpoint.
-
-    Handles:
-    - push
-    - installation
-    - pull_request
-    - check_suite
-
-    IMPORTANT:
-    Repository analysis is NOT triggered here.
-    Analysis only occurs when repository is opened.
-    """
+async def github_webhook(
+    request: Request
+):
 
     try:
 
-        await verify_github_signature(request)
+        await verify_github_signature(
+            request
+        )
 
     except Exception as e:
 
@@ -165,48 +300,9 @@ async def github_webhook(request: Request):
     )
 
     logger.info(
-        f"Received GitHub event: {event_type}"
+        f"Received GitHub event: "
+        f"{event_type}"
     )
-
-    if event_type == "push":
-
-        repo_name = (
-            payload.get("repository", {})
-            .get("name")
-        )
-
-        repo_owner = (
-            payload.get("repository", {})
-            .get("owner", {})
-            .get("login")
-        )
-
-        logger.info(
-            f"Push detected on "
-            f"{repo_owner}/{repo_name}"
-        )
-
-    elif event_type == "installation":
-
-        action = payload.get("action")
-
-        logger.info(
-            f"Installation event: {action}"
-        )
-
-    elif event_type == "pull_request":
-
-        action = payload.get("action")
-
-        logger.info(
-            f"Pull request event: {action}"
-        )
-
-    elif event_type == "check_suite":
-
-        logger.info(
-            "Check suite event received"
-        )
 
     return {
         "received": True,
@@ -220,36 +316,43 @@ async def github_webhook(request: Request):
 @app.get(
     "/analyze/{repo_owner}/{repo_name}"
 )
+@limiter.limit("10/minute")
 async def analyze_repository_endpoint(
+    request: Request,
     repo_owner: str,
-    repo_name: str
+    repo_name: str,
+    user=Depends(
+        verify_session_token
+    )
 ):
+    session_data = get_session_data(
+        user
+    )
 
-    """
-    CORE REPOSITORY ANALYSIS ENDPOINT
+    verify_repository_access(
+        github_token=session_data["github_token"],
+        repo_owner=repo_owner,
+        repo_name=repo_name
+    )
 
-    Flow:
-    1. Download GitHub ZIP snapshot
-    2. Extract temporary repository
-    3. Perform AST analysis
-    4. Detect dependencies
-    5. Build Neo4j graph
-    6. Cleanup repository snapshot
-    """
-
-    repo_id = f"{repo_owner}/{repo_name}"
+    repo_id = (
+        f"{repo_owner}/{repo_name}"
+    )
 
     logger.info(
-        f"Analysis requested for: {repo_id}"
+        f"Analysis requested for: "
+        f"{repo_id}"
     )
 
     repo_path = None
 
     try:
 
-        repo_path = download_repository_snapshot(
-            repo_owner,
-            repo_name
+        repo_path = (
+            download_repository_snapshot(
+                repo_owner,
+                repo_name
+            )
         )
 
         analysis = analyze_repository(
@@ -257,11 +360,18 @@ async def analyze_repository_endpoint(
         )
 
         save_analysis_to_metadata(
-            str(get_repo_cache_path(repo_owner, repo_name)),
+            str(
+                get_repo_cache_path(
+                    repo_owner,
+                    repo_name
+                )
+            ),
             analysis
         )
 
-        graph_builder = Neo4jGraphBuilder()
+        graph_builder = (
+            Neo4jGraphBuilder()
+        )
 
         graph_builder.build_graph(
             repo_id,
@@ -269,7 +379,8 @@ async def analyze_repository_endpoint(
         )
 
         logger.info(
-            f"Analysis completed for: {repo_id}"
+            f"Analysis completed for: "
+            f"{repo_id}"
         )
 
         return {
@@ -285,7 +396,8 @@ async def analyze_repository_endpoint(
                 f"{repo_owner}/{repo_name}"
             ),
             "timestamp": (
-                datetime.utcnow().isoformat()
+                datetime.utcnow()
+                .isoformat()
             )
         }
 
@@ -305,22 +417,34 @@ async def analyze_repository_endpoint(
 
         if repo_path:
 
-            cleanup_repository(repo_path)
+            cleanup_repository(
+                repo_path
+            )
 
 
 @app.get(
     "/graph/{repo_owner}/{repo_name}"
 )
+@limiter.limit("30/minute")
 async def get_graph_visualization(
     repo_owner: str,
-    repo_name: str
+    repo_name: str,
+    user=Depends(
+        verify_session_token
+    )
 ):
+    session_data = get_session_data(
+        user
+    )
 
-    """
-    Returns Cytoscape-compatible graph JSON.
-    """
-
-    repo_id = f"{repo_owner}/{repo_name}"
+    verify_repository_access(
+        github_token=session_data["github_token"],
+        repo_owner=repo_owner,
+        repo_name=repo_name
+    )
+    repo_id = (
+        f"{repo_owner}/{repo_name}"
+    )
 
     logger.info(
         f"Graph visualization requested "
@@ -328,9 +452,14 @@ async def get_graph_visualization(
     )
 
     try:
-        analysis = load_cached_analysis(repo_owner, repo_name)
+
+        analysis = load_cached_analysis(
+            repo_owner,
+            repo_name
+        )
 
         if not analysis["imports"]["files"]:
+
             raise HTTPException(
                 status_code=404,
                 detail=(
@@ -339,16 +468,30 @@ async def get_graph_visualization(
                 )
             )
 
-        visualizer = GraphVisualizer(analysis)
-        graph = visualizer.to_cytoscape_format(repo_id)
+        visualizer = (
+            GraphVisualizer(
+                analysis
+            )
+        )
+
+        graph = (
+            visualizer
+            .to_cytoscape_format(
+                repo_id
+            )
+        )
 
         return {
             "repository": repo_id,
             **graph,
-            "statistics": visualizer.get_statistics()
+            "statistics": (
+                visualizer
+                .get_statistics()
+            )
         }
 
     except HTTPException:
+
         raise
 
     except Exception as e:
@@ -368,18 +511,33 @@ async def get_graph_visualization(
     "/visualize/{repo_owner}/{repo_name}",
     response_class=HTMLResponse
 )
+@limiter.limit("30/minute")
 async def visualize_repository_page(
     request: Request,
     repo_owner: str,
-    repo_name: str
+    repo_name: str,
+    user=Depends(
+        verify_session_token
+    )
 ):
+    session_data = get_session_data(
+        user
+    )
 
+    verify_repository_access(
+        github_token=session_data["github_token"],
+        repo_owner=repo_owner,
+        repo_name=repo_name
+    )
     return templates.TemplateResponse(
         "graph.html",
         {
             "request": request,
             "repo_owner": repo_owner,
-            "repo_name": repo_name
+            "repo_name": repo_name,
+            "github_user": (
+                user["github_login"]
+            )
         }
     )
 
@@ -387,19 +545,30 @@ async def visualize_repository_page(
 @app.get(
     "/status/{repo_owner}/{repo_name}"
 )
+@limiter.limit("30/minute")
 async def get_repository_status(
     repo_owner: str,
-    repo_name: str
+    repo_name: str,
+    user=Depends(
+        verify_session_token
+    )
 ):
+    session_data = get_session_data(
+        user
+    )
 
-    """
-    Repository graph status endpoint.
-    """
-
-    repo_id = f"{repo_owner}/{repo_name}"
+    verify_repository_access(
+        github_token=session_data["github_token"],
+        repo_owner=repo_owner,
+        repo_name=repo_name
+    )
+    repo_id = (
+        f"{repo_owner}/{repo_name}"
+    )
 
     logger.info(
-        f"Status requested for: {repo_id}"
+        f"Status requested for: "
+        f"{repo_id}"
     )
 
     try:
@@ -409,7 +578,9 @@ async def get_repository_status(
             result = session.run(
                 """
                 MATCH
-                    (r:Repository {id: $repo_id})
+                    (r:Repository {
+                        id: $repo_id
+                    })
 
                 OPTIONAL MATCH
                     (r)-[:CONTAINS]->
@@ -446,10 +617,6 @@ async def get_repository_status(
                 ),
                 "packages": (
                     record["package_count"]
-                ),
-                "graph_url": (
-                    f"/graph/"
-                    f"{repo_owner}/{repo_name}"
                 )
             }
 
@@ -466,42 +633,49 @@ async def get_repository_status(
         )
 
 
-@app.get("/graph-test")
-def graph_test():
+@app.get("/logout")
+async def logout(
+    request: Request
+):
 
-    """
-    Neo4j connectivity test endpoint.
-    """
+    token = request.cookies.get(
+        "repoheal_session"
+    )
 
-    try:
+    response = RedirectResponse(
+        url="/"
+    )
 
-        with neo4j_connection.get_session() as session:
+    if token:
 
-            result = session.run(
-                """
-                RETURN
-                    'RepoHeal Neo4j Connected'
-                    as message
-                """
+        try:
+
+            decoded = jwt.decode(
+                token,
+                settings.JWT_SECRET_KEY,
+                algorithms=["HS256"]
             )
 
-            record = result.single()
-
-            logger.info(
-                "Neo4j connectivity test successful"
+            session_id = decoded.get(
+                "session_id"
             )
 
-            return {
-                "message": record["message"]
-            }
+            if session_id:
 
-    except Exception as e:
+                session_store.delete_session(
+                    session_id
+                )
 
-        logger.error(
-            f"Neo4j test failed: {e}"
-        )
+        except Exception:
 
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
+            pass
+
+    response.delete_cookie(
+        "repoheal_session"
+    )
+
+    logger.info(
+        "User logged out"
+    )
+
+    return response

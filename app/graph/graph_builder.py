@@ -185,6 +185,14 @@ class Neo4jGraphBuilder:
                 repo_id=repo_id
             )
 
+            session.run(
+                """
+                MATCH (p:Package)
+                WHERE NOT ()-[:IMPORTS]->(p)
+                DELETE p
+                """
+            )
+
             logger.info(
                 f"Graph cleared for {repo_id}"
             )
