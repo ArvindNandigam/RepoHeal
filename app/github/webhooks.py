@@ -1,13 +1,11 @@
 import hashlib
 import hmac
-import os
 
 from fastapi import HTTPException, Request
-from dotenv import load_dotenv
+from app.config import settings
 
-load_dotenv()
 
-GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET")
+GITHUB_WEBHOOK_SECRET = settings.GITHUB_WEBHOOK_SECRET
 
 
 async def verify_github_signature(request: Request):

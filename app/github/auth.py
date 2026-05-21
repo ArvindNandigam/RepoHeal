@@ -1,19 +1,16 @@
 import time
+
 import jwt
+import requests
 
-from pathlib import Path
-from dotenv import load_dotenv
-import os
+from app.config import settings
 
-load_dotenv()
 
-GITHUB_APP_ID = os.getenv("GITHUB_APP_ID")
-PRIVATE_KEY_PATH = os.getenv("GITHUB_PRIVATE_KEY_PATH")
+GITHUB_APP_ID = settings.GITHUB_APP_ID
+PRIVATE_KEY = settings.GITHUB_PRIVATE_KEY
 
 
 def generate_jwt():
-    with open(PRIVATE_KEY_PATH, "r") as pem_file:
-        private_key = pem_file.read()
 
     payload = {
         "iat": int(time.time()),
@@ -21,14 +18,17 @@ def generate_jwt():
         "iss": GITHUB_APP_ID,
     }
 
-    encoded_jwt = jwt.encode(payload, private_key, algorithm="RS256")
+    encoded_jwt = jwt.encode(
+        payload,
+        PRIVATE_KEY,
+        algorithm="RS256"
+    )
 
     return encoded_jwt
 
-import requests
-
 
 def get_installation_token(installation_id):
+
     jwt_token = generate_jwt()
 
     headers = {
@@ -36,7 +36,10 @@ def get_installation_token(installation_id):
         "Accept": "application/vnd.github+json",
     }
 
-    url = f"https://api.github.com/app/installations/{installation_id}/access_tokens"
+    url = (
+        "https://api.github.com/app/installations/"
+        f"{installation_id}/access_tokens"
+    )
 
     response = requests.post(url, headers=headers)
 

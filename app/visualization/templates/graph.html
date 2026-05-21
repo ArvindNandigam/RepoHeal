@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RepoHeal Graph</title>
+    <script src="https://unpkg.com/cytoscape/dist/cytoscape.min.js"></script>
+    <style>
+        :root {
+            --bg: #0b1020;
+            --panel: rgba(15, 23, 42, 0.92);
+            --panel-border: rgba(148, 163, 184, 0.18);
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --accent: #38bdf8;
+            --accent-2: #34d399;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 35%),
+                radial-gradient(circle at bottom right, rgba(52, 211, 153, 0.12), transparent 30%),
+                linear-gradient(135deg, #020617 0%, #0f172a 45%, #111827 100%);
+            font-family: Inter, "Segoe UI", Arial, sans-serif;
+            color: var(--text);
+        }
+
+        .shell {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #cy {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .overlay {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            z-index: 10;
+            width: min(420px, calc(100vw - 32px));
+            padding: 16px;
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            background: var(--panel);
+            backdrop-filter: blur(18px);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+        }
+
+        .overlay h1 {
+            margin: 0 0 6px;
+            font-size: 18px;
+            letter-spacing: 0.02em;
+        }
+
+        .overlay p {
+            margin: 0;
+            font-size: 13px;
+            color: var(--muted);
+            line-height: 1.5;
+        }
+
+        .pill-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .pill {
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.12);
+            color: var(--text);
+            font-size: 12px;
+            border: 1px solid rgba(148, 163, 184, 0.14);
+        }
+
+        .details {
+            position: absolute;
+            right: 16px;
+            top: 16px;
+            z-index: 10;
+            width: min(360px, calc(100vw - 32px));
+            max-height: calc(100vh - 32px);
+            overflow: auto;
+            padding: 16px;
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            background: var(--panel);
+            backdrop-filter: blur(18px);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+        }
+
+        .details h2 {
+            margin: 0 0 8px;
+            font-size: 16px;
+        }
+
+        .details pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 12px;
+            line-height: 1.5;
+            color: var(--text);
+        }
+
+        .loading {
+            position: absolute;
+            bottom: 16px;
+            left: 16px;
+            z-index: 10;
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.92);
+            border: 1px solid var(--panel-border);
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        @media (max-width: 900px) {
+            .overlay,
+            .details {
+                left: 12px;
+                right: 12px;
+                width: auto;
+            }
+
+            .details {
+                top: auto;
+                bottom: 72px;
+                max-height: 36vh;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="shell">
+        <div id="cy"></div>
+
+        <div class="overlay">
+            <h1>RepoHeal Graph</h1>
+            <p>
+                Interactive repository intelligence for {{ repo_owner }}/{{ repo_name }}.
+                Drag, zoom, pan, and click nodes to inspect dependencies.
+            </p>
+            <div class="pill-row">
+                <span class="pill">Zoom</span>
+                <span class="pill">Drag</span>
+                <span class="pill">Node details</span>
+                <span class="pill">Import graph</span>
+            </div>
+        </div>
+
+        <div class="details">
+            <h2>Selection</h2>
+            <pre id="details">Click a node or edge to inspect it.</pre>
+        </div>
+
+        <div class="loading" id="loading">Loading graph data...</div>
+    </div>
+
+    <script>
+        const details = document.getElementById('details');
+        const loading = document.getElementById('loading');
+
+        function prettyPrint(item) {
+            return JSON.stringify(item, null, 2);
+        }
+
+        async function loadGraph() {
+            const response = await fetch(`/graph/{{ repo_owner }}/{{ repo_name }}`);
+            const graph = await response.json();
+            const elements = [...graph.nodes, ...graph.edges];
+
+            const cy = cytoscape({
+                container: document.getElementById('cy'),
+                elements,
+                style: [
+                    {
+                        selector: 'node',
+                        style: {
+                            'label': 'data(label)',
+                            'color': '#e2e8f0',
+                            'font-size': '10px',
+                            'text-valign': 'center',
+                            'text-halign': 'center',
+                            'text-wrap': 'wrap',
+                            'text-max-width': 80,
+                            'border-width': 1,
+                            'border-color': '#1e293b'
+                        }
+                    },
+                    {
+                        selector: 'node[type="repository"]',
+                        style: {
+                            'background-color': '#38bdf8',
+                            'width': 70,
+                            'height': 70,
+                            'font-size': '12px'
+                        }
+                    },
+                    {
+                        selector: 'node[type="module"]',
+                        style: {
+                            'background-color': '#34d399',
+                            'width': 42,
+                            'height': 42
+                        }
+                    },
+                    {
+                        selector: 'node[type="package"]',
+                        style: {
+                            'background-color': '#f59e0b',
+                            'width': 38,
+                            'height': 38
+                        }
+                    },
+                    {
+                        selector: 'edge',
+                        style: {
+                            'width': 1.5,
+                            'line-color': '#64748b',
+                            'target-arrow-color': '#64748b',
+                            'target-arrow-shape': 'triangle',
+                            'curve-style': 'bezier',
+                            'label': 'data(relationship)',
+                            'font-size': '9px',
+                            'color': '#94a3b8',
+                            'text-background-color': '#0f172a',
+                            'text-background-opacity': 0.85,
+                            'text-background-padding': '2px'
+                        }
+                    },
+                    {
+                        selector: ':selected',
+                        style: {
+                            'border-width': 3,
+                            'border-color': '#f8fafc',
+                            'line-color': '#f8fafc',
+                            'target-arrow-color': '#f8fafc'
+                        }
+                    }
+                ],
+                layout: {
+                    name: 'cose',
+                    animate: true,
+                    fit: true,
+                    padding: 48
+                },
+                wheelSensitivity: 0.2
+            });
+
+            loading.textContent = `Loaded ${graph.nodes.length} nodes and ${graph.edges.length} edges`;
+
+            cy.on('tap', 'node', (event) => {
+                const node = event.target;
+                details.textContent = prettyPrint(node.data());
+            });
+
+            cy.on('tap', 'edge', (event) => {
+                const edge = event.target;
+                details.textContent = prettyPrint(edge.data());
+            });
+
+            cy.on('tap', (event) => {
+                if (event.target === cy) {
+                    details.textContent = 'Click a node or edge to inspect it.';
+                }
+            });
+        }
+
+        loadGraph().catch((error) => {
+            loading.textContent = 'Failed to load graph data.';
+            details.textContent = String(error);
+        });
+    </script>
+</body>
+</html>
