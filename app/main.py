@@ -427,6 +427,7 @@ async def analyze_repository_endpoint(
 )
 @limiter.limit("30/minute")
 async def get_graph_visualization(
+    request: Request,
     repo_owner: str,
     repo_name: str,
     user=Depends(
@@ -547,6 +548,7 @@ async def visualize_repository_page(
 )
 @limiter.limit("30/minute")
 async def get_repository_status(
+    request: Request,
     repo_owner: str,
     repo_name: str,
     user=Depends(
