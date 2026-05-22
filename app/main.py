@@ -89,7 +89,9 @@ from app.config import (
 logger = get_logger(__name__)
 
 templates = Jinja2Templates(
-    directory="app/visualization/templates"
+    directory=str(
+        Path(__file__).resolve().parent / "visualization" / "templates"
+    )
 )
 
 REPO_CACHE_ROOT = Path(
