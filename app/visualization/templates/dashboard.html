@@ -7,11 +7,7 @@
 <body>
 
 <h2>
-    {{ user.github_login }}
-</h2>
-
-<h2>
-    {{ user.github_login }}
+    {{ username }}
 </h2>
 
 <hr>
@@ -35,12 +31,12 @@
 >
 
     <h3>
-        {{ repo.repo.full_name }}
+        {{ repo.name }}
     </h3>
 
     <p>
         Visibility:
-        {% if repo.repo.private %}
+        {% if repo.private %}
             Private
         {% else %}
             Public
