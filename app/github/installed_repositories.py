@@ -12,13 +12,13 @@ def fetch_repoheal_installed_repositories(
 ):
 
     repositories = []
-
+    seen_repository_ids = set()
     page = 1
 
     while True:
 
-        response = requests.get(
-            "https://api.github.com/user/repos",
+        installations_response = requests.get(
+            "https://api.github.com/user/installations",
             headers={
                 "Authorization":
                     f"Bearer {github_token}",
@@ -32,40 +32,59 @@ def fetch_repoheal_installed_repositories(
             timeout=15
         )
 
-        response.raise_for_status()
+        installations_response.raise_for_status()
 
-        repos = response.json()
+        installations = installations_response.json()
 
-        if not repos:
+        if not installations:
             break
 
-        for repo in repos:
+        for installation in installations:
 
-            owner_login = (
-                repo["owner"]["login"]
-            )
-            repo_name = repo["name"]
+            installation_id = installation["id"]
+            repositories_page = 1
 
-            installation_response = requests.get(
-                (
-                    "https://api.github.com/repos/"
-                    f"{owner_login}/{repo_name}/installation"
-                ),
-                headers={
-                    "Authorization":
-                        f"Bearer {github_token}",
-                    "Accept":
-                        "application/vnd.github+json"
-                },
-                timeout=15
-            )
+            while True:
 
-            if installation_response.status_code == 200:
-                repositories.append(repo)
-            elif installation_response.status_code == 404:
-                continue
-            else:
-                installation_response.raise_for_status()
+                repository_response = requests.get(
+                    (
+                        "https://api.github.com/user/installations/"
+                        f"{installation_id}/repositories"
+                    ),
+                    headers={
+                        "Authorization":
+                            f"Bearer {github_token}",
+                        "Accept":
+                            "application/vnd.github+json"
+                    },
+                    params={
+                        "per_page": 100,
+                        "page": repositories_page
+                    },
+                    timeout=15
+                )
+
+                repository_response.raise_for_status()
+
+                installed_repositories = repository_response.json().get(
+                    "repositories",
+                    []
+                )
+
+                if not installed_repositories:
+                    break
+
+                for repository in installed_repositories:
+
+                    repository_id = repository.get("id")
+
+                    if repository_id in seen_repository_ids:
+                        continue
+
+                    seen_repository_ids.add(repository_id)
+                    repositories.append(repository)
+
+                repositories_page += 1
 
         page += 1
 
