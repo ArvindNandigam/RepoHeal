@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RepoHeal Graph - {{ repo_owner }}/{{ repo_name }}</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07111f;
+      --panel: rgba(12, 20, 33, 0.92);
+      --border: rgba(125, 151, 184, 0.2);
+      --text: #e8eef7;
+      --muted: #9fb0c7;
+      --accent: #4fd1c5;
+      --accent-2: #7c9cff;
+      --danger: #ff7b7b;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(79, 209, 197, 0.18), transparent 32%),
+        radial-gradient(circle at bottom right, rgba(124, 156, 255, 0.18), transparent 30%),
+        var(--bg);
+      color: var(--text);
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 20px;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    }
+
+    .sidebar {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .eyebrow {
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: 11px;
+      color: var(--accent);
+      margin: 0;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.1;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .stat {
+      display: grid;
+      gap: 6px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .stat strong {
+      font-size: 14px;
+      color: #fff;
+    }
+
+    .stat span {
+      font-size: 13px;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .button {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 14px;
+      font-weight: 600;
+      color: #021019;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .button.secondary {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .canvas {
+      position: relative;
+      overflow: hidden;
+      min-height: 80vh;
+    }
+
+    #graph {
+      width: 100%;
+      height: 100%;
+      min-height: calc(100vh - 40px);
+      border-radius: 18px;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 18px auto auto 18px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(6, 10, 16, 0.75);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--muted);
+      font-size: 13px;
+      max-width: min(480px, calc(100% - 36px));
+      pointer-events: none;
+      backdrop-filter: blur(10px);
+    }
+
+    .error {
+      color: var(--danger);
+    }
+
+    @media (max-width: 960px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      #graph {
+        min-height: 70vh;
+      }
+    }
+  </style>
+  <script src="https://unpkg.com/cytoscape@3.31.2/dist/cytoscape.min.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="panel sidebar">
+      <p class="eyebrow">RepoHeal Visualization</p>
+      <h1>{{ repo_owner }}/{{ repo_name }}</h1>
+      <div class="muted">Interactive repository intelligence for {{ github_user }}.</div>
+
+      <div class="stat">
+        <strong>Repository</strong>
+        <span id="repoLabel">{{ repo_owner }}/{{ repo_name }}</span>
+      </div>
+
+      <div class="stat">
+        <strong>Status</strong>
+        <span id="statusLabel">Loading graph data...</span>
+      </div>
+
+      <div class="stat">
+        <strong>Nodes</strong>
+        <span id="nodeCount">0</span>
+      </div>
+
+      <div class="stat">
+        <strong>Edges</strong>
+        <span id="edgeCount">0</span>
+      </div>
+
+      <div class="actions">
+        <a class="button" href="/dashboard">Back to dashboard</a>
+        <a class="button secondary" href="/graph/{{ repo_owner }}/{{ repo_name }}" target="_blank" rel="noreferrer">Open JSON</a>
+      </div>
+    </aside>
+
+    <main class="panel canvas">
+      <div id="graph"></div>
+      <div class="overlay" id="overlay">Fetching graph data from <strong>/graph/{{ repo_owner }}/{{ repo_name }}</strong>.</div>
+    </main>
+  </div>
+
+  <script>
+    (async () => {
+      const repoOwner = "{{ repo_owner }}";
+      const repoName = "{{ repo_name }}";
+      const statusLabel = document.getElementById("statusLabel");
+      const nodeCount = document.getElementById("nodeCount");
+      const edgeCount = document.getElementById("edgeCount");
+      const overlay = document.getElementById("overlay");
+
+      try {
+        const response = await fetch(`/graph/${repoOwner}/${repoName}`);
+        if (!response.ok) {
+          throw new Error(`Graph API returned ${response.status}`);
+        }
+
+        const payload = await response.json();
+        const elements = [
+          ...(payload.nodes || []),
+          ...(payload.edges || [])
+        ];
+
+        nodeCount.textContent = String((payload.nodes || []).length);
+        edgeCount.textContent = String((payload.edges || []).length);
+        statusLabel.textContent = "Graph loaded";
+        overlay.innerHTML = `Loaded <strong>${payload.nodes?.length || 0}</strong> nodes and <strong>${payload.edges?.length || 0}</strong> edges.`;
+
+        const cy = cytoscape({
+          container: document.getElementById("graph"),
+          elements,
+          style: [
+            {
+              selector: "node",
+              style: {
+                "label": "data(label)",
+                "color": "#e8eef7",
+                "text-outline-color": "#07111f",
+                "text-outline-width": 2,
+                "font-size": 11,
+                "background-color": "data(color)",
+                "border-width": 1,
+                "border-color": "rgba(255,255,255,0.15)",
+                "width": 34,
+                "height": 34
+              }
+            },
+            {
+              selector: "node[type = 'repository']",
+              style: {
+                "width": 48,
+                "height": 48,
+                "background-color": "#4fd1c5"
+              }
+            },
+            {
+              selector: "edge",
+              style: {
+                "width": 2,
+                "line-color": "rgba(159, 176, 199, 0.55)",
+                "target-arrow-color": "rgba(159, 176, 199, 0.55)",
+                "target-arrow-shape": "triangle",
+                "curve-style": "bezier"
+              }
+            }
+          ],
+          layout: {
+            name: "cose",
+            animate: false,
+            fit: true,
+            padding: 40
+          }
+        });
+
+        cy.on("tap", "node", (event) => {
+          const data = event.target.data();
+          overlay.innerHTML = `<strong>${data.label}</strong><br>${data.type || "node"}`;
+        });
+      } catch (error) {
+        statusLabel.innerHTML = `<span class="error">Failed to load graph</span>`;
+        overlay.innerHTML = `<span class="error">${error.message}</span>`;
+      }
+    })();
+  </script>
+</body>
+</html>

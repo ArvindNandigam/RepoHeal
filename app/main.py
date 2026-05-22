@@ -13,6 +13,7 @@ from fastapi import (
 )
 
 from fastapi.responses import (
+    HTMLResponse,
     RedirectResponse
 )
 
@@ -261,55 +262,13 @@ def get_session_data(
     return session_data
 
 
-# ---------------------------
-# Public Endpoints
-# ---------------------------
-
-@app.get("/")
-def root():
-
-    return {
-        "status": "RepoHeal running",
-        "version": "1.0",
-        "authentication": "GitHub OAuth",
-        "documentation": (
-            "Login required for protected endpoints"
-        ),
-        "login_url": "/auth/github/login"
-    }
-
-
-@app.get("/healthz")
-def healthz():
-
-    return {
-        "status": "healthy"
-    }
-
-
-@app.get("/dashboard")
-async def dashboard(
-    user=Depends(
-        verify_session_token
-    )
+def build_dashboard_repositories(
+    github_token: str
 ):
-
-    session_data = (
-        session_store.get_session(
-            user["session_id"]
-        )
-    )
-
-    if not session_data:
-
-        raise HTTPException(
-            status_code=401,
-            detail="Session expired"
-        )
 
     repositories = (
         fetch_user_repositories(
-            session_data["github_token"]
+            github_token
         )
     )
 
@@ -358,10 +317,91 @@ async def dashboard(
             }
         )
 
+    return dashboard_repositories
+
+
+# ---------------------------
+# Public Endpoints
+# ---------------------------
+
+@app.get("/")
+def root():
+
+    return {
+        "status": "RepoHeal running",
+        "version": "1.0",
+        "authentication": "GitHub OAuth",
+        "documentation": (
+            "Login required for protected endpoints"
+        ),
+        "login_url": "/auth/github/login"
+    }
+
+
+@app.get("/healthz")
+def healthz():
+
+    return {
+        "status": "healthy"
+    }
+
+
+@app.get("/dashboard/data")
+async def dashboard_data(
+    user=Depends(
+        verify_session_token
+    )
+):
+
+    session_data = get_session_data(
+        user
+    )
+
+    dashboard_repositories = (
+        build_dashboard_repositories(
+            session_data["github_token"]
+        )
+    )
+
     return {
         "user": user["github_login"],
         "repositories": dashboard_repositories
     }
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(
+    user=Depends(
+        verify_session_token
+    )
+):
+
+    session_data = (
+        session_store.get_session(
+            user["session_id"]
+        )
+    )
+
+    if not session_data:
+
+        raise HTTPException(
+            status_code=401,
+            detail="Session expired"
+        )
+
+    html = (
+        Path(__file__).resolve().parent
+        / "visualization"
+        / "templates"
+        / "dashboard.html"
+    ).read_text(encoding="utf-8")
+
+    html = html.replace(
+        "{{ github_user }}",
+        user["github_login"]
+    )
+
+    return HTMLResponse(html)
 
 
 @app.get(
@@ -785,15 +825,26 @@ async def visualize_repository_page(
         repo_owner=repo_owner,
         repo_name=repo_name
     )
-    return {
-        "repo_owner": repo_owner,
-        "repo_name": repo_name,
-        "github_user": user["github_login"],
-        "visualize_url": (
-            f"/visualize/{repo_owner}/{repo_name}"
-        ),
-        "status": "ready"
-    }
+
+    html = (
+        Path(__file__).resolve().parent
+        / "visualization"
+        / "templates"
+        / "graph.html"
+    ).read_text(encoding="utf-8")
+
+    html = html.replace(
+        "{{ repo_owner }}",
+        repo_owner
+    ).replace(
+        "{{ repo_name }}",
+        repo_name
+    ).replace(
+        "{{ github_user }}",
+        user["github_login"]
+    )
+
+    return HTMLResponse(html)
 
 
 @app.get(

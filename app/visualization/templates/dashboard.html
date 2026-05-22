@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RepoHeal Dashboard</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07111f;
+      --panel: rgba(12, 20, 33, 0.92);
+      --panel-2: rgba(18, 27, 42, 0.95);
+      --border: rgba(125, 151, 184, 0.18);
+      --text: #edf3fb;
+      --muted: #9fb0c7;
+      --accent: #4fd1c5;
+      --accent-2: #7c9cff;
+      --accent-3: #ffd166;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(79, 209, 197, 0.17), transparent 28%),
+        radial-gradient(circle at top right, rgba(124, 156, 255, 0.16), transparent 24%),
+        radial-gradient(circle at bottom center, rgba(255, 209, 102, 0.08), transparent 28%),
+        var(--bg);
+    }
+
+    .page {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      gap: 20px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.4fr 0.9fr;
+      gap: 20px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+    }
+
+    .hero-main {
+      padding: 28px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .eyebrow {
+      margin: 0;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      color: var(--accent);
+      font-size: 11px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(32px, 4vw, 56px);
+      line-height: 0.98;
+      max-width: 10ch;
+    }
+
+    .lede {
+      margin: 0;
+      color: var(--muted);
+      max-width: 66ch;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    .hero-side {
+      padding: 24px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .metric {
+      padding: 16px;
+      border-radius: 18px;
+      background: var(--panel-2);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+    }
+
+    .metric strong {
+      font-size: 24px;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .search {
+      flex: 1 1 320px;
+      min-width: 0;
+      padding: 14px 16px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      outline: none;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 16px;
+      border-radius: 999px;
+      text-decoration: none;
+      font-weight: 700;
+      color: #021019;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      border: 0;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .button.secondary {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .repo-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .repo-card {
+      padding: 20px;
+      border-radius: 22px;
+      background: rgba(14, 22, 35, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      display: grid;
+      gap: 14px;
+      min-height: 240px;
+    }
+
+    .repo-card h2 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+
+    .repo-meta {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .repo-actions {
+      margin-top: auto;
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .empty-state,
+    .error-state,
+    .loading-state {
+      padding: 24px;
+      border-radius: 22px;
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.03);
+      line-height: 1.6;
+    }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 1100px) {
+      .hero,
+      .repo-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .page { padding: 16px; }
+      .hero,
+      .repo-grid,
+      .metric-grid,
+      .repo-actions {
+        grid-template-columns: 1fr;
+      }
+      h1 { max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="panel hero-main">
+        <p class="eyebrow">RepoHeal Dashboard</p>
+        <h1>Welcome back, {{ github_user }}</h1>
+        <p class="lede">
+          This is the API-first control center for installed repositories, graph intelligence, and repository workspaces.
+          Only repos that RepoHeal is installed on will appear here.
+        </p>
+        <div class="toolbar">
+          <input id="repoSearch" class="search" type="search" placeholder="Search repositories by name or owner">
+          <a class="button secondary" href="/logout" title="Use your app logout route if available">Open account</a>
+          <a class="button" href="/visualize/{{ github_user }}/Repohealdemo">Open sample graph</a>
+        </div>
+      </div>
+
+      <div class="panel hero-side">
+        <div class="metric-grid">
+          <div class="metric">
+            <span>User</span>
+            <strong id="userLabel">{{ github_user }}</strong>
+          </div>
+          <div class="metric">
+            <span>Installed</span>
+            <strong id="repoCount">0</strong>
+          </div>
+          <div class="metric">
+            <span>Private</span>
+            <strong id="privateCount">0</strong>
+          </div>
+          <div class="metric">
+            <span>Status</span>
+            <strong id="statusLabel">Loading</strong>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" style="padding: 22px; display: grid; gap: 18px;">
+      <div class="toolbar">
+        <div>
+          <p class="eyebrow" style="margin-bottom: 8px;">Installed Repositories</p>
+          <div class="lede" style="margin: 0;">Intersection of GitHub-visible repos and RepoHeal-installed repos.</div>
+        </div>
+      </div>
+
+      <div id="loadingState" class="loading-state">Loading repositories...</div>
+      <div id="errorState" class="error-state hidden"></div>
+      <div id="emptyState" class="empty-state hidden">No installed repositories matched your current GitHub access.</div>
+      <div id="repoGrid" class="repo-grid hidden"></div>
+    </section>
+  </main>
+
+  <script>
+    const searchInput = document.getElementById("repoSearch");
+    const repoGrid = document.getElementById("repoGrid");
+    const loadingState = document.getElementById("loadingState");
+    const errorState = document.getElementById("errorState");
+    const emptyState = document.getElementById("emptyState");
+    const repoCount = document.getElementById("repoCount");
+    const privateCount = document.getElementById("privateCount");
+    const statusLabel = document.getElementById("statusLabel");
+
+    let repositories = [];
+
+    function setVisible(element, visible) {
+      element.classList.toggle("hidden", !visible);
+    }
+
+    function render(items) {
+      repoGrid.innerHTML = "";
+
+      if (!items.length) {
+        setVisible(repoGrid, false);
+        setVisible(emptyState, true);
+        return;
+      }
+
+      setVisible(emptyState, false);
+      setVisible(repoGrid, true);
+
+      for (const repo of items) {
+        const card = document.createElement("article");
+        card.className = "repo-card";
+        card.innerHTML = `
+          <div>
+            <div class="repo-meta">
+              <span class="pill">${repo.owner}</span>
+              <span class="pill">${repo.private ? "Private" : "Public"}</span>
+            </div>
+            <h2>${repo.name}</h2>
+          </div>
+          <div class="repo-meta">
+            <span>${repo.private ? "Access restricted" : "Visible to the user"}</span>
+          </div>
+          <div class="repo-actions">
+            <a class="button" href="${repo.analyze_url}">Analyze</a>
+            <a class="button secondary" href="${repo.visualize_url}">Visualize</a>
+            <a class="button secondary" href="${repo.workspace_url}">Workspace</a>
+          </div>
+        `;
+        repoGrid.appendChild(card);
+      }
+    }
+
+    function applyFilter() {
+      const query = searchInput.value.trim().toLowerCase();
+      if (!query) {
+        render(repositories);
+        return;
+      }
+
+      render(repositories.filter((repo) => {
+        return repo.name.toLowerCase().includes(query)
+          || repo.owner.toLowerCase().includes(query)
+          || repo.repo.toLowerCase().includes(query);
+      }));
+    }
+
+    async function loadDashboard() {
+      try {
+        const response = await fetch("/dashboard/data", { credentials: "same-origin" });
+        if (!response.ok) {
+          throw new Error(`Dashboard API returned ${response.status}`);
+        }
+
+        const payload = await response.json();
+        repositories = payload.repositories || [];
+        repoCount.textContent = String(repositories.length);
+        privateCount.textContent = String(repositories.filter((repo) => repo.private).length);
+        statusLabel.textContent = "Ready";
+        loadingState.classList.add("hidden");
+        render(repositories);
+      } catch (error) {
+        loadingState.classList.add("hidden");
+        errorState.textContent = error.message;
+        errorState.classList.remove("hidden");
+        statusLabel.textContent = "Failed";
+      }
+    }
+
+    searchInput.addEventListener("input", applyFilter);
+    loadDashboard();
+  </script>
+</body>
+</html>
