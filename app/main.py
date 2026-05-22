@@ -50,6 +50,10 @@ from app.github.installed_repositories import (
     fetch_repoheal_installed_repositories
 )
 
+from app.github.client import (
+    RepoHealGitHubClient
+)
+
 from app.analysis.repository_analyzer import (
     analyze_repository
 )
@@ -306,6 +310,40 @@ async def dashboard(
         }
     )
 
+
+@app.get(
+    "/workspace/{repo_owner}/{repo_name}",
+    response_class=HTMLResponse
+)
+async def workspace_landing_page(
+    request: Request,
+    repo_owner: str,
+    repo_name: str,
+    user=Depends(
+        verify_session_token
+    )
+):
+
+    session_data = get_session_data(
+        user
+    )
+
+    verify_repository_access(
+        github_token=session_data["github_token"],
+        repo_owner=repo_owner,
+        repo_name=repo_name
+    )
+
+    return templates.TemplateResponse(
+        "workspace.html",
+        {
+            "request": request,
+            "repo_owner": repo_owner,
+            "repo_name": repo_name,
+            "user": user
+        }
+    )
+
 # ---------------------------
 # Protected Endpoints
 # ---------------------------
@@ -338,10 +376,43 @@ async def github_webhook(
         "X-GitHub-Event"
     )
 
+    event_action = payload.get("action")
+
     logger.info(
         f"Received GitHub event: "
-        f"{event_type}"
+        f"{event_type} ({event_action})"
     )
+
+    if event_type == "installation" and event_action == "created":
+
+        installation = payload.get("installation") or {}
+        installation_id = installation.get("id")
+
+        if not installation_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Missing installation id"
+            )
+
+        bootstrap_client = RepoHealGitHubClient(
+            installation_id
+        )
+
+        bootstrapped_repositories = (
+            bootstrap_client.bootstrap_installation_metadata()
+        )
+
+        return {
+            "received": True,
+            "event": event_type,
+            "action": event_action,
+            "bootstrapped_repositories": (
+                bootstrapped_repositories
+            ),
+            "timestamp": (
+                datetime.utcnow().isoformat()
+            )
+        }
 
     return {
         "received": True,
