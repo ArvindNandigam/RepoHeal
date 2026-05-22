@@ -67,3 +67,21 @@ def get_repository_installation(
     )
 
     return installation
+
+
+def ensure_repository_installation(
+    repo_owner,
+    repo_name
+):
+
+    installation = get_repository_installation(
+        repo_owner,
+        repo_name
+    )
+
+    if not installation:
+        raise ValueError(
+            f"RepoHeal is not installed on {repo_owner}/{repo_name}"
+        )
+
+    return installation

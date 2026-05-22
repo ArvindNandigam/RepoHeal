@@ -118,6 +118,7 @@ class Neo4jGraphBuilder:
                     session.run(
                         """
                         MERGE (p:Package {
+                            repo_id: $repo_id,
                             name: $package_name
                         })
 
@@ -127,6 +128,7 @@ class Neo4jGraphBuilder:
                             p.status = $package_status,
                             p.updated_at = timestamp()
                         """,
+                        repo_id=repo_id,
                         package_name=imported_package,
                         package_type=package_type,
                         package_version=package_version,
@@ -141,11 +143,13 @@ class Neo4jGraphBuilder:
                         })
 
                         MATCH (p:Package {
+                            repo_id: $repo_id,
                             name: $package_name
                         })
 
                         MERGE (m)-[:IMPORTS]->(p)
                         """,
+                        repo_id=repo_id,
                         module_id=module_id,
                         package_name=imported_package
                     )
@@ -188,9 +192,11 @@ class Neo4jGraphBuilder:
             session.run(
                 """
                 MATCH (p:Package)
-                WHERE NOT ()-[:IMPORTS]->(p)
+                                WHERE p.repo_id = $repo_id
+                                    AND NOT ()-[:IMPORTS]->(p)
                 DELETE p
-                """
+                                """,
+                                repo_id=repo_id
             )
 
             logger.info(

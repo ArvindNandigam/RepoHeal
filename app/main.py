@@ -46,12 +46,16 @@ from app.github.repository_fetcher import (
     cleanup_repository
 )
 
-from app.github.installed_repositories import (
-    fetch_repoheal_installed_repositories
+from app.github.user_repositories import (
+    fetch_user_repositories
 )
 
 from app.github.client import (
     RepoHealGitHubClient
+)
+
+from app.github.installations import (
+    get_repository_installation
 )
 
 from app.analysis.repository_analyzer import (
@@ -91,6 +95,13 @@ templates = Jinja2Templates(
 REPO_CACHE_ROOT = Path(
     ".repoheal_cache"
 )
+
+
+def sanitize_repo_component(value: str) -> str:
+
+    import re
+
+    return re.sub(r"[^a-zA-Z0-9_.-]", "_", value)
 
 limiter = Limiter(
     key_func=get_remote_address
@@ -152,9 +163,28 @@ def get_repo_cache_path(
 
     return (
         REPO_CACHE_ROOT
-        / repo_owner
-        / repo_name
+        / sanitize_repo_component(repo_owner)
+        / sanitize_repo_component(repo_name)
     )
+
+
+def ensure_repoheal_installed(
+    repo_owner: str,
+    repo_name: str
+):
+
+    installation = get_repository_installation(
+        repo_owner,
+        repo_name
+    )
+
+    if not installation:
+        raise HTTPException(
+            status_code=403,
+            detail="RepoHeal is not installed on this repository"
+        )
+
+    return installation
 
 
 def load_cached_analysis(
@@ -296,7 +326,7 @@ async def dashboard(
         )
 
     repositories = (
-        fetch_repoheal_installed_repositories(
+        fetch_user_repositories(
             session_data["github_token"]
         )
     )
@@ -326,6 +356,11 @@ async def workspace_landing_page(
 
     session_data = get_session_data(
         user
+    )
+
+    ensure_repoheal_installed(
+        repo_owner,
+        repo_name
     )
 
     verify_repository_access(
@@ -439,6 +474,11 @@ async def analyze_repository_endpoint(
         user
     )
 
+    ensure_repoheal_installed(
+        repo_owner,
+        repo_name
+    )
+
     verify_repository_access(
         github_token=session_data["github_token"],
         repo_owner=repo_owner,
@@ -548,6 +588,11 @@ async def get_graph_visualization(
         user
     )
 
+    ensure_repoheal_installed(
+        repo_owner,
+        repo_name
+    )
+
     verify_repository_access(
         github_token=session_data["github_token"],
         repo_owner=repo_owner,
@@ -633,6 +678,11 @@ async def visualize_repository_page(
 ):
     session_data = get_session_data(
         user
+    )
+
+    ensure_repoheal_installed(
+        repo_owner,
+        repo_name
     )
 
     verify_repository_access(

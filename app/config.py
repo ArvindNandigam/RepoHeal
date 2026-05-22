@@ -18,6 +18,7 @@ class Settings:
     GITHUB_APP_ID = os.getenv("GITHUB_APP_ID")
     GITHUB_PRIVATE_KEY = os.getenv("GITHUB_PRIVATE_KEY")
     GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET")
+    GITHUB_TOKEN_ENCRYPTION_KEY = os.getenv("GITHUB_TOKEN_ENCRYPTION_KEY")
 
     NEO4J_URI = os.getenv("NEO4J_URI")
     NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
@@ -29,6 +30,9 @@ settings = Settings()
 
 if not settings.JWT_SECRET_KEY:
     raise ValueError("JWT_SECRET_KEY missing")
+
+if settings.ENVIRONMENT == "production" and not settings.GITHUB_TOKEN_ENCRYPTION_KEY:
+    raise ValueError("GITHUB_TOKEN_ENCRYPTION_KEY missing")
 
 if (
     os.getenv("RENDER") == "true"

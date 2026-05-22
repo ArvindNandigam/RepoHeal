@@ -16,7 +16,12 @@ def analyze_repository(repo_path):
 
     all_imports = set()
     for imports in file_imports.values():
-        all_imports.update(imports)
+        all_imports.update(
+            imports.get("direct", [])
+        )
+        all_imports.update(
+            imports.get("from", [])
+        )
 
     declared_packages = set(dependencies.keys())
     missing_packages = sorted(all_imports - declared_packages)

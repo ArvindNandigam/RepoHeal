@@ -1,8 +1,12 @@
 from datetime import datetime, timedelta
 
+from cryptography.fernet import Fernet, InvalidToken
+
 from app.graph.connection import (
     neo4j_connection
 )
+
+from app.config import settings
 
 from app.utils.logger import (
     get_logger
@@ -11,7 +15,54 @@ from app.utils.logger import (
 logger = get_logger(__name__)
 
 
+def _build_fernet() -> Fernet | None:
+
+    encryption_key = settings.GITHUB_TOKEN_ENCRYPTION_KEY
+
+    if not encryption_key:
+        return None
+
+    return Fernet(encryption_key.encode())
+
+
 class SessionStore:
+
+    def _encrypt_token(
+        self,
+        github_token: str
+    ) -> str:
+
+        fernet = _build_fernet()
+
+        if not fernet:
+            logger.warning(
+                "GitHub token encryption key is missing; storing raw token"
+            )
+            return github_token
+
+        return fernet.encrypt(
+            github_token.encode()
+        ).decode()
+
+    def _decrypt_token(
+        self,
+        github_token: str
+    ) -> str:
+
+        fernet = _build_fernet()
+
+        if not fernet:
+            return github_token
+
+        try:
+            return fernet.decrypt(
+                github_token.encode()
+            ).decode()
+        except InvalidToken:
+            logger.warning(
+                "Stored GitHub token was not encrypted; returning raw value"
+            )
+            return github_token
 
     def _is_expired(
         self,
@@ -41,6 +92,10 @@ class SessionStore:
             + timedelta(days=1)
         ).isoformat()
 
+        stored_github_token = self._encrypt_token(
+            github_token
+        )
+
         with neo4j_connection.get_session() as session:
 
             session.run(
@@ -59,7 +114,7 @@ class SessionStore:
                 session_id=session_id,
                 github_id=github_id,
                 github_login=github_login,
-                github_token=github_token,
+                github_token=stored_github_token,
                 created_at=datetime.utcnow().isoformat(),
                 expires_at=expires_at
             )
@@ -93,6 +148,11 @@ class SessionStore:
                 return None
 
             session_data = dict(record["s"])
+
+            if "github_token" in session_data:
+                session_data["github_token"] = self._decrypt_token(
+                    session_data["github_token"]
+                )
 
             if self._is_expired(
                 session_data.get("expires_at")
