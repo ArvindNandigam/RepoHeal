@@ -6,9 +6,9 @@
 
 <body>
 
-<h1>
-    RepoHeal Dashboard
-</h1>
+<h2>
+    {{ user.github_login }}
+</h2>
 
 <h2>
     {{ user.github_login }}
@@ -35,26 +35,32 @@
 >
 
     <h3>
-        {{ repo.full_name }}
+        {{ repo.repo.full_name }}
     </h3>
 
     <p>
         Visibility:
-        {% if repo.private %}
+        {% if repo.repo.private %}
             Private
         {% else %}
             Public
         {% endif %}
     </p>
 
-    <a href="/analyze/{{ repo.owner.login }}/{{ repo.name }}">
+    <a href="{{ repo.analyze_url }}">
         Analyze
     </a>
 
     <br><br>
 
-    <a href="/visualize/{{ repo.owner.login }}/{{ repo.name }}">
+    <a href="{{ repo.visualize_url }}">
         Visualize
+    </a>
+
+    <br><br>
+
+    <a href="{{ repo.workspace_url }}">
+        Workspace
     </a>
 
 </div>

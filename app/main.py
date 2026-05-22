@@ -103,6 +103,29 @@ def sanitize_repo_component(value: str) -> str:
 
     return re.sub(r"[^a-zA-Z0-9_.-]", "_", value)
 
+
+def build_dashboard_repository_entry(
+    repo: dict,
+    repo_owner: str,
+    repo_name: str
+) -> dict:
+
+    return {
+        "repo": repo,
+        "analyze_url": (
+            f"/analyze/{repo_owner}/{repo_name}"
+        ),
+        "visualize_url": (
+            f"/visualize/{repo_owner}/{repo_name}"
+        ),
+        "status_url": (
+            f"/status/{repo_owner}/{repo_name}"
+        ),
+        "workspace_url": (
+            f"/workspace/{repo_owner}/{repo_name}"
+        )
+    }
+
 limiter = Limiter(
     key_func=get_remote_address
 )
@@ -331,12 +354,30 @@ async def dashboard(
         )
     )
 
+    dashboard_repositories = []
+
+    for repo in repositories:
+
+        owner_login = repo.get("owner", {}).get("login")
+        repo_name = repo.get("name")
+
+        if not owner_login or not repo_name:
+            continue
+
+        dashboard_repositories.append(
+            build_dashboard_repository_entry(
+                repo,
+                owner_login,
+                repo_name
+            )
+        )
+
     return templates.TemplateResponse(
         "dashboard.html",
         {
             "request": request,
             "user": user,
-            "repositories": repositories
+            "repositories": dashboard_repositories
         }
     )
 

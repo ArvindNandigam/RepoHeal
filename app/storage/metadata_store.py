@@ -18,6 +18,7 @@ Stores analysis snapshots in .repoheal directory with structured format:
 """
 
 import json
+import hashlib
 from pathlib import Path
 from typing import Dict, Optional
 from datetime import datetime
@@ -43,6 +44,7 @@ class MetadataStore:
             self.meta_dir,
             self.meta_dir / "graphs",
             self.meta_dir / "analysis",
+            self.meta_dir / "snapshots",
             self.meta_dir / "reports",
             self.meta_dir / "config"
         ]
@@ -98,12 +100,46 @@ class MetadataStore:
         Save complete analysis snapshot.
         This is the full portable artifact.
         """
+        snapshot_fingerprint = hashlib.sha1(
+            json.dumps(
+                analysis,
+                sort_keys=True,
+                default=str
+            ).encode("utf-8")
+        ).hexdigest()[:10]
+
         snapshot = {
             "repository": str(self.repo_path),
             "analyzed_at": datetime.utcnow().isoformat(),
             "analysis": analysis,
             "version": "1.0"
         }
+
+        snapshot_path = (
+            self.meta_dir
+            / "snapshots"
+            / f"analysis_{snapshot_fingerprint}.json"
+        )
+
+        graph_snapshot_path = (
+            self.meta_dir
+            / "snapshots"
+            / f"graph_{snapshot_fingerprint}.json"
+        )
+
+        summary_snapshot_path = (
+            self.meta_dir
+            / "snapshots"
+            / f"summary_{snapshot_fingerprint}.json"
+        )
+
+        self._write_json(snapshot_path, snapshot)
+
+        if "dependency_graph" in analysis:
+            self._write_json(
+                graph_snapshot_path,
+                analysis["dependency_graph"]
+            )
         
         # Save individual components
         if "imports" in analysis:
@@ -121,17 +157,43 @@ class MetadataStore:
             "hashes": analysis.get("hashes", {})
         }
         self.save_repo_summary(summary)
+        self._write_json(summary_snapshot_path, summary)
         
         logger.info(f"Saved analysis snapshot to {self.meta_dir}")
+
+    def _latest_snapshot_file(self, prefix: str) -> Optional[Path]:
+        """Return the most recently written immutable snapshot file."""
+        snapshot_dir = self.meta_dir / "snapshots"
+
+        if not snapshot_dir.exists():
+            return None
+
+        candidates = list(snapshot_dir.glob(f"{prefix}_*.json"))
+
+        if not candidates:
+            return None
+
+        return max(
+            candidates,
+            key=lambda path: path.stat().st_mtime
+        )
     
     def load_analysis_snapshot(self) -> Optional[Dict]:
         """Load most recent analysis snapshot"""
-        path = self.meta_dir / "analysis" / "repo_summary.json"
+        path = self._latest_snapshot_file("summary")
+
+        if not path:
+            path = self.meta_dir / "analysis" / "repo_summary.json"
+
         return self._read_json(path)
     
     def load_dependency_graph(self) -> Optional[Dict]:
         """Load dependency graph"""
-        path = self.meta_dir / "graphs" / "dependency_graph.json"
+        path = self._latest_snapshot_file("graph")
+
+        if not path:
+            path = self.meta_dir / "graphs" / "dependency_graph.json"
+
         return self._read_json(path)
     
     def load_module_graph(self) -> Optional[Dict]:

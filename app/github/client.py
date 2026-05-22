@@ -203,9 +203,9 @@ class RepoHealGitHubClient:
         metadata_readme = (
             "# RepoHeal Metadata Branch\n\n"
             "This branch stores:\n"
-            "- dependency intelligence\n"
+            "- immutable analysis snapshots\n"
             "- graph snapshots\n"
-            "- analysis metadata\n"
+            "- session archives\n"
             "- RepoHeal reports\n\n"
             "Do not modify manually.\n\n"
             "Open RepoHeal:\n\n"
@@ -243,10 +243,9 @@ class RepoHealGitHubClient:
         )
 
         for placeholder_path in (
-            "repoheal.meta/analysis/.gitkeep",
-            "repoheal.meta/graphs/.gitkeep",
-            "repoheal.meta/reports/.gitkeep",
-            "repoheal.meta/sessions/.gitkeep"
+            "repoheal.meta/snapshots/.gitkeep",
+            "repoheal.meta/sessions/.gitkeep",
+            "repoheal.meta/reports/.gitkeep"
         ):
 
             self.upsert_file(
