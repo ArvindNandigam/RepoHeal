@@ -13,12 +13,7 @@ from fastapi import (
 )
 
 from fastapi.responses import (
-    HTMLResponse,
     RedirectResponse
-)
-
-from fastapi.templating import (
-    Jinja2Templates
 )
 
 from slowapi import Limiter
@@ -87,12 +82,6 @@ from app.config import (
 )
 
 logger = get_logger(__name__)
-
-templates = Jinja2Templates(
-    directory=str(
-        Path(__file__).resolve().parent / "visualization" / "templates"
-    )
-)
 
 REPO_CACHE_ROOT = Path(
     ".repoheal_cache"
@@ -292,28 +281,12 @@ def healthz():
     }
 
 
-@app.get(
-    "/dashboard/{dashboard_id}",
-    response_class=HTMLResponse
-)
+@app.get("/dashboard")
 async def dashboard(
-    request: Request,
-    dashboard_id: str,
     user=Depends(
         verify_session_token
     )
 ):
-
-    expected_dashboard = (
-        f"{user['github_login']}-repoheal"
-    )
-
-    if dashboard_id != expected_dashboard:
-
-        raise HTTPException(
-            status_code=403,
-            detail="Unauthorized dashboard"
-        )
 
     session_data = (
         session_store.get_session(
@@ -370,22 +343,16 @@ async def dashboard(
             }
         )
 
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
-            "repositories": dashboard_repositories,
-            "username": user["github_login"]
-        }
-    )
+    return {
+        "user": user["github_login"],
+        "repositories": dashboard_repositories
+    }
 
 
 @app.get(
     "/workspace/{repo_owner}/{repo_name}",
-    response_class=HTMLResponse
 )
 async def workspace_landing_page(
-    request: Request,
     repo_owner: str,
     repo_name: str,
     user=Depends(
@@ -408,15 +375,15 @@ async def workspace_landing_page(
         repo_name=repo_name
     )
 
-    return templates.TemplateResponse(
-        "workspace.html",
-        {
-            "request": request,
-            "repo_owner": repo_owner,
-            "repo_name": repo_name,
-            "user": user
-        }
-    )
+    return {
+        "repo_owner": repo_owner,
+        "repo_name": repo_name,
+        "user": user["github_login"],
+        "workspace_url": (
+            f"/workspace/{repo_owner}/{repo_name}"
+        ),
+        "status": "ready"
+    }
 
 # ---------------------------
 # Protected Endpoints
@@ -704,11 +671,9 @@ async def get_graph_visualization(
 
 @app.get(
     "/visualize/{repo_owner}/{repo_name}",
-    response_class=HTMLResponse
 )
 @limiter.limit("30/minute")
 async def visualize_repository_page(
-    request: Request,
     repo_owner: str,
     repo_name: str,
     user=Depends(
@@ -729,17 +694,15 @@ async def visualize_repository_page(
         repo_owner=repo_owner,
         repo_name=repo_name
     )
-    return templates.TemplateResponse(
-        "graph.html",
-        {
-            "request": request,
-            "repo_owner": repo_owner,
-            "repo_name": repo_name,
-            "github_user": (
-                user["github_login"]
-            )
-        }
-    )
+    return {
+        "repo_owner": repo_owner,
+        "repo_name": repo_name,
+        "github_user": user["github_login"],
+        "visualize_url": (
+            f"/visualize/{repo_owner}/{repo_name}"
+        ),
+        "status": "ready"
+    }
 
 
 @app.get(

@@ -168,8 +168,7 @@ async def github_callback(
 
     redirect = RedirectResponse(
         url=(
-            f"/dashboard/"
-            f"{github_user['login']}-repoheal"
+            "/dashboard"
         )
     )
 
