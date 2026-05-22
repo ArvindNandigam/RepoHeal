@@ -196,3 +196,12 @@ async def github_callback(
     )
 
     return redirect
+@router.get("/install/callback")
+async def github_install_callback(
+    installation_id: int,
+    setup_action: str = None
+):
+
+    return RedirectResponse(
+        url="/auth/github/login"
+    )
