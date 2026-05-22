@@ -52,7 +52,7 @@ async def github_login():
     github_auth_url = (
         "https://github.com/login/oauth/authorize"
         f"?client_id={GITHUB_CLIENT_ID}"
-        "&scope=repo read:user"
+        "&scope=repo read:user read:org"
         f"&state={state}"
     )
 
