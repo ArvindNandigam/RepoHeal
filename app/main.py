@@ -674,6 +674,7 @@ async def get_graph_visualization(
 )
 @limiter.limit("30/minute")
 async def visualize_repository_page(
+    request: Request,
     repo_owner: str,
     repo_name: str,
     user=Depends(
