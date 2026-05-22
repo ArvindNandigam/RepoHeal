@@ -147,6 +147,17 @@
       backdrop-filter: blur(10px);
     }
 
+    .details {
+      display: grid;
+      gap: 6px;
+      margin-top: 10px;
+      color: var(--text);
+    }
+
+    .details span {
+      color: var(--muted);
+    }
+
     .error {
       color: var(--danger);
     }
@@ -190,6 +201,11 @@
         <span id="edgeCount">0</span>
       </div>
 
+      <div class="stat">
+        <strong>Hover</strong>
+        <span>Move over packages to inspect version, status, and type.</span>
+      </div>
+
       <div class="actions">
         <a class="button" href="/dashboard">Back to dashboard</a>
         <a class="button secondary" href="/graph/{{ repo_owner }}/{{ repo_name }}" target="_blank" rel="noreferrer">Open JSON</a>
@@ -198,7 +214,7 @@
 
     <main class="panel canvas">
       <div id="graph"></div>
-      <div class="overlay" id="overlay">Fetching graph data from <strong>/graph/{{ repo_owner }}/{{ repo_name }}</strong>.</div>
+      <div class="overlay" id="overlay">Initializing graph and analyzing repository...</div>
     </main>
   </div>
 
@@ -211,8 +227,41 @@
       const edgeCount = document.getElementById("edgeCount");
       const overlay = document.getElementById("overlay");
 
+      const describeNode = (data) => {
+        const details = [];
+        if (data.type) details.push(`Type: ${data.type}`);
+        if (data.package_type) details.push(`Package type: ${data.package_type}`);
+        if (data.version) details.push(`Version: ${data.version}`);
+        if (data.status) details.push(`Status: ${data.status}`);
+        if (data.path) details.push(`Path: ${data.path}`);
+        if (typeof data.imports === "number") details.push(`Imports: ${data.imports}`);
+
+        return `
+          <strong>${data.label || data.id || "Node"}</strong>
+          <div class="details">
+            ${details.map((item) => `<span>${item}</span>`).join("")}
+          </div>
+        `;
+      };
+
       try {
-        const response = await fetch(`/graph/${repoOwner}/${repoName}`);
+        statusLabel.textContent = "Analyzing";
+        overlay.innerHTML = `Running analysis for <strong>${repoOwner}/${repoName}</strong>...`;
+
+        const analyzeResponse = await fetch(`/analyze/${repoOwner}/${repoName}`, {
+          credentials: "same-origin"
+        });
+
+        if (!analyzeResponse.ok) {
+          throw new Error(`Analyze API returned ${analyzeResponse.status}`);
+        }
+
+        statusLabel.textContent = "Loading graph";
+        overlay.innerHTML = `Fetching graph data from <strong>/graph/${repoOwner}/${repoName}</strong>.`;
+
+        const response = await fetch(`/graph/${repoOwner}/${repoName}`, {
+          credentials: "same-origin"
+        });
         if (!response.ok) {
           throw new Error(`Graph API returned ${response.status}`);
         }
@@ -276,7 +325,15 @@
 
         cy.on("tap", "node", (event) => {
           const data = event.target.data();
-          overlay.innerHTML = `<strong>${data.label}</strong><br>${data.type || "node"}`;
+          overlay.innerHTML = describeNode(data);
+        });
+
+        cy.on("mouseover", "node", (event) => {
+          overlay.innerHTML = describeNode(event.target.data());
+        });
+
+        cy.on("mouseout", "node", () => {
+          overlay.innerHTML = `Loaded <strong>${payload.nodes?.length || 0}</strong> nodes and <strong>${payload.edges?.length || 0}</strong> edges.`;
         });
       } catch (error) {
         statusLabel.innerHTML = `<span class="error">Failed to load graph</span>`;
