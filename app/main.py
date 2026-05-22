@@ -45,6 +45,12 @@ from app.github.user_repositories import (
     fetch_user_repositories
 )
 
+from app.github.installed_repositories import (
+    get_installed_repositories,
+    upsert_installed_repositories,
+    remove_installed_repositories
+)
+
 from app.github.client import (
     RepoHealGitHubClient
 )
@@ -307,6 +313,10 @@ async def dashboard(
         )
     )
 
+    installed_repositories = (
+        get_installed_repositories()
+    )
+
     dashboard_repositories = []
 
     for repo in repositories:
@@ -316,7 +326,12 @@ async def dashboard(
         repo_full_name = repo.get("full_name")
         repo_private = repo.get("private", False)
 
-        if not owner_login or not repo_name or not repo_full_name:
+        if (
+            not owner_login
+            or not repo_name
+            or not repo_full_name
+            or repo_full_name not in installed_repositories
+        ):
             continue
 
         dashboard_repositories.append(
@@ -439,8 +454,19 @@ async def github_webhook(
             installation_id
         )
 
+        installation_repositories = (
+            bootstrap_client.list_installation_repositories()
+        )
+
+        upsert_installed_repositories(
+            installation_id,
+            installation_repositories
+        )
+
         bootstrapped_repositories = (
-            bootstrap_client.bootstrap_installation_metadata()
+            bootstrap_client.bootstrap_installation_metadata(
+                installation_repositories
+            )
         )
 
         return {
@@ -450,6 +476,70 @@ async def github_webhook(
             "bootstrapped_repositories": (
                 bootstrapped_repositories
             ),
+            "timestamp": (
+                datetime.utcnow().isoformat()
+            )
+        }
+
+    if event_type == "installation_repositories":
+
+        installation = payload.get("installation") or {}
+        installation_id = installation.get("id")
+
+        if not installation_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Missing installation id"
+            )
+
+        repositories_added = (
+            payload.get("repositories_added") or []
+        )
+
+        repositories_removed = (
+            payload.get("repositories_removed") or []
+        )
+
+        if repositories_added:
+            upsert_installed_repositories(
+                installation_id,
+                repositories_added
+            )
+
+        if repositories_removed:
+            remove_installed_repositories(
+                installation_id,
+                [
+                    repository.get("id")
+                    for repository in repositories_removed
+                    if repository.get("id")
+                ]
+            )
+
+        return {
+            "received": True,
+            "event": event_type,
+            "added": len(repositories_added),
+            "removed": len(repositories_removed),
+            "timestamp": (
+                datetime.utcnow().isoformat()
+            )
+        }
+
+    if event_type == "installation" and event_action == "deleted":
+
+        installation = payload.get("installation") or {}
+        installation_id = installation.get("id")
+
+        if installation_id:
+            remove_installed_repositories(
+                installation_id
+            )
+
+        return {
+            "received": True,
+            "event": event_type,
+            "action": event_action,
             "timestamp": (
                 datetime.utcnow().isoformat()
             )

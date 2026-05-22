@@ -1,4 +1,8 @@
-import requests
+from datetime import datetime
+
+from app.graph.connection import (
+    neo4j_connection
+)
 
 from app.utils.logger import (
     get_logger
@@ -7,89 +11,120 @@ from app.utils.logger import (
 logger = get_logger(__name__)
 
 
-def fetch_repoheal_installed_repositories(
-    github_token: str
+def upsert_installed_repositories(
+    installation_id: int,
+    repositories: list[dict]
 ):
 
-    repositories = []
-    seen_repository_ids = set()
-    page = 1
+    installed_at = datetime.utcnow().isoformat()
 
-    while True:
+    with neo4j_connection.get_session() as session:
 
-        installations_response = requests.get(
-            "https://api.github.com/user/installations",
-            headers={
-                "Authorization":
-                    f"Bearer {github_token}",
-                "Accept":
-                    "application/vnd.github+json"
-            },
-            params={
-                "per_page": 100,
-                "page": page
-            },
-            timeout=15
-        )
+        for repository in repositories:
 
-        installations_response.raise_for_status()
+            repo_id = repository.get("id")
+            full_name = repository.get("full_name")
 
-        installations = installations_response.json()
+            if not repo_id or not full_name:
+                continue
 
-        if not installations:
-            break
+            owner_login = (
+                repository.get("owner", {}).get("login")
+            )
 
-        for installation in installations:
+            session.run(
+                """
+                MERGE (r:InstalledRepository {
+                    installation_id: $installation_id,
+                    repo_id: $repo_id
+                })
 
-            installation_id = installation["id"]
-            repositories_page = 1
-
-            while True:
-
-                repository_response = requests.get(
-                    (
-                        "https://api.github.com/user/installations/"
-                        f"{installation_id}/repositories"
+                SET
+                    r.full_name = $full_name,
+                    r.owner = $owner,
+                    r.repo_name = $repo_name,
+                    r.private = $private,
+                    r.installed_at = coalesce(
+                        r.installed_at,
+                        $installed_at
                     ),
-                    headers={
-                        "Authorization":
-                            f"Bearer {github_token}",
-                        "Accept":
-                            "application/vnd.github+json"
-                    },
-                    params={
-                        "per_page": 100,
-                        "page": repositories_page
-                    },
-                    timeout=15
-                )
-
-                repository_response.raise_for_status()
-
-                installed_repositories = repository_response.json().get(
-                    "repositories",
-                    []
-                )
-
-                if not installed_repositories:
-                    break
-
-                for repository in installed_repositories:
-
-                    repository_id = repository.get("id")
-
-                    if repository_id in seen_repository_ids:
-                        continue
-
-                    seen_repository_ids.add(repository_id)
-                    repositories.append(repository)
-
-                repositories_page += 1
-
-        page += 1
+                    r.updated_at = timestamp()
+                """,
+                installation_id=installation_id,
+                repo_id=repo_id,
+                full_name=full_name,
+                owner=owner_login,
+                repo_name=repository.get("name"),
+                private=repository.get("private", False),
+                installed_at=installed_at
+            )
 
     logger.info(
-        f"Fetched {len(repositories)} RepoHeal-installed repositories"
+        f"Upserted {len(repositories)} installed repositories for installation {installation_id}"
+    )
+
+
+def remove_installed_repositories(
+    installation_id: int,
+    repository_ids: list[int] | None = None
+):
+
+    with neo4j_connection.get_session() as session:
+
+        if repository_ids is not None:
+
+            session.run(
+                """
+                MATCH (r:InstalledRepository)
+                WHERE r.installation_id = $installation_id
+                  AND r.repo_id IN $repository_ids
+                DETACH DELETE r
+                """,
+                installation_id=installation_id,
+                repository_ids=repository_ids
+            )
+        else:
+
+            session.run(
+                """
+                MATCH (r:InstalledRepository)
+                WHERE r.installation_id = $installation_id
+                DETACH DELETE r
+                """,
+                installation_id=installation_id
+            )
+
+    logger.info(
+        f"Removed installed repository records for installation {installation_id}"
+    )
+
+
+def get_installed_repositories() -> set[str]:
+
+    with neo4j_connection.get_session() as session:
+
+        result = session.run(
+            """
+            MATCH (r:InstalledRepository)
+            WHERE r.full_name IS NOT NULL
+            RETURN DISTINCT r.full_name AS full_name
+            ORDER BY full_name
+            """
+        )
+
+        repositories = {
+            record["full_name"]
+            for record in result
+            if record["full_name"]
+        }
+
+    logger.info(
+        f"Loaded {len(repositories)} installed repositories from Neo4j"
     )
 
     return repositories
+
+
+def fetch_repoheal_installed_repositories() -> set[str]:
+
+    return get_installed_repositories()

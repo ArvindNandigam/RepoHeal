@@ -256,11 +256,17 @@ class RepoHealGitHubClient:
                 f"Initialize {placeholder_path}"
             )
 
-    def bootstrap_installation_metadata(self):
+    def bootstrap_installation_metadata(self, repositories=None):
 
-        repositories = []
+        bootstrapped_repositories = []
 
-        for repository_info in self.list_installation_repositories():
+        repository_infos = (
+            repositories
+            if repositories is not None
+            else self.list_installation_repositories()
+        )
+
+        for repository_info in repository_infos:
 
             full_name = repository_info.get("full_name")
 
@@ -270,13 +276,13 @@ class RepoHealGitHubClient:
             repo = self.get_repo(full_name)
 
             self.bootstrap_metadata_branch(repo)
-            repositories.append(full_name)
+            bootstrapped_repositories.append(full_name)
 
         logger.info(
-            f"Bootstrapped RepoHeal metadata for {len(repositories)} repositories"
+            f"Bootstrapped RepoHeal metadata for {len(bootstrapped_repositories)} repositories"
         )
 
-        return repositories
+        return bootstrapped_repositories
 
     def create_branch(self, repo, new_branch_name):
 
