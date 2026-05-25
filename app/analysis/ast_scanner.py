@@ -306,7 +306,9 @@ def extract_imports_from_notebook(file_path):
 
     imports = {
         "direct": [],
-        "from": []
+        "from": [],
+        "normalized": [],
+        "local": []
     }
 
     try:
@@ -344,6 +346,14 @@ def extract_imports_from_notebook(file_path):
                 cell_imports["from"]
             )
 
+            imports["normalized"].extend(
+                cell_imports.get("normalized", [])
+            )
+
+            imports["local"].extend(
+                cell_imports.get("local", [])
+            )
+
     except Exception as e:
 
         logger.error(
@@ -359,7 +369,77 @@ def extract_imports_from_notebook(file_path):
         imports["from"]
     ))
 
+    imports["normalized"] = list(dict.fromkeys(
+        imports["normalized"]
+    ))
+
+    imports["local"] = list(dict.fromkeys(
+        imports["local"]
+    ))
+
     return imports
+
+
+def extract_semantics_from_notebook(file_path, module_name=None, module_index=None):
+
+    semantic_data = {
+        "module_name": module_name,
+        "functions": [],
+        "classes": [],
+        "calls": [],
+        "apis": []
+    }
+
+    try:
+
+        with open(
+            file_path,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            notebook = json.load(f)
+
+        cells = notebook.get("cells", [])
+
+        for cell in cells:
+
+            if cell.get("cell_type") != "code":
+                continue
+
+            source = "".join(
+                cell.get("source", [])
+            )
+
+            cell_semantics = extract_python_semantics(
+                source,
+                module_name=module_name,
+                module_index=module_index
+            )
+
+            semantic_data["functions"].extend(
+                cell_semantics.get("functions", [])
+            )
+
+            semantic_data["classes"].extend(
+                cell_semantics.get("classes", [])
+            )
+
+            semantic_data["calls"].extend(
+                cell_semantics.get("calls", [])
+            )
+
+            semantic_data["apis"].extend(
+                cell_semantics.get("apis", [])
+            )
+
+    except Exception as e:
+
+        logger.error(
+            f"Notebook semantic parsing failed for {file_path}: {e}"
+        )
+
+    return semantic_data
 
 
 def scan_repository(repo_path):
@@ -390,14 +470,14 @@ def scan_repository(repo_path):
 
         imports_by_file[str(notebook_file)] = imports
         semantic_by_file[str(notebook_file)] = {
-            "module_name": build_module_name(
-                str(notebook_file),
-                repo_path
-            ),
-            "functions": [],
-            "classes": [],
-            "calls": [],
-            "apis": []
+            **extract_semantics_from_notebook(
+                notebook_file,
+                module_name=build_module_name(
+                    str(notebook_file),
+                    repo_path
+                ),
+                module_index=module_index
+            )
         }
 
     for py_file in python_files:
