@@ -200,6 +200,12 @@ def load_cached_analysis(
         )
     )
 
+    full_analysis = cache_store.load_full_analysis_snapshot() or {}
+
+    if full_analysis:
+
+        return full_analysis
+
     imports = (
         cache_store.load_imports()
         or {
@@ -890,15 +896,15 @@ async def get_repository_status(
 
                 OPTIONAL MATCH
                     (r)-[:CONTAINS]->
-                    (m:Module)
+                    (f:File)
 
                 OPTIONAL MATCH
-                    (m)-[:IMPORTS]->
+                    (f)-[:IMPORTS]->
                     (p:Package)
 
                 RETURN
-                    count(distinct m)
-                        as module_count,
+                    count(distinct f)
+                        as file_count,
 
                     count(distinct p)
                         as package_count
@@ -918,8 +924,8 @@ async def get_repository_status(
             return {
                 "repository": repo_id,
                 "status": "analyzed",
-                "modules": (
-                    record["module_count"]
+                "files": (
+                    record["file_count"]
                 ),
                 "packages": (
                     record["package_count"]

@@ -186,6 +186,20 @@ class MetadataStore:
             path = self.meta_dir / "analysis" / "repo_summary.json"
 
         return self._read_json(path)
+
+    def load_full_analysis_snapshot(self) -> Optional[Dict]:
+        """Load the most recent full analysis snapshot."""
+        path = self._latest_snapshot_file("analysis")
+
+        if not path:
+            return None
+
+        snapshot = self._read_json(path)
+
+        if not snapshot:
+            return None
+
+        return snapshot.get("analysis", snapshot)
     
     def load_dependency_graph(self) -> Optional[Dict]:
         """Load dependency graph"""
