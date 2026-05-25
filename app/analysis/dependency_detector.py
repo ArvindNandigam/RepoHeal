@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from app.analysis.package_normalization import normalize_package_name
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -29,11 +30,15 @@ def extract_requirements(repo_path):
 
             package, version = line.split("==")
 
-            dependencies[package] = version
+            dependencies[
+                normalize_package_name(package)
+            ] = version
 
         elif line:
 
-            dependencies[line] = "unknown"
+            dependencies[
+                normalize_package_name(line)
+            ] = "unknown"
 
     logger.info(
         f"Detected {len(dependencies)} dependencies"

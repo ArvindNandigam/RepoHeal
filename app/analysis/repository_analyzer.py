@@ -1,5 +1,6 @@
 from app.analysis.ast_scanner import scan_repository
 from app.analysis.dependency_detector import extract_requirements
+from app.analysis.package_normalization import normalize_package_name
 
 from app.utils.logger import get_logger
 
@@ -10,20 +11,33 @@ def analyze_repository(repo_path):
 
     logger.info(f"Analyzing repository: {repo_path}")
 
-    file_imports = scan_repository(repo_path)
+    scan_result = scan_repository(repo_path)
+
+    file_imports = scan_result.get(
+        "imports",
+        {}
+    ).get(
+        "files",
+        {}
+    )
+
+    semantic_graph = scan_result.get(
+        "semantic_graph",
+        {}
+    )
 
     dependencies = extract_requirements(repo_path)
 
     all_imports = set()
     for imports in file_imports.values():
         all_imports.update(
-            imports.get("direct", [])
-        )
-        all_imports.update(
-            imports.get("from", [])
+            imports.get("normalized", [])
         )
 
-    declared_packages = set(dependencies.keys())
+    declared_packages = {
+        normalize_package_name(package)
+        for package in dependencies.keys()
+    }
     missing_packages = sorted(all_imports - declared_packages)
     unused_packages = sorted(declared_packages - all_imports)
 
@@ -46,14 +60,15 @@ def analyze_repository(repo_path):
     analysis = {
         "imports": {
             "files": file_imports,
-            "summary": {
-                "total_modules": len(file_imports),
-                "total_imports": len(all_imports),
-                "declared_dependencies": len(dependencies),
-                "third_party_packages": len(declared_packages & all_imports),
-                "local_packages": len(all_imports - declared_packages)
-            }
+            "summary": scan_result.get(
+                "imports",
+                {}
+            ).get(
+                "summary",
+                {}
+            )
         },
+        "semantic_graph": semantic_graph,
         "dependencies": {
             "declared": dependencies,
             "count": len(dependencies)
