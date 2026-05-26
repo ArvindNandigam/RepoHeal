@@ -16,6 +16,7 @@ from fastapi.responses import (
     HTMLResponse,
     RedirectResponse
 )
+from fastapi.responses import Response
 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -72,6 +73,12 @@ from app.storage.metadata_store import (
 from app.visualization.graph_api import (
     GraphVisualizer
 )
+try:
+    from app.visualization.export_png import (
+        render_graph_png
+    )
+except Exception:
+    render_graph_png = None
 
 from app.graph.connection import (
     neo4j_connection
@@ -408,6 +415,51 @@ async def dashboard(
     )
 
     return HTMLResponse(html)
+
+
+@app.get("/visualize/{repo_owner}/{repo_name}/export.png")
+@limiter.limit("10/minute")
+async def visualize_repository_export_png(
+    request: Request,
+    repo_owner: str,
+    repo_name: str,
+    user=Depends(
+        verify_session_token
+    )
+):
+    session_data = get_session_data(user)
+
+    ensure_repoheal_installed(repo_owner, repo_name)
+
+    verify_repository_access(
+        github_token=session_data["github_token"],
+        repo_owner=repo_owner,
+        repo_name=repo_name
+    )
+
+    repo_id = f"{repo_owner}/{repo_name}"
+
+    if render_graph_png is None:
+        raise HTTPException(status_code=501, detail="Server-side export not available: Playwright not installed")
+
+    try:
+        analysis = load_cached_analysis(repo_owner, repo_name)
+
+        if not analysis["imports"]["files"]:
+            raise HTTPException(status_code=404, detail=("No cached analysis found. Run /analyze first."))
+
+        visualizer = GraphVisualizer(analysis)
+        graph = visualizer.to_cytoscape_format(repo_id)
+
+        png = await render_graph_png(graph)
+
+        return Response(content=png, media_type="image/png")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to export PNG for {repo_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get(

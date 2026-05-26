@@ -212,6 +212,9 @@
     }
   </style>
   <script src="https://unpkg.com/cytoscape@3.31.2/dist/cytoscape.min.js"></script>
+  <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+  <script src="https://unpkg.com/cytoscape-dagre@2.3.2/cytoscape-dagre.js"></script>
+  <script src="https://unpkg.com/cose-bilkent@4.1.0/cytoscape-cose-bilkent.js"></script>
 </head>
 <body>
   <div class="shell">
@@ -259,6 +262,21 @@
       <div class="mini-actions">
         <button class="button secondary" id="resetLayout" type="button">Reset layout</button>
         <button class="button secondary" id="expandAll" type="button">Expand all</button>
+      </div>
+
+      <div class="stat">
+        <strong>Layout</strong>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <select id="layoutSelect" style="padding:8px;border-radius:8px;background:rgba(255,255,255,0.03);color:var(--text);border:1px solid rgba(255,255,255,0.06);">
+            <option value="breadthfirst">Breadthfirst</option>
+            <option value="dagre" selected>Dagre</option>
+            <option value="cose-bilkent">Cose-Bilkent</option>
+          </select>
+          <label class="legend-row" style="align-items:center;gap:10px;"><span style="width:8px;height:8px;display:inline-block"></span>Spacing <input id="spacingRange" type="range" min="1" max="6" step="0.1" value="3.5" style="flex:1;margin-left:8px"></label>
+          <label class="legend-row" style="align-items:center;gap:10px;"><span style="width:8px;height:8px;display:inline-block"></span>Padding <input id="paddingRange" type="range" min="20" max="300" step="10" value="160" style="flex:1;margin-left:8px"></label>
+          <label class="legend-row" style="align-items:center;gap:10px;"><span style="width:8px;height:8px;display:inline-block"></span>Node scale <input id="nodeScaleRange" type="range" min="0.6" max="2.0" step="0.1" value="1.0" style="flex:1;margin-left:8px"></label>
+          <button id="exportPNG" class="button secondary" type="button">Export PNG</button>
+        </div>
       </div>
 
       <div class="actions">
@@ -343,9 +361,9 @@
           name: "breadthfirst",
           directed: true,
           roots: roots.nonempty() ? roots : undefined,
-          spacingFactor: 1.25,
+          spacingFactor: 2.5,
           avoidOverlap: true,
-          padding: 40,
+          padding: 120,
           animate: false
         }).run();
       };
@@ -407,23 +425,23 @@
           container: document.getElementById("graph"),
           elements,
           style: [
-            {
-              selector: "node",
-              style: {
-                "label": "data(label)",
-                "color": "#e8eef7",
-                "text-outline-color": "#07111f",
-                "text-outline-width": 2,
-                "font-size": 11,
-                "background-color": "#6b7a90",
-                "border-width": 1,
-                "border-color": "rgba(255,255,255,0.15)",
-                "width": 34,
-                "height": 34,
-                "text-valign": "center",
-                "text-halign": "center"
-              }
-            },
+              {
+                selector: "node",
+                style: {
+                  "label": "data(label)",
+                  "color": "#e8eef7",
+                  "text-outline-color": "#07111f",
+                  "text-outline-width": 2,
+                  "font-size": 12,
+                  "background-color": "#6b7a90",
+                  "border-width": 1,
+                  "border-color": "rgba(255,255,255,0.15)",
+                  "width": 34,
+                  "height": 34,
+                  "text-valign": "center",
+                  "text-halign": "center"
+                }
+              },
             {
               selector: "node[type = 'repository']",
               style: {
@@ -448,8 +466,8 @@
             {
               selector: "node[type = 'package']",
               style: {
-                "width": 42,
-                "height": 42,
+                "width": 56,
+                "height": 56,
                 "background-color": "data(color)",
                 "shape": "hexagon"
               }
@@ -457,8 +475,8 @@
             {
               selector: "node[type = 'module']",
               style: {
-                "width": 32,
-                "height": 32,
+                "width": 44,
+                "height": 44,
                 "background-color": "var(--module)",
                 "shape": "round-rectangle"
               }
@@ -466,11 +484,11 @@
             {
               selector: "node[type = 'symbol']",
               style: {
-                "width": 26,
-                "height": 26,
+                "width": 34,
+                "height": 34,
                 "background-color": "var(--symbol)",
                 "shape": "ellipse",
-                "font-size": 10
+                "font-size": 11
               }
             },
             {
@@ -502,8 +520,8 @@
             },
             {
               selector: "node:parent",
-              style: {
-                "padding": 18,
+                style: {
+                  "padding": 34,
                 "background-opacity": 0.08,
                 "background-color": "#0d1523",
                 "border-width": 1,
@@ -557,7 +575,7 @@
                 "line-color": "rgba(178, 108, 255, 0.7)",
                 "target-arrow-color": "rgba(178, 108, 255, 0.9)",
                 "curve-style": "unbundled-bezier",
-                "control-point-distances": 30,
+                "control-point-distances": 50,
                 "control-point-weights": 0.55
               }
             },
@@ -584,14 +602,87 @@
           layout: {
             name: "breadthfirst",
             directed: true,
-            spacingFactor: 1.25,
+            spacingFactor: 2.5,
             avoidOverlap: true,
-            padding: 40,
+            padding: 120,
             animate: false
           }
         });
 
         runLayout();
+
+        // UI controls
+        const layoutSelect = document.getElementById("layoutSelect");
+        const spacingRange = document.getElementById("spacingRange");
+        const paddingRange = document.getElementById("paddingRange");
+        const nodeScaleRange = document.getElementById("nodeScaleRange");
+        const exportPNGButton = document.getElementById("exportPNG");
+
+        const baseSizes = {
+          package: 56,
+          module: 44,
+          symbol: 34,
+          repository: 52,
+          file: 38,
+          function: 34,
+          class: 34,
+          api: 28
+        };
+
+        const applyStyles = (scale) => {
+          const s = Number(scale) || 1.0;
+          cy.style()
+            .selector("node[type='package']").style({ width: baseSizes.package * s, height: baseSizes.package * s }).update()
+            .selector("node[type='module']").style({ width: baseSizes.module * s, height: baseSizes.module * s }).update()
+            .selector("node[type='symbol']").style({ width: baseSizes.symbol * s, height: baseSizes.symbol * s }).update()
+            .selector("node[type='repository']").style({ width: baseSizes.repository * s, height: baseSizes.repository * s }).update()
+            .selector("node[type='file']").style({ width: baseSizes.file * s, height: baseSizes.file * s }).update()
+            .selector("node[type='function']").style({ width: baseSizes.function * s, height: baseSizes.function * s }).update()
+            .selector("node[type='class']").style({ width: baseSizes.class * s, height: baseSizes.class * s }).update()
+            .selector("node[type='api']").style({ width: baseSizes.api * s, height: baseSizes.api * s }).update();
+        };
+
+        const applyLayoutSettings = () => {
+          const spacing = Number(spacingRange.value) || 2.5;
+          const padding = Number(paddingRange.value) || 120;
+          const layoutName = layoutSelect.value || 'breadthfirst';
+          const scale = Number(nodeScaleRange.value) || 1.0;
+
+          applyStyles(scale);
+
+          // Choose layout params per engine
+          let layoutOpts = {};
+          if (layoutName === 'breadthfirst') {
+            layoutOpts = { name: 'breadthfirst', directed: true, spacingFactor: spacing, avoidOverlap: true, padding: padding, animate: true };
+          } else if (layoutName === 'dagre' && typeof cytoscapeDagre !== 'undefined') {
+            layoutOpts = { name: 'dagre', nodeSep: spacing * 40, edgeSep: spacing * 10, rankSep: spacing * 40, rankDir: 'TB', padding: padding, animate: true };
+          } else if (layoutName === 'cose-bilkent' && typeof cy.layout === 'function') {
+            layoutOpts = { name: 'cose-bilkent', idealEdgeLength: spacing * 40, nodeRepulsion: 4000 * (2.0 / Math.max(0.1, spacing)), gravity: 0.25, numIter: 250, padding: padding, animate: true };
+          } else {
+            layoutOpts = { name: 'breadthfirst', directed: true, spacingFactor: spacing, avoidOverlap: true, padding: padding, animate: true };
+          }
+
+          cy.layout(layoutOpts).run();
+        };
+
+        spacingRange.addEventListener('input', () => applyLayoutSettings());
+        paddingRange.addEventListener('input', () => applyLayoutSettings());
+        layoutSelect.addEventListener('change', () => applyLayoutSettings());
+        nodeScaleRange.addEventListener('input', () => applyLayoutSettings());
+
+        exportPNGButton.addEventListener('click', () => {
+          try {
+            const data = cy.png({ full: true, scale: 2 });
+            const w = window.open('about:blank');
+            if (w) w.document.write(`<img src="${data}" style="max-width:100%;height:auto;">`);
+          } catch (e) {
+            console.error('Failed to export PNG', e);
+            alert('Export failed: ' + String(e));
+          }
+        });
+
+        // Apply initial settings from inputs
+        applyLayoutSettings();
 
         cy.on("tap", "node", (event) => {
           const node = event.target;
