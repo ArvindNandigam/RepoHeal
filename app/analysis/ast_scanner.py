@@ -45,7 +45,7 @@ def _node_name(node):
     return None
 
 
-def extract_imports_from_python_source(source, module_index=None):
+def extract_imports_from_python_source(source, module_index=None, import_aliases=None):
 
     imports = {
         "direct": [],
@@ -63,6 +63,25 @@ def extract_imports_from_python_source(source, module_index=None):
     try:
 
         tree = ast.parse(source)
+
+        # build local import alias map for this source
+        import_aliases = import_aliases or {}
+        for node in tree.body:
+
+            if isinstance(node, ast.Import):
+
+                for imported in node.names:
+                    local_name = imported.asname or imported.name.split(".")[0]
+                    import_aliases[local_name] = imported.name
+
+            elif isinstance(node, ast.ImportFrom):
+
+                if not node.module:
+                    continue
+
+                for imported in node.names:
+                    local_name = imported.asname or imported.name
+                    import_aliases[local_name] = f"{node.module}.{imported.name}"
 
         for node in ast.walk(tree):
 
@@ -146,6 +165,68 @@ def extract_imports_from_python_source(source, module_index=None):
                                 **hierarchy
                             }
                         )
+
+            # synthesize attribute-chain usage (strict heuristic)
+            elif isinstance(node, ast.Attribute) or (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+
+                # get full dotted name
+                full_name = _node_name(node if isinstance(node, ast.Attribute) else node.func)
+
+                if not full_name or "." not in full_name:
+                    continue
+
+                parts = full_name.split(".")
+                leftmost = parts[0]
+
+                # resolve alias if present
+                resolved_root = import_aliases.get(leftmost, leftmost)
+                canonical_root = normalize_package_name(resolved_root)
+
+                # strict heuristic: only synthesize if leftmost is an import alias, known normalized import, external root, or local module
+                should_synthesize = False
+
+                if leftmost in import_aliases:
+                    should_synthesize = True
+
+                if canonical_root in EXTERNAL_API_ROOTS:
+                    should_synthesize = True
+
+                if canonical_root in imports.get("normalized", []):
+                    should_synthesize = True
+
+                if resolved_root in (module_index or set()):
+                    should_synthesize = True
+
+                if not should_synthesize:
+                    continue
+
+                # build module_path (all but last) and symbol (last)
+                module_path = ".".join([resolved_root] + parts[1:-1]) if len(parts) > 2 else resolved_root + ("." + parts[1] if len(parts) == 2 else "")
+                symbol = parts[-1]
+
+                # normalize for root
+                normalized_root = normalize_package_name(resolved_root)
+
+                try:
+                    hierarchy = build_namespace_hierarchy(module_path, symbol)
+
+                    hierarchical_imports.append(
+                        {
+                            "source": "attribute",
+                            "module": module_path,
+                            "symbol": symbol,
+                            "alias": None,
+                            "root": normalized_root,
+                            "is_local": is_local_import(resolved_root, module_index),
+                            "inferred": True,
+                            "module_path": module_path,
+                            "leaf_path": f"{module_path}.{symbol}" if module_path else symbol,
+                            **hierarchy
+                        }
+                    )
+                except Exception:
+                    # fall back silently
+                    pass
 
     except Exception as e:
 
@@ -362,7 +443,7 @@ def extract_imports_from_file(file_path):
         }
 
 
-def extract_imports_from_notebook(file_path):
+def extract_imports_from_notebook(file_path, module_index=None):
 
     imports = {
         "direct": [],
@@ -384,6 +465,8 @@ def extract_imports_from_notebook(file_path):
 
         cells = notebook.get("cells", [])
 
+        import_aliases = {}
+
         for cell in cells:
 
             if cell.get("cell_type") != "code":
@@ -395,7 +478,9 @@ def extract_imports_from_notebook(file_path):
 
             cell_imports = (
                 extract_imports_from_python_source(
-                    source
+                    source,
+                    module_index=module_index,
+                    import_aliases=import_aliases
                 )
             )
 
@@ -549,7 +634,8 @@ def scan_repository(repo_path):
     for notebook_file in notebook_files:
 
         imports = extract_imports_from_notebook(
-            notebook_file
+            notebook_file,
+            module_index=module_index
         )
 
         imports_by_file[str(notebook_file)] = imports

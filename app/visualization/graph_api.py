@@ -186,7 +186,8 @@ class GraphVisualizer:
                                 "parent": namespace_ids.get(namespace_node.get("parent_path")),
                                 "usage_count": namespace_usage_counts.get(namespace_path, 0),
                                 "module_path": import_record.get("module_path"),
-                                "leaf_path": import_record.get("leaf_path")
+                                "leaf_path": import_record.get("leaf_path"),
+                                "inferred": bool(namespace_node.get("inferred", import_record.get("inferred", False)))
                             }
                         }
                     )

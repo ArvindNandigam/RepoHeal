@@ -22,6 +22,8 @@ class Neo4jGraphBuilder:
 
         kind = namespace_node.get("kind", "Module")
 
+        inferred = bool(namespace_node.get("inferred", False))
+
         if kind == "Package":
 
             session.run(
@@ -32,14 +34,15 @@ class Neo4jGraphBuilder:
                 })
 
                 SET
+                    n.package_type = $package_type,
+                    n.package_version = $package_version,
+                    n.package_status = $package_status,
+                    n.inferred = $inferred,
                     n.path = $path,
                     n.name = $name,
                     n.kind = $kind,
                     n.depth = $depth,
                     n.root = $root,
-                    n.package_type = $package_type,
-                    n.package_version = $package_version,
-                    n.package_status = $package_status,
                     n.updated_at = timestamp()
                 """,
                 node_id=node_id,
@@ -52,6 +55,8 @@ class Neo4jGraphBuilder:
                 package_type=dependency_info.get("type", "detected") if is_root else "hierarchy",
                 package_version=dependency_info.get("version", "unknown") if is_root else "unknown",
                 package_status=dependency_info.get("status", "unknown") if is_root else "unknown"
+                ,
+                inferred=inferred
             )
 
             return
@@ -71,6 +76,7 @@ class Neo4jGraphBuilder:
                     n.kind = $kind,
                     n.depth = $depth,
                     n.root = $root,
+                    n.inferred = $inferred,
                     n.updated_at = timestamp()
                 """,
                 node_id=node_id,
@@ -80,6 +86,8 @@ class Neo4jGraphBuilder:
                 kind=kind,
                 depth=namespace_node.get("depth"),
                 root=namespace_node.get("path").split(".")[0]
+                ,
+                inferred=inferred
             )
 
             return
@@ -97,6 +105,7 @@ class Neo4jGraphBuilder:
                 n.kind = $kind,
                 n.depth = $depth,
                 n.root = $root,
+                n.inferred = $inferred,
                 n.updated_at = timestamp()
             """,
             node_id=node_id,
@@ -106,6 +115,8 @@ class Neo4jGraphBuilder:
             kind=kind,
             depth=namespace_node.get("depth"),
             root=namespace_node.get("path").split(".")[0]
+            ,
+            inferred=inferred
         )
 
     def _link_namespace_nodes(

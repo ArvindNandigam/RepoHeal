@@ -262,6 +262,7 @@
       <div class="mini-actions">
         <button class="button secondary" id="resetLayout" type="button">Reset layout</button>
         <button class="button secondary" id="expandAll" type="button">Expand all</button>
+        <button class="button secondary" id="toggleClusters" type="button">Collapse namespace clusters</button>
       </div>
 
       <div class="stat">
@@ -303,8 +304,10 @@
       const overlay = document.getElementById("overlay");
       const resetLayoutButton = document.getElementById("resetLayout");
       const expandAllButton = document.getElementById("expandAll");
+      const toggleClustersButton = document.getElementById("toggleClusters");
 
       let cy = null;
+      let namespaceClustersCollapsed = false;
 
       const escapeHtml = (value) => String(value ?? "")
         .replaceAll("&", "&amp;")
@@ -384,6 +387,32 @@
           node.data("collapsed", true);
         }
 
+        runLayout();
+      };
+
+      const getNamespaceParentNodes = () => cy
+        .nodes()
+        .filter((node) => node.isParent() && !["repository", "file"].includes(node.data("type")));
+
+      const setNamespaceClusterState = (collapsed) => {
+        if (!cy) {
+          return;
+        }
+
+        getNamespaceParentNodes().forEach((node) => {
+          const descendants = node.descendants();
+
+          if (collapsed) {
+            descendants.hide();
+          } else {
+            descendants.show();
+          }
+
+          node.data("collapsed", collapsed);
+        });
+
+        namespaceClustersCollapsed = collapsed;
+        toggleClustersButton.textContent = collapsed ? "Expand namespace clusters" : "Collapse namespace clusters";
         runLayout();
       };
 
@@ -528,6 +557,14 @@
                 "border-color": "rgba(255,255,255,0.14)",
                 "text-valign": "top",
                 "text-halign": "center"
+              }
+            },
+            {
+              selector: "node[inferred = true]",
+              style: {
+                "border-style": "dashed",
+                "border-width": 2,
+                "border-color": "rgba(255,255,255,0.9)"
               }
             },
             {
@@ -707,6 +744,8 @@
           cy.nodes().show();
           cy.edges().show();
           cy.nodes().forEach((node) => node.data("collapsed", false));
+          namespaceClustersCollapsed = false;
+          toggleClustersButton.textContent = "Collapse namespace clusters";
           runLayout();
           setStatus(defaultOverlay(payload.nodes?.length || 0, payload.edges?.length || 0));
         });
@@ -715,8 +754,15 @@
           cy.nodes().show();
           cy.edges().show();
           cy.nodes().forEach((node) => node.data("collapsed", false));
+          namespaceClustersCollapsed = false;
+          toggleClustersButton.textContent = "Collapse namespace clusters";
           runLayout();
           setStatus("Expanded all namespace trees.");
+        });
+
+        toggleClustersButton.addEventListener("click", () => {
+          setNamespaceClusterState(!namespaceClustersCollapsed);
+          setStatus(namespaceClustersCollapsed ? "Expanded namespace clusters." : "Collapsed namespace clusters.");
         });
       } catch (error) {
         statusLabel.innerHTML = `<span class="error">Failed to load graph</span>`;
