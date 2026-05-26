@@ -35,6 +35,38 @@ class GraphVisualizer:
     def _get_dependency_graph(self) -> Dict[str, Dict[str, Any]]:
         return self.analysis.get("dependency_graph", {})
 
+    def _build_function_library_map(self) -> Dict[tuple, List[str]]:
+        semantic_files = self._get_semantic_files()
+        function_libraries = {}
+
+        for file_path, semantics in semantic_files.items():
+            api_by_function = {}
+
+            for api in semantics.get("apis", []):
+                function_name = api.get("function")
+
+                if not function_name:
+                    continue
+
+                api_by_function.setdefault(function_name, []).append(api.get("package"))
+
+            for function in semantics.get("functions", []):
+                qualified_name = function.get("qualified_name") or function.get("name")
+                libraries = list(
+                    dict.fromkeys(
+                        [
+                            library
+                            for library in api_by_function.get(qualified_name, [])
+                            if library
+                        ]
+                    )
+                )
+
+                if libraries:
+                    function_libraries[(file_path, qualified_name)] = libraries
+
+        return function_libraries
+
     def _get_hierarchical_imports(self, imports: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
         hierarchical_imports = imports.get("hierarchical", [])
 
@@ -64,6 +96,8 @@ class GraphVisualizer:
         import_files = self._get_import_files()
         semantic_files = self._get_semantic_files()
         dependency_graph = self._get_dependency_graph()
+        function_library_map = self._build_function_library_map()
+        namespace_usage_counts = {}
 
         function_ids = {}
         class_ids = {}
@@ -75,7 +109,12 @@ class GraphVisualizer:
                 "data": {
                     "id": repo_id,
                     "label": repo_id,
-                    "type": "repository"
+                    "type": "repository",
+                    "repo_id": repo_id,
+                    "parent": None,
+                    "usage_count": 0,
+                    "module_path": repo_id,
+                    "leaf_path": repo_id
                 }
             }
         )
@@ -85,6 +124,13 @@ class GraphVisualizer:
 
             hierarchical_imports = self._get_hierarchical_imports(imports)
 
+            for import_record in hierarchical_imports:
+                for namespace_node in import_record.get("nodes", []):
+                    namespace_path = namespace_node.get("path")
+
+                    if namespace_path:
+                        namespace_usage_counts[namespace_path] = namespace_usage_counts.get(namespace_path, 0) + 1
+
             nodes.append(
                 {
                     "data": {
@@ -92,7 +138,10 @@ class GraphVisualizer:
                         "label": file_path.split("/")[-1],
                         "type": "file",
                         "path": file_path,
-                        "imports": len(hierarchical_imports)
+                        "imports": len(hierarchical_imports),
+                        "repo_id": repo_id,
+                        "parent": repo_id,
+                        "scope": "repository"
                     }
                 }
             )
@@ -132,7 +181,12 @@ class GraphVisualizer:
                                 "kind": namespace_node.get("kind", "Module"),
                                 "depth": namespace_node.get("depth"),
                                 "root": import_record.get("root"),
-                                "scope": "local" if import_record.get("is_local") else "external"
+                                "scope": "local" if import_record.get("is_local") else "external",
+                                "repo_id": repo_id,
+                                "parent": namespace_ids.get(namespace_node.get("parent_path")),
+                                "usage_count": namespace_usage_counts.get(namespace_path, 0),
+                                "module_path": import_record.get("module_path"),
+                                "leaf_path": import_record.get("leaf_path")
                             }
                         }
                     )
@@ -217,7 +271,12 @@ class GraphVisualizer:
                         "package_type": package_type,
                         "version": details.get("version", "unknown"),
                         "status": details.get("status", "unknown"),
-                        "color": package_colors.get(package_type, "#999999")
+                        "color": package_colors.get(package_type, "#999999"),
+                        "repo_id": repo_id,
+                        "parent": repo_id,
+                        "usage_count": namespace_usage_counts.get(package, 0),
+                        "module_path": package,
+                        "leaf_path": package
                     }
                 }
             )
@@ -241,7 +300,13 @@ class GraphVisualizer:
                             "qualified_name": qualified_name,
                             "line_start": function.get("line_start"),
                             "line_end": function.get("line_end"),
-                            "is_async": function.get("is_async", False)
+                            "is_async": function.get("is_async", False),
+                            "repo_id": repo_id,
+                            "parent": file_node_id,
+                            "usage_count": len(function_library_map.get((file_path, qualified_name), [])),
+                            "libraries_used": function_library_map.get((file_path, qualified_name), []),
+                            "module_path": qualified_name,
+                            "leaf_path": qualified_name
                         }
                     }
                 )
@@ -272,7 +337,12 @@ class GraphVisualizer:
                             "qualified_name": qualified_name,
                             "line_start": class_node.get("line_start"),
                             "line_end": class_node.get("line_end"),
-                            "bases": class_node.get("bases", [])
+                            "bases": class_node.get("bases", []),
+                            "repo_id": repo_id,
+                            "parent": file_node_id,
+                            "usage_count": len(class_node.get("bases", [])),
+                            "module_path": qualified_name,
+                            "leaf_path": qualified_name
                         }
                     }
                 )
@@ -301,7 +371,12 @@ class GraphVisualizer:
                             "type": "api",
                             "package": api_package,
                             "path": file_path,
-                            "line": api.get("line")
+                            "line": api.get("line"),
+                            "repo_id": repo_id,
+                            "parent": function_id,
+                            "usage_count": 1,
+                            "module_path": api_package,
+                            "leaf_path": api_name
                         }
                     }
                 )

@@ -7,22 +7,32 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg: #07111f;
-      --panel: rgba(12, 20, 33, 0.92);
+      --bg: #08121f;
+      --panel: rgba(11, 18, 30, 0.93);
       --border: rgba(125, 151, 184, 0.2);
-      --text: #e8eef7;
-      --muted: #9fb0c7;
+      --text: #edf4fb;
+      --muted: #9eb0c8;
       --accent: #4fd1c5;
       --accent-2: #7c9cff;
       --danger: #ff7b7b;
+      --repo: #4fd1c5;
+      --file: #5b8cff;
+      --package: #ef5350;
+      --module: #ff9f43;
+      --symbol: #95a3b3;
+      --function: #38d39f;
+      --class: #b26cff;
+      --api: #ff6fb1;
     }
 
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family: "Aptos", "Segoe UI Variable Text", "Segoe UI", sans-serif;
       background:
         radial-gradient(circle at top left, rgba(79, 209, 197, 0.18), transparent 32%),
         radial-gradient(circle at bottom right, rgba(124, 156, 255, 0.18), transparent 30%),
@@ -32,7 +42,7 @@
 
     .shell {
       display: grid;
-      grid-template-columns: 320px 1fr;
+      grid-template-columns: 340px 1fr;
       gap: 20px;
       min-height: 100vh;
       padding: 20px;
@@ -54,11 +64,11 @@
     }
 
     .eyebrow {
+      margin: 0;
       text-transform: uppercase;
       letter-spacing: 0.18em;
       font-size: 11px;
       color: var(--accent);
-      margin: 0;
     }
 
     h1 {
@@ -73,7 +83,8 @@
       line-height: 1.5;
     }
 
-    .stat {
+    .stat,
+    .legend {
       display: grid;
       gap: 6px;
       padding: 14px 16px;
@@ -87,17 +98,35 @@
       color: #fff;
     }
 
-    .stat span {
+    .stat span,
+    .legend-row {
       font-size: 13px;
       color: var(--muted);
       overflow-wrap: anywhere;
     }
 
-    .actions {
+    .legend {
+      gap: 8px;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      flex: 0 0 auto;
+    }
+
+    .actions,
+    .mini-actions {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
-      margin-top: 4px;
     }
 
     .button {
@@ -142,7 +171,7 @@
       border: 1px solid rgba(255, 255, 255, 0.08);
       color: var(--muted);
       font-size: 13px;
-      max-width: min(480px, calc(100% - 36px));
+      max-width: min(520px, calc(100% - 36px));
       pointer-events: none;
       backdrop-filter: blur(10px);
     }
@@ -156,6 +185,16 @@
 
     .details span {
       color: var(--muted);
+    }
+
+    .details code {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      padding: 2px 6px;
+      border-radius: 999px;
+      font-size: 12px;
+      width: fit-content;
     }
 
     .error {
@@ -203,7 +242,23 @@
 
       <div class="stat">
         <strong>Hover</strong>
-        <span>Move over packages to inspect version, status, and type.</span>
+        <span>Inspect node type, namespace, version, usage count, and definitions.</span>
+      </div>
+
+      <div class="legend">
+        <div class="legend-row"><span class="swatch" style="background: var(--repo);"></span>Repository</div>
+        <div class="legend-row"><span class="swatch" style="background: var(--file);"></span>File</div>
+        <div class="legend-row"><span class="swatch" style="background: var(--package);"></span>Package</div>
+        <div class="legend-row"><span class="swatch" style="background: var(--module);"></span>Module</div>
+        <div class="legend-row"><span class="swatch" style="background: var(--symbol);"></span>Symbol</div>
+        <div class="legend-row"><span class="swatch" style="background: var(--function);"></span>Function</div>
+        <div class="legend-row"><span class="swatch" style="background: var(--class);"></span>Class</div>
+        <div class="legend-row"><span class="swatch" style="background: var(--api);"></span>API</div>
+      </div>
+
+      <div class="mini-actions">
+        <button class="button secondary" id="resetLayout" type="button">Reset layout</button>
+        <button class="button secondary" id="expandAll" type="button">Expand all</button>
       </div>
 
       <div class="actions">
@@ -223,31 +278,100 @@
     (async () => {
       const repoOwner = "{{ repo_owner }}";
       const repoName = "{{ repo_name }}";
+      const repoId = `${repoOwner}/${repoName}`;
       const statusLabel = document.getElementById("statusLabel");
       const nodeCount = document.getElementById("nodeCount");
       const edgeCount = document.getElementById("edgeCount");
       const overlay = document.getElementById("overlay");
+      const resetLayoutButton = document.getElementById("resetLayout");
+      const expandAllButton = document.getElementById("expandAll");
+
+      let cy = null;
+
+      const escapeHtml = (value) => String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+
+      const defaultOverlay = (nodes, edges) => `Loaded <strong>${nodes}</strong> nodes and <strong>${edges}</strong> edges.`;
 
       const describeNode = (data) => {
         const details = [];
+        const namespacePath = data.leaf_path || data.module_path || data.path || data.qualified_name || data.id;
+
         if (data.type) details.push(`Type: ${data.type}`);
+        if (data.kind) details.push(`Kind: ${data.kind}`);
+        if (data.repo_id) details.push(`Repo: ${data.repo_id}`);
+        if (namespacePath) details.push(`Namespace: ${namespacePath}`);
+        if (data.path) details.push(`Path: ${data.path}`);
         if (data.package_type) details.push(`Package type: ${data.package_type}`);
         if (data.version) details.push(`Version: ${data.version}`);
         if (data.status) details.push(`Status: ${data.status}`);
-        if (data.path) details.push(`Path: ${data.path}`);
         if (typeof data.imports === "number") details.push(`Imports: ${data.imports}`);
+        if (typeof data.usage_count === "number") details.push(`Usage count: ${data.usage_count}`);
+        if (typeof data.line_start === "number" || typeof data.line_end === "number") {
+          details.push(`Lines: ${data.line_start || "?"}-${data.line_end || "?"}`);
+        }
+        if (Array.isArray(data.libraries_used) && data.libraries_used.length) {
+          details.push(`Libraries: ${data.libraries_used.join(", ")}`);
+        }
+        if (data.parent) details.push(`Parent: ${data.parent}`);
+        if (data.scope) details.push(`Scope: ${data.scope}`);
 
         return `
-          <strong>${data.label || data.id || "Node"}</strong>
+          <strong>${escapeHtml(data.label || data.id || "Node")}</strong>
           <div class="details">
-            ${details.map((item) => `<span>${item}</span>`).join("")}
+            ${details.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
           </div>
         `;
       };
 
+      const setStatus = (message) => {
+        overlay.innerHTML = message;
+      };
+
+      const runLayout = () => {
+        if (!cy) {
+          return;
+        }
+
+        const roots = cy.getElementById(repoId);
+
+        cy.layout({
+          name: "breadthfirst",
+          directed: true,
+          roots: roots.nonempty() ? roots : undefined,
+          spacingFactor: 1.25,
+          avoidOverlap: true,
+          padding: 40,
+          animate: false
+        }).run();
+      };
+
+      const toggleSubtree = (node) => {
+        if (!node.isParent() || node.data("type") === "repository") {
+          return;
+        }
+
+        const descendants = node.descendants();
+        const collapsed = Boolean(node.data("collapsed"));
+
+        if (collapsed) {
+          descendants.show();
+          node.data("collapsed", false);
+        } else {
+          descendants.hide();
+          node.data("collapsed", true);
+        }
+
+        runLayout();
+      };
+
       try {
         statusLabel.textContent = "Analyzing";
-        overlay.innerHTML = `Running analysis for <strong>${repoOwner}/${repoName}</strong>...`;
+        setStatus(`Running analysis for <strong>${repoOwner}/${repoName}</strong>...`);
 
         const analyzeResponse = await fetch(`/analyze/${repoOwner}/${repoName}`, {
           credentials: "same-origin"
@@ -258,11 +382,12 @@
         }
 
         statusLabel.textContent = "Loading graph";
-        overlay.innerHTML = `Fetching graph data from <strong>/graph/${repoOwner}/${repoName}</strong>.`;
+        setStatus(`Fetching graph data from <strong>/graph/${repoOwner}/${repoName}</strong>.`);
 
         const response = await fetch(`/graph/${repoOwner}/${repoName}`, {
           credentials: "same-origin"
         });
+
         if (!response.ok) {
           throw new Error(`Graph API returned ${response.status}`);
         }
@@ -276,9 +401,9 @@
         nodeCount.textContent = String((payload.nodes || []).length);
         edgeCount.textContent = String((payload.edges || []).length);
         statusLabel.textContent = "Graph loaded";
-        overlay.innerHTML = `Loaded <strong>${payload.nodes?.length || 0}</strong> nodes and <strong>${payload.edges?.length || 0}</strong> edges.`;
+        setStatus(defaultOverlay(payload.nodes?.length || 0, payload.edges?.length || 0));
 
-        const cy = cytoscape({
+        cy = cytoscape({
           container: document.getElementById("graph"),
           elements,
           style: [
@@ -290,51 +415,217 @@
                 "text-outline-color": "#07111f",
                 "text-outline-width": 2,
                 "font-size": 11,
-                "background-color": "data(color)",
+                "background-color": "#6b7a90",
                 "border-width": 1,
                 "border-color": "rgba(255,255,255,0.15)",
                 "width": 34,
-                "height": 34
+                "height": 34,
+                "text-valign": "center",
+                "text-halign": "center"
               }
             },
             {
               selector: "node[type = 'repository']",
               style: {
-                "width": 48,
-                "height": 48,
-                "background-color": "#4fd1c5"
+                "width": 52,
+                "height": 52,
+                "background-color": "var(--repo)",
+                "shape": "round-rectangle",
+                "border-width": 2,
+                "border-color": "rgba(79, 209, 197, 0.85)",
+                "font-size": 12
+              }
+            },
+            {
+              selector: "node[type = 'file']",
+              style: {
+                "width": 38,
+                "height": 38,
+                "background-color": "var(--file)",
+                "shape": "round-rectangle"
+              }
+            },
+            {
+              selector: "node[type = 'package']",
+              style: {
+                "width": 42,
+                "height": 42,
+                "background-color": "data(color)",
+                "shape": "hexagon"
+              }
+            },
+            {
+              selector: "node[type = 'module']",
+              style: {
+                "width": 32,
+                "height": 32,
+                "background-color": "var(--module)",
+                "shape": "round-rectangle"
+              }
+            },
+            {
+              selector: "node[type = 'symbol']",
+              style: {
+                "width": 26,
+                "height": 26,
+                "background-color": "var(--symbol)",
+                "shape": "ellipse",
+                "font-size": 10
+              }
+            },
+            {
+              selector: "node[type = 'function']",
+              style: {
+                "width": 34,
+                "height": 34,
+                "background-color": "var(--function)",
+                "shape": "round-rectangle"
+              }
+            },
+            {
+              selector: "node[type = 'class']",
+              style: {
+                "width": 34,
+                "height": 34,
+                "background-color": "var(--class)",
+                "shape": "round-rectangle"
+              }
+            },
+            {
+              selector: "node[type = 'api']",
+              style: {
+                "width": 28,
+                "height": 28,
+                "background-color": "var(--api)",
+                "shape": "diamond"
+              }
+            },
+            {
+              selector: "node:parent",
+              style: {
+                "padding": 18,
+                "background-opacity": 0.08,
+                "background-color": "#0d1523",
+                "border-width": 1,
+                "border-color": "rgba(255,255,255,0.14)",
+                "text-valign": "top",
+                "text-halign": "center"
               }
             },
             {
               selector: "edge",
               style: {
-                "width": 2,
-                "line-color": "rgba(159, 176, 199, 0.55)",
-                "target-arrow-color": "rgba(159, 176, 199, 0.55)",
+                "width": 1.6,
+                "line-color": "rgba(159, 176, 199, 0.42)",
+                "target-arrow-color": "rgba(159, 176, 199, 0.42)",
                 "target-arrow-shape": "triangle",
                 "curve-style": "bezier"
+              }
+            },
+            {
+              selector: "edge[relationship = 'CONTAINS']",
+              style: {
+                "width": 1,
+                "line-style": "solid",
+                "target-arrow-shape": "none",
+                "line-color": "rgba(125, 151, 184, 0.4)"
+              }
+            },
+            {
+              selector: "edge[relationship = 'IMPORTS']",
+              style: {
+                "width": 2,
+                "line-style": "solid",
+                "line-color": "rgba(91, 140, 255, 0.7)",
+                "target-arrow-color": "rgba(91, 140, 255, 0.85)",
+                "target-arrow-shape": "triangle"
+              }
+            },
+            {
+              selector: "edge[relationship = 'DEFINES']",
+              style: {
+                "width": 1.5,
+                "line-color": "rgba(79, 209, 197, 0.55)",
+                "target-arrow-color": "rgba(79, 209, 197, 0.75)",
+                "target-arrow-shape": "triangle"
+              }
+            },
+            {
+              selector: "edge[relationship = 'CALLS']",
+              style: {
+                "width": 2.1,
+                "line-color": "rgba(178, 108, 255, 0.7)",
+                "target-arrow-color": "rgba(178, 108, 255, 0.9)",
+                "curve-style": "unbundled-bezier",
+                "control-point-distances": 30,
+                "control-point-weights": 0.55
+              }
+            },
+            {
+              selector: "edge[relationship = 'USES_API']",
+              style: {
+                "width": 2,
+                "line-style": "dashed",
+                "line-color": "rgba(255, 111, 177, 0.8)",
+                "target-arrow-color": "rgba(255, 111, 177, 0.9)",
+                "target-arrow-shape": "triangle"
+              }
+            },
+            {
+              selector: "edge[relationship = 'INHERITS']",
+              style: {
+                "width": 3,
+                "line-color": "rgba(255, 211, 106, 0.85)",
+                "target-arrow-color": "rgba(255, 211, 106, 0.95)",
+                "target-arrow-shape": "triangle"
               }
             }
           ],
           layout: {
-            name: "cose",
-            animate: false,
-            fit: true,
-            padding: 40
+            name: "breadthfirst",
+            directed: true,
+            spacingFactor: 1.25,
+            avoidOverlap: true,
+            padding: 40,
+            animate: false
           }
         });
 
+        runLayout();
+
         cy.on("tap", "node", (event) => {
-          const data = event.target.data();
-          overlay.innerHTML = describeNode(data);
+          const node = event.target;
+          const data = node.data();
+
+          if (node.isParent() && data.type !== "repository") {
+            toggleSubtree(node);
+          }
+
+          setStatus(describeNode(data));
         });
 
         cy.on("mouseover", "node", (event) => {
-          overlay.innerHTML = describeNode(event.target.data());
+          setStatus(describeNode(event.target.data()));
         });
 
         cy.on("mouseout", "node", () => {
-          overlay.innerHTML = `Loaded <strong>${payload.nodes?.length || 0}</strong> nodes and <strong>${payload.edges?.length || 0}</strong> edges.`;
+          setStatus(defaultOverlay(payload.nodes?.length || 0, payload.edges?.length || 0));
+        });
+
+        resetLayoutButton.addEventListener("click", () => {
+          cy.nodes().show();
+          cy.edges().show();
+          cy.nodes().forEach((node) => node.data("collapsed", false));
+          runLayout();
+          setStatus(defaultOverlay(payload.nodes?.length || 0, payload.edges?.length || 0));
+        });
+
+        expandAllButton.addEventListener("click", () => {
+          cy.nodes().show();
+          cy.edges().show();
+          cy.nodes().forEach((node) => node.data("collapsed", false));
+          runLayout();
+          setStatus("Expanded all namespace trees.");
         });
       } catch (error) {
         statusLabel.innerHTML = `<span class="error">Failed to load graph</span>`;
