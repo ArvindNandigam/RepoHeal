@@ -116,6 +116,85 @@
       font-size: 24px;
     }
 
+    .progress-card {
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+      border-radius: 18px;
+      background: var(--panel-2);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .progress-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .progress-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+    }
+
+    .progress-step {
+      font-size: 13px;
+      color: var(--text);
+      text-align: right;
+    }
+
+    .progress-bar {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .progress-segment {
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-segment::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      transform: scaleX(0);
+      transform-origin: left center;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      transition: transform 180ms ease;
+    }
+
+    .progress-segment.complete::after {
+      transform: scaleX(1);
+    }
+
+    .progress-segment.active::after {
+      transform: scaleX(0.68);
+    }
+
+    .progress-labels {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .progress-labels span {
+      font-size: 11px;
+      line-height: 1.35;
+      color: var(--muted);
+    }
+
+    .progress-labels span.active {
+      color: var(--text);
+      font-weight: 700;
+    }
+
     .toolbar {
       display: flex;
       flex-wrap: wrap;
@@ -271,6 +350,25 @@
             <strong id="statusLabel">Loading</strong>
           </div>
         </div>
+
+        <div class="progress-card">
+          <div class="progress-header">
+            <div class="progress-title">Dashboard progress</div>
+            <div class="progress-step" id="progressStepLabel">Step 1 of 4: Connecting</div>
+          </div>
+          <div class="progress-bar" id="progressBar">
+            <div class="progress-segment" data-step-index="0"></div>
+            <div class="progress-segment" data-step-index="1"></div>
+            <div class="progress-segment" data-step-index="2"></div>
+            <div class="progress-segment" data-step-index="3"></div>
+          </div>
+          <div class="progress-labels" id="progressLabels">
+            <span data-step-index="0" class="active">Connecting</span>
+            <span data-step-index="1">Loading repos</span>
+            <span data-step-index="2">Counting access</span>
+            <span data-step-index="3">Rendering cards</span>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -298,11 +396,34 @@
     const repoCount = document.getElementById("repoCount");
     const privateCount = document.getElementById("privateCount");
     const statusLabel = document.getElementById("statusLabel");
+    const progressStepLabel = document.getElementById("progressStepLabel");
+    const progressSegments = Array.from(document.querySelectorAll("#progressBar .progress-segment"));
+    const progressLabels = Array.from(document.querySelectorAll("#progressLabels span"));
 
     let repositories = [];
+    const progressSteps = [
+      "Connecting to dashboard API",
+      "Loading installed repositories",
+      "Counting private repositories",
+      "Rendering repository cards"
+    ];
 
     function setVisible(element, visible) {
       element.classList.toggle("hidden", !visible);
+    }
+
+    function setProgress(stepIndex) {
+      const currentIndex = Math.max(0, Math.min(stepIndex, progressSteps.length - 1));
+      progressStepLabel.textContent = `Step ${currentIndex + 1} of ${progressSteps.length}: ${progressSteps[currentIndex]}`;
+
+      progressSegments.forEach((segment, index) => {
+        segment.classList.toggle("complete", index < currentIndex);
+        segment.classList.toggle("active", index === currentIndex);
+      });
+
+      progressLabels.forEach((label, index) => {
+        label.classList.toggle("active", index === currentIndex);
+      });
     }
 
     function render(items) {
@@ -355,23 +476,35 @@
 
     async function loadDashboard() {
       try {
+        setProgress(0);
         const response = await fetch("/dashboard/data", { credentials: "same-origin" });
         if (!response.ok) {
           throw new Error(`Dashboard API returned ${response.status}`);
         }
 
+        setProgress(1);
         const payload = await response.json();
         repositories = payload.repositories || [];
         repoCount.textContent = String(repositories.length);
+        setProgress(2);
         privateCount.textContent = String(repositories.filter((repo) => repo.private).length);
+        setProgress(3);
         statusLabel.textContent = "Ready";
         loadingState.classList.add("hidden");
         render(repositories);
+        progressStepLabel.textContent = `Complete: ${progressSteps[progressSteps.length - 1]}`;
+        progressSegments.forEach((segment) => {
+          segment.classList.add("complete");
+          segment.classList.remove("active");
+        });
+        progressLabels.forEach((label) => label.classList.remove("active"));
+        progressLabels[progressLabels.length - 1].classList.add("active");
       } catch (error) {
         loadingState.classList.add("hidden");
         errorState.textContent = error.message;
         errorState.classList.remove("hidden");
         statusLabel.textContent = "Failed";
+        progressStepLabel.textContent = "Failed while loading dashboard";
       }
     }
 
