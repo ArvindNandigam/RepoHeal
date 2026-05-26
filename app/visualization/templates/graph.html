@@ -679,6 +679,27 @@
             .selector("node[type='api']").style({ width: baseSizes.api * s, height: baseSizes.api * s }).update();
         };
 
+        const downloadPng = (dataUrlOrBlob, filename) => {
+          const link = document.createElement("a");
+          link.download = filename;
+          link.style.display = "none";
+
+          if (typeof dataUrlOrBlob === "string") {
+            link.href = dataUrlOrBlob;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            return;
+          }
+
+          const objectUrl = URL.createObjectURL(dataUrlOrBlob);
+          link.href = objectUrl;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+        };
+
         const applyLayoutSettings = () => {
           const spacing = Number(spacingRange.value) || 2.5;
           const padding = Number(paddingRange.value) || 120;
@@ -707,14 +728,27 @@
         layoutSelect.addEventListener('change', () => applyLayoutSettings());
         nodeScaleRange.addEventListener('input', () => applyLayoutSettings());
 
-        exportPNGButton.addEventListener('click', () => {
+        exportPNGButton.addEventListener('click', async () => {
           try {
-            const data = cy.png({ full: true, scale: 2 });
-            const w = window.open('about:blank');
-            if (w) w.document.write(`<img src="${data}" style="max-width:100%;height:auto;">`);
+            const filename = `${repoOwner}-${repoName}-graph.png`;
+            const response = await fetch(`/visualize/${encodeURIComponent(repoOwner)}/${encodeURIComponent(repoName)}/export.png`, {
+              credentials: "same-origin"
+            });
+
+            if (response.ok) {
+              downloadPng(await response.blob(), filename);
+              return;
+            }
+
+            throw new Error(`Server export returned ${response.status}`);
           } catch (e) {
-            console.error('Failed to export PNG', e);
-            alert('Export failed: ' + String(e));
+            try {
+              const filename = `${repoOwner}-${repoName}-graph.png`;
+              downloadPng(cy.png({ full: true, scale: 2 }), filename);
+            } catch (fallbackError) {
+              console.error('Failed to export PNG', e, fallbackError);
+              alert('Export failed: ' + String(e));
+            }
           }
         });
 
