@@ -1,5 +1,6 @@
 from collections import defaultdict
 
+from app.analysis.package_normalization import build_namespace_hierarchy
 from app.analysis.package_normalization import normalize_package_name
 from app.graph.connection import neo4j_connection
 from app.utils.logger import get_logger
@@ -8,6 +9,165 @@ logger = get_logger(__name__)
 
 
 class Neo4jGraphBuilder:
+
+    def _merge_namespace_node(
+        self,
+        session,
+        repo_id,
+        node_id,
+        namespace_node,
+        dependency_info,
+        is_root=False
+    ):
+
+        kind = namespace_node.get("kind", "Module")
+
+        if kind == "Package":
+
+            session.run(
+                """
+                MERGE (n:Namespace:Package {
+                    id: $node_id,
+                    repo_id: $repo_id
+                })
+
+                SET
+                    n.path = $path,
+                    n.name = $name,
+                    n.kind = $kind,
+                    n.depth = $depth,
+                    n.root = $root,
+                    n.package_type = $package_type,
+                    n.package_version = $package_version,
+                    n.package_status = $package_status,
+                    n.updated_at = timestamp()
+                """,
+                node_id=node_id,
+                repo_id=repo_id,
+                path=namespace_node.get("path"),
+                name=namespace_node.get("label"),
+                kind=kind,
+                depth=namespace_node.get("depth"),
+                root=namespace_node.get("path").split(".")[0],
+                package_type=dependency_info.get("type", "detected") if is_root else "hierarchy",
+                package_version=dependency_info.get("version", "unknown") if is_root else "unknown",
+                package_status=dependency_info.get("status", "unknown") if is_root else "unknown"
+            )
+
+            return
+
+        if kind == "Symbol":
+
+            session.run(
+                """
+                MERGE (n:Namespace:Symbol {
+                    id: $node_id,
+                    repo_id: $repo_id
+                })
+
+                SET
+                    n.path = $path,
+                    n.name = $name,
+                    n.kind = $kind,
+                    n.depth = $depth,
+                    n.root = $root,
+                    n.updated_at = timestamp()
+                """,
+                node_id=node_id,
+                repo_id=repo_id,
+                path=namespace_node.get("path"),
+                name=namespace_node.get("label"),
+                kind=kind,
+                depth=namespace_node.get("depth"),
+                root=namespace_node.get("path").split(".")[0]
+            )
+
+            return
+
+        session.run(
+            """
+            MERGE (n:Namespace:Module {
+                id: $node_id,
+                repo_id: $repo_id
+            })
+
+            SET
+                n.path = $path,
+                n.name = $name,
+                n.kind = $kind,
+                n.depth = $depth,
+                n.root = $root,
+                n.updated_at = timestamp()
+            """,
+            node_id=node_id,
+            repo_id=repo_id,
+            path=namespace_node.get("path"),
+            name=namespace_node.get("label"),
+            kind=kind,
+            depth=namespace_node.get("depth"),
+            root=namespace_node.get("path").split(".")[0]
+        )
+
+    def _link_namespace_nodes(
+        self,
+        session,
+        repo_id,
+        parent_id,
+        child_id,
+        relationship
+    ):
+
+        if relationship == "EXPOSES":
+
+            session.run(
+                """
+                MATCH (parent:Namespace {id: $parent_id, repo_id: $repo_id})
+                MATCH (child:Namespace {id: $child_id, repo_id: $repo_id})
+                MERGE (parent)-[:EXPOSES]->(child)
+                """,
+                parent_id=parent_id,
+                child_id=child_id,
+                repo_id=repo_id
+            )
+
+            return
+
+        session.run(
+            """
+            MATCH (parent:Namespace {id: $parent_id, repo_id: $repo_id})
+            MATCH (child:Namespace {id: $child_id, repo_id: $repo_id})
+            MERGE (parent)-[:CONTAINS]->(child)
+            """,
+            parent_id=parent_id,
+            child_id=child_id,
+            repo_id=repo_id
+        )
+
+    def _iter_hierarchical_imports(self, imports):
+
+        hierarchical_imports = imports.get("hierarchical", [])
+
+        if hierarchical_imports:
+            return hierarchical_imports
+
+        fallback_imports = []
+
+        for imported_package in dict.fromkeys(imports.get("normalized", [])):
+
+            hierarchy = build_namespace_hierarchy(imported_package)
+
+            fallback_imports.append(
+                {
+                    "source": "import",
+                    "module": imported_package,
+                    "symbol": None,
+                    "root": normalize_package_name(imported_package),
+                    "is_local": False,
+                    **hierarchy
+                }
+            )
+
+        return fallback_imports
 
     def build_graph(
         self,
@@ -84,51 +244,59 @@ class Neo4jGraphBuilder:
                     file_id=file_id
                 )
 
-                for imported_package in dict.fromkeys(
-                    imports.get("normalized", [])
-                ):
+                for import_record in self._iter_hierarchical_imports(imports):
 
-                    if not imported_package:
+                    nodes = import_record.get("nodes", [])
+
+                    if not nodes:
                         continue
 
                     dependency_info = dependency_graph.get(
-                        normalize_package_name(imported_package),
+                        normalize_package_name(import_record.get("root")),
                         {}
                     )
 
-                    session.run(
-                        """
-                        MERGE (p:Package {
-                            repo_id: $repo_id,
-                            name: $package_name
-                        })
+                    previous_node_id = None
 
-                        SET
-                            p.type = $package_type,
-                            p.version = $package_version,
-                            p.status = $package_status,
-                            p.updated_at = timestamp()
-                        """,
-                        repo_id=repo_id,
-                        package_name=imported_package,
-                        package_type=dependency_info.get("type", "detected"),
-                        package_version=dependency_info.get("version", "unknown"),
-                        package_status=dependency_info.get("status", "unknown")
-                    )
+                    for index, namespace_node in enumerate(nodes):
+
+                        node_id = (
+                            f"{repo_id}:namespace:{namespace_node.get('path')}"
+                        )
+
+                        self._merge_namespace_node(
+                            session,
+                            repo_id,
+                            node_id,
+                            namespace_node,
+                            dependency_info,
+                            is_root=(index == 0)
+                        )
+
+                        if previous_node_id:
+
+                            self._link_namespace_nodes(
+                                session,
+                                repo_id,
+                                previous_node_id,
+                                node_id,
+                                namespace_node.get("relationship", "CONTAINS")
+                            )
+
+                        previous_node_id = node_id
+
+                    leaf_node = nodes[-1]
+                    leaf_node_id = f"{repo_id}:namespace:{leaf_node.get('path')}"
 
                     session.run(
                         """
                         MATCH (f:File {id: $file_id})
-                        MATCH (p:Package {
-                            repo_id: $repo_id,
-                            name: $package_name
-                        })
-
-                        MERGE (f)-[:IMPORTS]->(p)
+                        MATCH (n:Namespace {id: $node_id, repo_id: $repo_id})
+                        MERGE (f)-[:IMPORTS]->(n)
                         """,
-                        repo_id=repo_id,
                         file_id=file_id,
-                        package_name=imported_package
+                        node_id=leaf_node_id,
+                        repo_id=repo_id
                     )
 
             for file_path, semantics in semantic_files.items():

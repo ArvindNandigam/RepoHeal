@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from app.analysis.package_normalization import (
+    build_namespace_hierarchy,
     build_module_name,
     is_local_import,
     normalize_package_name
@@ -51,10 +52,13 @@ def extract_imports_from_python_source(source, module_index=None):
         "from": [],
         "normalized": [],
         "external": [],
-        "local": []
+        "local": [],
+        "hierarchical": []
     }
 
     module_index = module_index or set()
+
+    hierarchical_imports = []
 
     try:
 
@@ -71,6 +75,21 @@ def extract_imports_from_python_source(source, module_index=None):
                     )
 
                     normalized_name = normalize_package_name(alias.name)
+                    hierarchy = build_namespace_hierarchy(alias.name)
+                    import_record = {
+                        "source": "import",
+                        "module": alias.name,
+                        "symbol": None,
+                        "alias": alias.asname,
+                        "root": normalized_name,
+                        "is_local": is_local_import(
+                            alias.name,
+                            module_index
+                        ),
+                        **hierarchy
+                    }
+
+                    hierarchical_imports.append(import_record)
 
                     if is_local_import(alias.name, module_index):
 
@@ -106,6 +125,28 @@ def extract_imports_from_python_source(source, module_index=None):
                             normalized_name
                         )
 
+                    for imported in node.names:
+
+                        hierarchy = build_namespace_hierarchy(
+                            node.module,
+                            imported.name
+                        )
+
+                        hierarchical_imports.append(
+                            {
+                                "source": "from",
+                                "module": node.module,
+                                "symbol": imported.name,
+                                "alias": imported.asname,
+                                "root": normalized_name,
+                                "is_local": is_local_import(
+                                    node.module,
+                                    module_index
+                                ),
+                                **hierarchy
+                            }
+                        )
+
     except Exception as e:
 
         logger.error(
@@ -127,6 +168,25 @@ def extract_imports_from_python_source(source, module_index=None):
     imports["local"] = list(dict.fromkeys(
         imports["local"]
     ))
+
+    unique_hierarchical_imports = []
+    seen_hierarchical_imports = set()
+
+    for import_record in hierarchical_imports:
+        unique_key = (
+            import_record.get("source"),
+            import_record.get("module"),
+            import_record.get("symbol"),
+            import_record.get("alias")
+        )
+
+        if unique_key in seen_hierarchical_imports:
+            continue
+
+        seen_hierarchical_imports.add(unique_key)
+        unique_hierarchical_imports.append(import_record)
+
+    imports["hierarchical"] = unique_hierarchical_imports
 
     return imports
 
@@ -308,7 +368,8 @@ def extract_imports_from_notebook(file_path):
         "direct": [],
         "from": [],
         "normalized": [],
-        "local": []
+        "local": [],
+        "hierarchical": []
     }
 
     try:
@@ -354,6 +415,10 @@ def extract_imports_from_notebook(file_path):
                 cell_imports.get("local", [])
             )
 
+            imports["hierarchical"].extend(
+                cell_imports.get("hierarchical", [])
+            )
+
     except Exception as e:
 
         logger.error(
@@ -376,6 +441,25 @@ def extract_imports_from_notebook(file_path):
     imports["local"] = list(dict.fromkeys(
         imports["local"]
     ))
+
+    unique_hierarchical_imports = []
+    seen_hierarchical_imports = set()
+
+    for import_record in imports["hierarchical"]:
+        unique_key = (
+            import_record.get("source"),
+            import_record.get("module"),
+            import_record.get("symbol"),
+            import_record.get("alias")
+        )
+
+        if unique_key in seen_hierarchical_imports:
+            continue
+
+        seen_hierarchical_imports.add(unique_key)
+        unique_hierarchical_imports.append(import_record)
+
+    imports["hierarchical"] = unique_hierarchical_imports
 
     return imports
 

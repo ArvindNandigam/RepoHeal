@@ -2,7 +2,10 @@
 
 from typing import Any, Dict, List
 
-from app.analysis.package_normalization import normalize_package_name
+from app.analysis.package_normalization import (
+    build_namespace_hierarchy,
+    normalize_package_name
+)
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -32,6 +35,28 @@ class GraphVisualizer:
     def _get_dependency_graph(self) -> Dict[str, Dict[str, Any]]:
         return self.analysis.get("dependency_graph", {})
 
+    def _get_hierarchical_imports(self, imports: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+        hierarchical_imports = imports.get("hierarchical", [])
+
+        if hierarchical_imports:
+            return hierarchical_imports
+
+        fallback_imports = []
+
+        for package in dict.fromkeys(imports.get("normalized", [])):
+            fallback_imports.append(
+                {
+                    "source": "import",
+                    "module": package,
+                    "symbol": None,
+                    "root": normalize_package_name(package),
+                    "is_local": False,
+                    **build_namespace_hierarchy(package)
+                }
+            )
+
+        return fallback_imports
+
     def to_cytoscape_format(self, repo_id: str) -> Dict:
         nodes = []
         edges = []
@@ -42,6 +67,8 @@ class GraphVisualizer:
 
         function_ids = {}
         class_ids = {}
+        namespace_ids = {}
+        node_index = {}
 
         nodes.append(
             {
@@ -56,6 +83,8 @@ class GraphVisualizer:
         for file_path, imports in import_files.items():
             file_node_id = f"file_{file_path}"
 
+            hierarchical_imports = self._get_hierarchical_imports(imports)
+
             nodes.append(
                 {
                     "data": {
@@ -63,7 +92,7 @@ class GraphVisualizer:
                         "label": file_path.split("/")[-1],
                         "type": "file",
                         "path": file_path,
-                        "imports": len(imports.get("normalized", []))
+                        "imports": len(hierarchical_imports)
                     }
                 }
             )
@@ -79,6 +108,81 @@ class GraphVisualizer:
                 }
             )
 
+            for import_record in hierarchical_imports:
+
+                nodes_for_import = import_record.get("nodes", [])
+
+                for namespace_node in nodes_for_import:
+
+                    namespace_path = namespace_node.get("path")
+
+                    if not namespace_path or namespace_path in namespace_ids:
+                        continue
+
+                    namespace_id = f"ns_{namespace_path}"
+                    namespace_ids[namespace_path] = namespace_id
+
+                    nodes.append(
+                        {
+                            "data": {
+                                "id": namespace_id,
+                                "label": namespace_node.get("label"),
+                                "type": namespace_node.get("kind", "Module").lower(),
+                                "path": namespace_path,
+                                "kind": namespace_node.get("kind", "Module"),
+                                "depth": namespace_node.get("depth"),
+                                "root": import_record.get("root"),
+                                "scope": "local" if import_record.get("is_local") else "external"
+                            }
+                        }
+                    )
+                    node_index[namespace_id] = len(nodes) - 1
+
+                for namespace_node in nodes_for_import:
+
+                    namespace_path = namespace_node.get("path")
+                    parent_path = namespace_node.get("parent_path")
+                    relationship = namespace_node.get("relationship", "CONTAINS")
+
+                    if not namespace_path or not parent_path:
+                        continue
+
+                    parent_id = namespace_ids.get(parent_path)
+                    child_id = namespace_ids.get(namespace_path)
+
+                    if not parent_id or not child_id:
+                        continue
+
+                    edges.append(
+                        {
+                            "data": {
+                                "id": f"{parent_id}_{relationship.lower()}_{child_id}",
+                                "source": parent_id,
+                                "target": child_id,
+                                "relationship": relationship
+                            }
+                        }
+                    )
+
+                leaf_node = nodes_for_import[-1] if nodes_for_import else None
+
+                if not leaf_node:
+                    continue
+
+                leaf_namespace_id = namespace_ids.get(leaf_node.get("path"))
+
+                if leaf_namespace_id:
+                    edges.append(
+                        {
+                            "data": {
+                                "id": f"{file_node_id}_imports_{leaf_namespace_id}",
+                                "source": file_node_id,
+                                "target": leaf_namespace_id,
+                                "relationship": "IMPORTS"
+                            }
+                        }
+                    )
+
         package_colors = {
             "detected": "#cc3333",
             "local": "#9966ff",
@@ -88,13 +192,28 @@ class GraphVisualizer:
 
         for package, details in dependency_graph.items():
             package_type = details.get("type", "detected")
+            package_id = f"ns_{package}"
+
+            if package_id in node_index:
+
+                nodes[node_index[package_id]]["data"].update(
+                    {
+                        "package_type": package_type,
+                        "version": details.get("version", "unknown"),
+                        "status": details.get("status", "unknown"),
+                        "color": package_colors.get(package_type, "#999999")
+                    }
+                )
+
+                continue
 
             nodes.append(
                 {
                     "data": {
-                        "id": f"pkg_{package}",
+                        "id": package_id,
                         "label": package,
                         "type": "package",
+                        "kind": "Package",
                         "package_type": package_type,
                         "version": details.get("version", "unknown"),
                         "status": details.get("status", "unknown"),
@@ -102,24 +221,7 @@ class GraphVisualizer:
                     }
                 }
             )
-
-        for file_path, imports in import_files.items():
-            file_node_id = f"file_{file_path}"
-
-            for package in dict.fromkeys(imports.get("normalized", [])):
-                if package not in dependency_graph:
-                    continue
-
-                edges.append(
-                    {
-                        "data": {
-                            "id": f"{file_path}_imports_{package}",
-                            "source": file_node_id,
-                            "target": f"pkg_{package}",
-                            "relationship": "IMPORTS"
-                        }
-                    }
-                )
+            node_index[package_id] = len(nodes) - 1
 
         for file_path, semantics in semantic_files.items():
             file_node_id = f"file_{file_path}"
@@ -299,6 +401,10 @@ class GraphVisualizer:
             "repository_stats": {
                 "total_files": len(import_files),
                 "total_imports": imports_summary.get("total_imports", 0),
+                "total_namespace_nodes": sum(
+                    len(self._get_hierarchical_imports(imports))
+                    for imports in import_files.values()
+                ),
                 "total_functions": semantic_summary.get("total_functions", 0),
                 "total_classes": semantic_summary.get("total_classes", 0),
                 "total_api_calls": semantic_summary.get("total_api_calls", 0)
@@ -339,6 +445,8 @@ class GraphVisualizer:
             }
         )
 
+        hierarchical_imports = self._get_hierarchical_imports(module_imports)
+
         all_imports = list(dict.fromkeys(
             module_imports.get("normalized", [])
         ))
@@ -350,7 +458,8 @@ class GraphVisualizer:
             "imports": {
                 "direct": module_imports.get("direct", []),
                 "from": module_imports.get("from", []),
-                "normalized": module_imports.get("normalized", [])
+                "normalized": module_imports.get("normalized", []),
+                "hierarchical": hierarchical_imports
             },
             "functions": module_semantics.get("functions", []),
             "classes": module_semantics.get("classes", []),
@@ -363,15 +472,19 @@ class GraphVisualizer:
         }
 
     def get_package_impact(self, package: str) -> Dict:
-        normalized_package = normalize_package_name(package)
+        requested_namespace = package.strip().strip(".")
+        normalized_package = normalize_package_name(requested_namespace)
         dependent_files = []
 
         import_files = self._get_import_files()
 
         for file_path, imports in import_files.items():
-            all_imports = list(dict.fromkeys(imports.get("normalized", [])))
+            hierarchical_imports = self._get_hierarchical_imports(imports)
 
-            if normalized_package in all_imports:
+            if any(
+                self._namespace_matches_request(import_record, requested_namespace, normalized_package)
+                for import_record in hierarchical_imports
+            ):
                 dependent_files.append(file_path)
 
         package_data = self._get_dependency_graph().get(
@@ -380,11 +493,52 @@ class GraphVisualizer:
         )
 
         return {
-            "package": normalized_package,
+            "package": requested_namespace or normalized_package,
+            "root_package": normalized_package,
             "package_data": package_data,
             "dependent_modules": dependent_files,
             "impact_count": len(dependent_files)
         }
+
+    def _namespace_matches_request(
+        self,
+        import_record: Dict[str, Any],
+        requested_namespace: str,
+        root_package: str
+    ) -> bool:
+
+        if not requested_namespace:
+            return False
+
+        candidate_paths = []
+
+        for namespace_node in import_record.get("nodes", []):
+            namespace_path = namespace_node.get("path")
+
+            if namespace_path:
+                candidate_paths.append(namespace_path)
+
+        candidate_paths.extend(
+            [
+                import_record.get("module"),
+                import_record.get("root")
+            ]
+        )
+
+        for candidate_path in candidate_paths:
+            if not candidate_path:
+                continue
+
+            if candidate_path == requested_namespace:
+                return True
+
+            if candidate_path.startswith(f"{requested_namespace}."):
+                return True
+
+            if requested_namespace == root_package and candidate_path.startswith(f"{root_package}."):
+                return True
+
+        return False
 
 
 def visualize_repository(repo_id: str, analysis: Dict) -> Dict:
