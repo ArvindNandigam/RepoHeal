@@ -372,7 +372,7 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
           return;
         }
 
-        const rootNode = cy.getElementById(repoId);
+        const rootNode = cy.nodes().filter((node) => node.id() === repoId);
 
         const layout = cy.layout({
           name: "breadthfirst",
@@ -616,16 +616,7 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
             }
           ],
           layout: {
-            name: "breadthfirst",
-            directed: true,
-            roots: cy.getElementById(repoId),
-            circle: false,
-            spacingFactor: 1.35,
-            avoidOverlap: true,
-            nodeDimensionsIncludeLabels: true,
-            direction: getLayoutDirection(),
-            padding: 60,
-            animate: false
+            name: "preset"
           }
         });
 
