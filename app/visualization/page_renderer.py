@@ -203,8 +203,6 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
     }
   </style>
   <script src="https://unpkg.com/cytoscape@3.31.2/dist/cytoscape.min.js"></script>
-  <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
-  <script src="https://unpkg.com/cytoscape-dagre@2.3.2/cytoscape-dagre.js"></script>
 </head>
 <body>
   <div class="shell">
@@ -361,17 +359,28 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
         return true;
       };
 
-      const runDagreLayout = () => {
+      const getLayoutDirection = () => {
+        const container = cy?.container();
+        const width = container?.clientWidth || window.innerWidth || 1;
+        const height = container?.clientHeight || window.innerHeight || 1;
+
+        return width >= height * 1.15 ? "right" : "down";
+      };
+
+      const runTreeLayout = () => {
         if (!cy) {
           return;
         }
 
         const layout = cy.layout({
-          name: "dagre",
-          nodeSep: 60,
-          edgeSep: 12,
-          rankSep: 70,
-          rankDir: "TB",
+          name: "breadthfirst",
+          directed: true,
+          roots: [repoId],
+          circle: false,
+          spacingFactor: 1.35,
+          avoidOverlap: true,
+          nodeDimensionsIncludeLabels: true,
+          direction: getLayoutDirection(),
           padding: 60,
           animate: true
         });
@@ -379,15 +388,8 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
         try {
           layout.run();
         } catch (error) {
-          console.warn("dagre layout failed, falling back to breadthfirst", error);
-          cy.layout({
-            name: "breadthfirst",
-            directed: true,
-            spacingFactor: 1.8,
-            avoidOverlap: true,
-            padding: 60,
-            animate: true
-          }).run();
+          console.warn("tree layout failed, falling back to fit", error);
+          cy.fit(undefined, 60);
         }
       };
 
@@ -651,17 +653,9 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
           }
 
           try {
-            cy.layout({
-              name: "dagre",
-              nodeSep: 60,
-              edgeSep: 12,
-              rankSep: 70,
-              rankDir: "TB",
-              padding: 60,
-              animate: true
-            }).run();
+            runTreeLayout();
           } catch (layoutError) {
-            console.warn("dagre relayout failed", layoutError);
+            console.warn("tree relayout failed", layoutError);
             cy.fit(undefined, 60);
           }
         };

@@ -40,6 +40,8 @@ def _build_networkx_png(graph: dict) -> bytes:
             node_id,
             label=data.get("label", node_id),
             type=data.get("type", "symbol"),
+            parent=data.get("parent"),
+            depth=data.get("depth"),
         )
 
     for edge in edges:
@@ -52,17 +54,77 @@ def _build_networkx_png(graph: dict) -> bytes:
     if graph_nx.number_of_nodes() == 0:
         raise RuntimeError("Graph payload did not contain any nodes")
 
+    def _hierarchical_positions(root_id: str, direction: str = "down") -> dict:
+        children = {}
+        for node_id, data in graph_nx.nodes(data=True):
+            parent_id = data.get("parent")
+            if parent_id and parent_id in graph_nx:
+                children.setdefault(parent_id, []).append(node_id)
+
+        for node_id in children:
+            children[node_id].sort(key=lambda child_id: (
+                graph_nx.nodes[child_id].get("type", "symbol"),
+                graph_nx.nodes[child_id].get("label", child_id)
+            ))
+
+        subtree_widths = {}
+
+        def measure(node_id: str) -> float:
+            node_children = children.get(node_id, [])
+            if not node_children:
+                subtree_widths[node_id] = 1.0
+                return 1.0
+
+            total = 0.0
+            for index, child_id in enumerate(node_children):
+                total += measure(child_id)
+                if index < len(node_children) - 1:
+                    total += 0.35
+
+            subtree_widths[node_id] = max(1.0, total)
+            return subtree_widths[node_id]
+
+        measure(root_id)
+
+        positions = {}
+        level_gap = 1.9
+        sibling_gap = 0.35
+
+        def assign(node_id: str, left: float, depth: int) -> None:
+            width = subtree_widths.get(node_id, 1.0)
+            x_center = left + width / 2.0
+            y_value = -depth * level_gap
+
+            if direction == "right":
+                positions[node_id] = (depth * level_gap, x_center)
+            else:
+                positions[node_id] = (x_center, y_value)
+
+            cursor = left
+            for index, child_id in enumerate(children.get(node_id, [])):
+                child_width = subtree_widths.get(child_id, 1.0)
+                assign(child_id, cursor, depth + 1)
+                cursor += child_width
+                if index < len(children.get(node_id, [])) - 1:
+                    cursor += sibling_gap
+
+        assign(root_id, 0.0, 0)
+        return positions
+
+    root_id = None
+    for node_id, data in graph_nx.nodes(data=True):
+        if data.get("type") == "repository":
+            root_id = node_id
+            break
+
+    if root_id is None:
+        root_id = next(iter(graph_nx.nodes))
+
     node_count = graph_nx.number_of_nodes()
     figure_width = max(14, min(30, node_count * 0.42))
     figure_height = max(10, min(22, node_count * 0.28))
-    layout_k = max(0.35, 2.2 / max(1.0, node_count ** 0.5))
-
-    positions = nx.spring_layout(
-        graph_nx,
-        seed=42,
-        k=layout_k,
-        iterations=250,
-    )
+    direction = "right" if figure_width > figure_height * 1.15 else "down"
+    positions = _hierarchical_positions(root_id, direction=direction)
 
     figure, axis = plt.subplots(figsize=(figure_width, figure_height), dpi=180)
     figure.patch.set_facecolor("#08121f")
