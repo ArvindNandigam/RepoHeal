@@ -353,22 +353,70 @@
         overlay.innerHTML = message;
       };
 
+      const getLayoutSettings = () => {
+        const spacing = Number(spacingRange.value) || 2.5;
+        const padding = Number(paddingRange.value) || 120;
+        const layoutName = layoutSelect.value || "breadthfirst";
+
+        if (layoutName === "dagre") {
+          return {
+            name: "dagre",
+            nodeSep: spacing * 40,
+            edgeSep: spacing * 10,
+            rankSep: spacing * 40,
+            rankDir: "TB",
+            padding,
+            animate: true
+          };
+        }
+
+        if (layoutName === "cose-bilkent") {
+          return {
+            name: "cose-bilkent",
+            idealEdgeLength: spacing * 40,
+            nodeRepulsion: 4000 * (2.0 / Math.max(0.1, spacing)),
+            gravity: 0.25,
+            numIter: 250,
+            padding,
+            animate: true
+          };
+        }
+
+        return {
+          name: "breadthfirst",
+          directed: true,
+          spacingFactor: spacing,
+          avoidOverlap: true,
+          padding,
+          animate: true
+        };
+      };
+
       const runLayout = () => {
         if (!cy) {
           return;
         }
 
         const roots = cy.getElementById(repoId);
+        const layoutSettings = getLayoutSettings();
 
-        cy.layout({
-          name: "breadthfirst",
-          directed: true,
-          roots: roots.nonempty() ? roots : undefined,
-          spacingFactor: 2.5,
-          avoidOverlap: true,
-          padding: 120,
-          animate: false
-        }).run();
+        try {
+          cy.layout({
+            ...layoutSettings,
+            roots: layoutSettings.name === "breadthfirst" && roots.nonempty() ? roots : undefined
+          }).run();
+        } catch (error) {
+          console.warn("Layout run failed, falling back to breadthfirst", error);
+          cy.layout({
+            name: "breadthfirst",
+            directed: true,
+            roots: roots.nonempty() ? roots : undefined,
+            spacingFactor: 2.5,
+            avoidOverlap: true,
+            padding: 120,
+            animate: true
+          }).run();
+        }
       };
 
       const toggleSubtree = (node) => {
@@ -701,26 +749,14 @@
         };
 
         const applyLayoutSettings = () => {
-          const spacing = Number(spacingRange.value) || 2.5;
-          const padding = Number(paddingRange.value) || 120;
-          const layoutName = layoutSelect.value || 'breadthfirst';
+          if (!cy) {
+            return;
+          }
+
           const scale = Number(nodeScaleRange.value) || 1.0;
 
           applyStyles(scale);
-
-          // Choose layout params per engine
-          let layoutOpts = {};
-          if (layoutName === 'breadthfirst') {
-            layoutOpts = { name: 'breadthfirst', directed: true, spacingFactor: spacing, avoidOverlap: true, padding: padding, animate: true };
-          } else if (layoutName === 'dagre' && typeof cytoscapeDagre !== 'undefined') {
-            layoutOpts = { name: 'dagre', nodeSep: spacing * 40, edgeSep: spacing * 10, rankSep: spacing * 40, rankDir: 'TB', padding: padding, animate: true };
-          } else if (layoutName === 'cose-bilkent' && typeof cy.layout === 'function') {
-            layoutOpts = { name: 'cose-bilkent', idealEdgeLength: spacing * 40, nodeRepulsion: 4000 * (2.0 / Math.max(0.1, spacing)), gravity: 0.25, numIter: 250, padding: padding, animate: true };
-          } else {
-            layoutOpts = { name: 'breadthfirst', directed: true, spacingFactor: spacing, avoidOverlap: true, padding: padding, animate: true };
-          }
-
-          cy.layout(layoutOpts).run();
+          runLayout();
         };
 
         spacingRange.addEventListener('input', () => applyLayoutSettings());
@@ -744,7 +780,7 @@
           } catch (e) {
             try {
               const filename = `${repoOwner}-${repoName}-graph.png`;
-              downloadPng(cy.png({ full: true, scale: 2 }), filename);
+              downloadPng(cy.png({ full: true, scale: 2, bg: "#08121f" }), filename);
             } catch (fallbackError) {
               console.error('Failed to export PNG', e, fallbackError);
               alert('Export failed: ' + String(e));
@@ -780,7 +816,7 @@
           cy.nodes().forEach((node) => node.data("collapsed", false));
           namespaceClustersCollapsed = false;
           toggleClustersButton.textContent = "Collapse namespace clusters";
-          runLayout();
+          applyLayoutSettings();
           setStatus(defaultOverlay(payload.nodes?.length || 0, payload.edges?.length || 0));
         });
 
@@ -790,13 +826,14 @@
           cy.nodes().forEach((node) => node.data("collapsed", false));
           namespaceClustersCollapsed = false;
           toggleClustersButton.textContent = "Collapse namespace clusters";
-          runLayout();
+          applyLayoutSettings();
           setStatus("Expanded all namespace trees.");
         });
 
         toggleClustersButton.addEventListener("click", () => {
-          setNamespaceClusterState(!namespaceClustersCollapsed);
-          setStatus(namespaceClustersCollapsed ? "Expanded namespace clusters." : "Collapsed namespace clusters.");
+          const nextState = !namespaceClustersCollapsed;
+          setNamespaceClusterState(nextState);
+          setStatus(nextState ? "Collapsed namespace clusters." : "Expanded namespace clusters.");
         });
       } catch (error) {
         statusLabel.innerHTML = `<span class="error">Failed to load graph</span>`;
