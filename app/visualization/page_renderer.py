@@ -1,9 +1,16 @@
-<!doctype html>
+"""Render the repository graph visualization page without a template file."""
+
+from textwrap import dedent
+
+
+def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
+    page = dedent(
+        """<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>RepoHeal Graph - {{ repo_owner }}/{{ repo_name }}</title>
+  <title>RepoHeal Graph - __REPO_OWNER__/__REPO_NAME__</title>
   <style>
     :root {
       color-scheme: dark;
@@ -14,7 +21,6 @@
       --muted: #9eb0c8;
       --accent: #4fd1c5;
       --accent-2: #7c9cff;
-      --danger: #ff7b7b;
       --repo: #4fd1c5;
       --file: #5b8cff;
       --package: #ef5350;
@@ -25,9 +31,7 @@
       --api: #ff6fb1;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -42,7 +46,7 @@
 
     .shell {
       display: grid;
-      grid-template-columns: 340px 1fr;
+      grid-template-columns: 320px 1fr;
       gap: 20px;
       min-height: 100vh;
       padding: 20px;
@@ -93,10 +97,7 @@
       border: 1px solid rgba(255, 255, 255, 0.06);
     }
 
-    .stat strong {
-      font-size: 14px;
-      color: #fff;
-    }
+    .stat strong { font-size: 14px; color: #fff; }
 
     .stat span,
     .legend-row {
@@ -105,9 +106,7 @@
       overflow-wrap: anywhere;
     }
 
-    .legend {
-      gap: 8px;
-    }
+    .legend { gap: 8px; }
 
     .legend-row {
       display: flex;
@@ -183,9 +182,7 @@
       color: var(--text);
     }
 
-    .details span {
-      color: var(--muted);
-    }
+    .details span { color: var(--muted); }
 
     .details code {
       color: var(--text);
@@ -197,35 +194,28 @@
       width: fit-content;
     }
 
-    .error {
-      color: var(--danger);
-    }
+    .error { color: #ff7b7b; }
 
     @media (max-width: 960px) {
-      .shell {
-        grid-template-columns: 1fr;
-      }
+      .shell { grid-template-columns: 1fr; }
 
-      #graph {
-        min-height: 70vh;
-      }
+      #graph { min-height: 70vh; }
     }
   </style>
   <script src="https://unpkg.com/cytoscape@3.31.2/dist/cytoscape.min.js"></script>
   <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
   <script src="https://unpkg.com/cytoscape-dagre@2.3.2/cytoscape-dagre.js"></script>
-  <script src="https://unpkg.com/cose-bilkent@4.1.0/cytoscape-cose-bilkent.js"></script>
 </head>
 <body>
   <div class="shell">
     <aside class="panel sidebar">
       <p class="eyebrow">RepoHeal Visualization</p>
-      <h1>{{ repo_owner }}/{{ repo_name }}</h1>
-      <div class="muted">Interactive repository intelligence for {{ github_user }}.</div>
+      <h1>__REPO_OWNER__/__REPO_NAME__</h1>
+      <div class="muted">Interactive repository intelligence for __GITHUB_USER__.</div>
 
       <div class="stat">
         <strong>Repository</strong>
-        <span id="repoLabel">{{ repo_owner }}/{{ repo_name }}</span>
+        <span id="repoLabel">__REPO_OWNER__/__REPO_NAME__</span>
       </div>
 
       <div class="stat">
@@ -261,29 +251,13 @@
 
       <div class="mini-actions">
         <button class="button secondary" id="resetLayout" type="button">Reset layout</button>
-        <button class="button secondary" id="expandAll" type="button">Expand all</button>
-        <button class="button secondary" id="toggleClusters" type="button">Collapse namespace clusters</button>
-      </div>
-
-      <div class="stat">
-        <strong>Layout</strong>
-        <div style="display:flex;flex-direction:column;gap:8px;">
-          <select id="layoutSelect" style="padding:8px;border-radius:8px;background:rgba(255,255,255,0.03);color:var(--text);border:1px solid rgba(255,255,255,0.06);">
-            <option value="breadthfirst">Breadthfirst</option>
-            <option value="dagre" selected>Dagre</option>
-            <option value="cose-bilkent">Cose-Bilkent</option>
-          </select>
-          <label class="legend-row" style="align-items:center;gap:10px;"><span style="width:8px;height:8px;display:inline-block"></span>Spacing <input id="spacingRange" type="range" min="1" max="6" step="0.1" value="3.5" style="flex:1;margin-left:8px"></label>
-          <label class="legend-row" style="align-items:center;gap:10px;"><span style="width:8px;height:8px;display:inline-block"></span>Padding <input id="paddingRange" type="range" min="20" max="300" step="10" value="160" style="flex:1;margin-left:8px"></label>
-          <label class="legend-row" style="align-items:center;gap:10px;"><span style="width:8px;height:8px;display:inline-block"></span>Node scale <input id="nodeScaleRange" type="range" min="0.6" max="2.0" step="0.1" value="1.0" style="flex:1;margin-left:8px"></label>
-          <button id="exportPNG" class="button secondary" type="button">Download PNG</button>
-        </div>
+        <button class="button secondary" id="exportPNG" type="button">Download PNG</button>
       </div>
 
       <div class="actions">
         <a class="button" href="/dashboard">Back to dashboard</a>
         <a class="button secondary" href="/logout">Logout</a>
-        <a class="button secondary" href="/graph/{{ repo_owner }}/{{ repo_name }}" target="_blank" rel="noreferrer">Open JSON</a>
+        <a class="button secondary" href="/graph/__REPO_OWNER__/__REPO_NAME__" target="_blank" rel="noreferrer">Open JSON</a>
       </div>
     </aside>
 
@@ -295,19 +269,17 @@
 
   <script>
     (async () => {
-      const repoOwner = "{{ repo_owner }}";
-      const repoName = "{{ repo_name }}";
+      const repoOwner = "__REPO_OWNER__";
+      const repoName = "__REPO_NAME__";
       const repoId = `${repoOwner}/${repoName}`;
       const statusLabel = document.getElementById("statusLabel");
       const nodeCount = document.getElementById("nodeCount");
       const edgeCount = document.getElementById("edgeCount");
       const overlay = document.getElementById("overlay");
       const resetLayoutButton = document.getElementById("resetLayout");
-      const expandAllButton = document.getElementById("expandAll");
-      const toggleClustersButton = document.getElementById("toggleClusters");
+      const exportPNGButton = document.getElementById("exportPNG");
 
       let cy = null;
-      let namespaceClustersCollapsed = false;
 
       const escapeHtml = (value) => String(value ?? "")
         .replaceAll("&", "&amp;")
@@ -353,115 +325,34 @@
         overlay.innerHTML = message;
       };
 
-      const getLayoutSettings = () => {
-        const spacing = Number(spacingRange.value) || 2.5;
-        const padding = Number(paddingRange.value) || 120;
-        const layoutName = layoutSelect.value || "breadthfirst";
-
-        if (layoutName === "dagre") {
-          return {
-            name: "dagre",
-            nodeSep: spacing * 40,
-            edgeSep: spacing * 10,
-            rankSep: spacing * 40,
-            rankDir: "TB",
-            padding,
-            animate: true
-          };
-        }
-
-        if (layoutName === "cose-bilkent") {
-          return {
-            name: "cose-bilkent",
-            idealEdgeLength: spacing * 40,
-            nodeRepulsion: 4000 * (2.0 / Math.max(0.1, spacing)),
-            gravity: 0.25,
-            numIter: 250,
-            padding,
-            animate: true
-          };
-        }
-
-        return {
-          name: "breadthfirst",
-          directed: true,
-          spacingFactor: spacing,
-          avoidOverlap: true,
-          padding,
-          animate: true
-        };
-      };
-
-      const runLayout = () => {
+      const runDagreLayout = () => {
         if (!cy) {
           return;
         }
 
-        const roots = cy.getElementById(repoId);
-        const layoutSettings = getLayoutSettings();
+        const layout = cy.layout({
+          name: "dagre",
+          nodeSep: 60,
+          edgeSep: 12,
+          rankSep: 70,
+          rankDir: "TB",
+          padding: 60,
+          animate: true
+        });
 
         try {
-          cy.layout({
-            ...layoutSettings,
-            roots: layoutSettings.name === "breadthfirst" && roots.nonempty() ? roots : undefined
-          }).run();
+          layout.run();
         } catch (error) {
-          console.warn("Layout run failed, falling back to breadthfirst", error);
+          console.warn("dagre layout failed, falling back to breadthfirst", error);
           cy.layout({
             name: "breadthfirst",
             directed: true,
-            roots: roots.nonempty() ? roots : undefined,
-            spacingFactor: 2.5,
+            spacingFactor: 1.8,
             avoidOverlap: true,
-            padding: 120,
+            padding: 60,
             animate: true
           }).run();
         }
-      };
-
-      const toggleSubtree = (node) => {
-        if (!node.isParent() || node.data("type") === "repository") {
-          return;
-        }
-
-        const descendants = node.descendants();
-        const collapsed = Boolean(node.data("collapsed"));
-
-        if (collapsed) {
-          descendants.show();
-          node.data("collapsed", false);
-        } else {
-          descendants.hide();
-          node.data("collapsed", true);
-        }
-
-        runLayout();
-      };
-
-      const getNamespaceParentNodes = () => cy
-        .nodes()
-        .filter((node) => node.isParent() && !["repository", "file"].includes(node.data("type")));
-
-      const setNamespaceClusterState = (collapsed) => {
-        if (!cy) {
-          return;
-        }
-
-        getNamespaceParentNodes().forEach((node) => {
-          const descendants = node.descendants();
-
-          if (collapsed) {
-            descendants.hide();
-          } else {
-            descendants.show();
-          }
-
-          node.data("collapsed", collapsed);
-        });
-
-        namespaceClustersCollapsed = collapsed;
-        toggleClustersButton.textContent = collapsed ? "Expand namespace clusters" : "Collapse namespace clusters";
-        runLayout();
       };
 
       try {
@@ -502,23 +393,23 @@
           container: document.getElementById("graph"),
           elements,
           style: [
-              {
-                selector: "node",
-                style: {
-                  "label": "data(label)",
-                  "color": "#e8eef7",
-                  "text-outline-color": "#07111f",
-                  "text-outline-width": 2,
-                  "font-size": 12,
-                  "background-color": "#6b7a90",
-                  "border-width": 1,
-                  "border-color": "rgba(255,255,255,0.15)",
-                  "width": 34,
-                  "height": 34,
-                  "text-valign": "center",
-                  "text-halign": "center"
-                }
-              },
+            {
+              selector: "node",
+              style: {
+                "label": "data(label)",
+                "color": "#e8eef7",
+                "text-outline-color": "#07111f",
+                "text-outline-width": 2,
+                "font-size": 12,
+                "background-color": "#6b7a90",
+                "border-width": 1,
+                "border-color": "rgba(255,255,255,0.15)",
+                "width": 34,
+                "height": 34,
+                "text-valign": "center",
+                "text-halign": "center"
+              }
+            },
             {
               selector: "node[type = 'repository']",
               style: {
@@ -597,8 +488,8 @@
             },
             {
               selector: "node:parent",
-                style: {
-                  "padding": 34,
+              style: {
+                "padding": 34,
                 "background-opacity": 0.08,
                 "background-color": "#0d1523",
                 "border-width": 1,
@@ -685,51 +576,15 @@
             }
           ],
           layout: {
-            name: "breadthfirst",
-            directed: true,
-            spacingFactor: 2.5,
-            avoidOverlap: true,
-            padding: 120,
+            name: "dagre",
+            nodeSep: 60,
+            edgeSep: 12,
+            rankSep: 70,
+            rankDir: "TB",
+            padding: 60,
             animate: false
           }
         });
-
-        runLayout();
-
-        // UI controls
-        const layoutSelect = document.getElementById("layoutSelect");
-        const spacingRange = document.getElementById("spacingRange");
-        const paddingRange = document.getElementById("paddingRange");
-        const nodeScaleRange = document.getElementById("nodeScaleRange");
-        const exportPNGButton = document.getElementById("exportPNG");
-
-        const baseSizes = {
-          package: 56,
-          module: 44,
-          symbol: 34,
-          repository: 52,
-          file: 38,
-          function: 34,
-          class: 34,
-          api: 28
-        };
-
-        const applyStyles = (scale) => {
-          const s = Number(scale) || 1.0;
-          const stylesheet = cy.style();
-
-          stylesheet
-            .selector("node[type='package']").style({ width: baseSizes.package * s, height: baseSizes.package * s })
-            .selector("node[type='module']").style({ width: baseSizes.module * s, height: baseSizes.module * s })
-            .selector("node[type='symbol']").style({ width: baseSizes.symbol * s, height: baseSizes.symbol * s })
-            .selector("node[type='repository']").style({ width: baseSizes.repository * s, height: baseSizes.repository * s })
-            .selector("node[type='file']").style({ width: baseSizes.file * s, height: baseSizes.file * s })
-            .selector("node[type='function']").style({ width: baseSizes.function * s, height: baseSizes.function * s })
-            .selector("node[type='class']").style({ width: baseSizes.class * s, height: baseSizes.class * s })
-            .selector("node[type='api']").style({ width: baseSizes.api * s, height: baseSizes.api * s });
-
-          stylesheet.update();
-        };
 
         const downloadPng = (dataUrlOrBlob, filename) => {
           const link = document.createElement("a");
@@ -752,23 +607,33 @@
           setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
         };
 
-        const applyLayoutSettings = () => {
+        const applyLayout = () => {
           if (!cy) {
             return;
           }
 
-          const scale = Number(nodeScaleRange.value) || 1.0;
-
-          applyStyles(scale);
-          runLayout();
+          try {
+            cy.layout({
+              name: "dagre",
+              nodeSep: 60,
+              edgeSep: 12,
+              rankSep: 70,
+              rankDir: "TB",
+              padding: 60,
+              animate: true
+            }).run();
+          } catch (layoutError) {
+            console.warn("dagre relayout failed", layoutError);
+            cy.fit(undefined, 60);
+          }
         };
 
-        spacingRange.addEventListener('input', () => applyLayoutSettings());
-        paddingRange.addEventListener('input', () => applyLayoutSettings());
-        layoutSelect.addEventListener('change', () => applyLayoutSettings());
-        nodeScaleRange.addEventListener('input', () => applyLayoutSettings());
+        resetLayoutButton.addEventListener("click", () => {
+          applyLayout();
+          setStatus(defaultOverlay(payload.nodes?.length || 0, payload.edges?.length || 0));
+        });
 
-        exportPNGButton.addEventListener('click', async () => {
+        exportPNGButton.addEventListener("click", async () => {
           try {
             const filename = `${repoOwner}-${repoName}-graph.png`;
             const response = await fetch(`/visualize/${encodeURIComponent(repoOwner)}/${encodeURIComponent(repoName)}/export.png`, {
@@ -792,18 +657,11 @@
           }
         });
 
-        // Apply initial settings from inputs
-        applyLayoutSettings();
+        applyLayout();
 
         cy.on("tap", "node", (event) => {
           const node = event.target;
-          const data = node.data();
-
-          if (node.isParent() && data.type !== "repository") {
-            toggleSubtree(node);
-          }
-
-          setStatus(describeNode(data));
+          setStatus(describeNode(node.data()));
         });
 
         cy.on("mouseover", "node", (event) => {
@@ -813,32 +671,6 @@
         cy.on("mouseout", "node", () => {
           setStatus(defaultOverlay(payload.nodes?.length || 0, payload.edges?.length || 0));
         });
-
-        resetLayoutButton.addEventListener("click", () => {
-          cy.nodes().show();
-          cy.edges().show();
-          cy.nodes().forEach((node) => node.data("collapsed", false));
-          namespaceClustersCollapsed = false;
-          toggleClustersButton.textContent = "Collapse namespace clusters";
-          applyLayoutSettings();
-          setStatus(defaultOverlay(payload.nodes?.length || 0, payload.edges?.length || 0));
-        });
-
-        expandAllButton.addEventListener("click", () => {
-          cy.nodes().show();
-          cy.edges().show();
-          cy.nodes().forEach((node) => node.data("collapsed", false));
-          namespaceClustersCollapsed = false;
-          toggleClustersButton.textContent = "Collapse namespace clusters";
-          applyLayoutSettings();
-          setStatus("Expanded all namespace trees.");
-        });
-
-        toggleClustersButton.addEventListener("click", () => {
-          const nextState = !namespaceClustersCollapsed;
-          setNamespaceClusterState(nextState);
-          setStatus(nextState ? "Collapsed namespace clusters." : "Expanded namespace clusters.");
-        });
       } catch (error) {
         statusLabel.innerHTML = `<span class="error">Failed to load graph</span>`;
         overlay.innerHTML = `<span class="error">${error.message}</span>`;
@@ -846,4 +678,11 @@
     })();
   </script>
 </body>
-</html>
+</html>"""
+    )
+
+    return (
+        page.replace("__REPO_OWNER__", repo_owner)
+        .replace("__REPO_NAME__", repo_name)
+        .replace("__GITHUB_USER__", github_user)
+    )

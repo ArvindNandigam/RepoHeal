@@ -73,6 +73,9 @@ from app.storage.metadata_store import (
 from app.visualization.graph_api import (
     GraphVisualizer
 )
+from app.visualization.page_renderer import (
+    build_graph_page
+)
 try:
     from app.visualization.export_png import (
         render_graph_png
@@ -884,25 +887,13 @@ async def visualize_repository_page(
         repo_name=repo_name
     )
 
-    html = (
-        Path(__file__).resolve().parent
-        / "visualization"
-        / "templates"
-        / "graph.html"
-    ).read_text(encoding="utf-8")
-
-    html = html.replace(
-        "{{ repo_owner }}",
-        repo_owner
-    ).replace(
-        "{{ repo_name }}",
-        repo_name
-    ).replace(
-        "{{ github_user }}",
-        user["github_login"]
+    return HTMLResponse(
+        build_graph_page(
+            repo_owner=repo_owner,
+            repo_name=repo_name,
+            github_user=user["github_login"]
+        )
     )
-
-    return HTMLResponse(html)
 
 
 @app.get(
