@@ -614,11 +614,14 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
             }
           ],
           layout: {
-            name: "dagre",
-            nodeSep: 60,
-            edgeSep: 12,
-            rankSep: 70,
-            rankDir: "TB",
+            name: "breadthfirst",
+            directed: true,
+            roots: [repoId],
+            circle: false,
+            spacingFactor: 1.35,
+            avoidOverlap: true,
+            nodeDimensionsIncludeLabels: true,
+            direction: getLayoutDirection(),
             padding: 60,
             animate: false
           }
