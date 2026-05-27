@@ -372,10 +372,12 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
           return;
         }
 
+        const rootNode = cy.getElementById(repoId);
+
         const layout = cy.layout({
           name: "breadthfirst",
           directed: true,
-          roots: [repoId],
+          roots: rootNode.nonempty() ? rootNode : undefined,
           circle: false,
           spacingFactor: 1.35,
           avoidOverlap: true,
@@ -616,7 +618,7 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
           layout: {
             name: "breadthfirst",
             directed: true,
-            roots: [repoId],
+            roots: cy.getElementById(repoId),
             circle: false,
             spacingFactor: 1.35,
             avoidOverlap: true,
