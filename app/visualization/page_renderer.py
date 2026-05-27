@@ -336,7 +336,7 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
       };
 
       const expandNode = (node) => {
-        const descendants = node.descendants();
+        const descendants = node.descendants().filter((descendant) => descendant.data('view_level') > 0);
 
         if (!descendants.nonempty()) {
           return false;
@@ -349,7 +349,7 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
       };
 
       const collapseNode = (node) => {
-        const descendants = node.descendants();
+        const descendants = node.descendants().filter((descendant) => descendant.data('view_level') > 0);
 
         if (!descendants.nonempty()) {
           return false;

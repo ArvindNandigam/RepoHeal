@@ -36,7 +36,7 @@ class GraphVisualizer:
         return self.analysis.get("dependency_graph", {})
 
     def _node_view_level(self, node_type: str) -> int:
-        if node_type in {"repository", "file", "package", "module"}:
+        if node_type in {"repository", "file", "package"}:
             return 0
 
         return 1
@@ -50,7 +50,7 @@ class GraphVisualizer:
         relationship = (relationship or "").upper()
 
         if relationship == "CONTAINS":
-            return 0
+            return 1
 
         if relationship == "IMPORTS":
             if source_type in {"file", "repository"} and target_type in {"package", "module"}:
@@ -272,7 +272,7 @@ class GraphVisualizer:
                         candidate_id = namespace_ids.get(candidate_path)
                         candidate_type = node_types.get(candidate_id)
 
-                        if candidate_path and candidate_type in {"package", "module"}:
+                        if candidate_path and candidate_type == "package":
                             visible_namespace_id = candidate_id or visible_namespace_id
                             break
 
@@ -284,7 +284,7 @@ class GraphVisualizer:
                                 "source": file_node_id,
                                 "target": visible_namespace_id,
                                 "relationship": "IMPORTS",
-                                "view_level": self._edge_view_level("IMPORTS", "file", leaf_node_type)
+                                "view_level": 0 if leaf_node_type == "package" else 1
                             }
                         }
                     )
@@ -527,9 +527,23 @@ class GraphVisualizer:
 
         logger.info(f"Cytoscape graph generated for {repo_id}")
 
+        unique_edges = []
+        seen_edge_ids = set()
+
+        for edge in edges:
+            edge_id = edge.get("data", {}).get("id")
+
+            if edge_id and edge_id in seen_edge_ids:
+                continue
+
+            if edge_id:
+                seen_edge_ids.add(edge_id)
+
+            unique_edges.append(edge)
+
         return {
             "nodes": nodes,
-            "edges": edges
+            "edges": unique_edges
         }
 
     def get_statistics(self) -> Dict:
