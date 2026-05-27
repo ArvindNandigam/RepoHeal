@@ -325,6 +325,42 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
         overlay.innerHTML = message;
       };
 
+      const hideDetailedNodes = () => {
+        if (!cy) {
+          return;
+        }
+
+        cy.nodes('[view_level > 0]').hide();
+        cy.edges('[view_level > 0]').hide();
+        cy.nodes().forEach((node) => node.data('expanded', false));
+      };
+
+      const expandNode = (node) => {
+        const descendants = node.descendants();
+
+        if (!descendants.nonempty()) {
+          return false;
+        }
+
+        descendants.show();
+        descendants.connectedEdges().show();
+        node.data('expanded', true);
+        return true;
+      };
+
+      const collapseNode = (node) => {
+        const descendants = node.descendants();
+
+        if (!descendants.nonempty()) {
+          return false;
+        }
+
+        descendants.connectedEdges().hide();
+        descendants.hide();
+        node.data('expanded', false);
+        return true;
+      };
+
       const runDagreLayout = () => {
         if (!cy) {
           return;
@@ -413,10 +449,10 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
             {
               selector: "node[type = 'repository']",
               style: {
-                "width": 52,
-                "height": 52,
+                "width": 68,
+                "height": 68,
                 "background-color": "var(--repo)",
-                "shape": "round-rectangle",
+                "shape": "ellipse",
                 "border-width": 2,
                 "border-color": "rgba(79, 209, 197, 0.85)",
                 "font-size": 12
@@ -425,17 +461,17 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
             {
               selector: "node[type = 'file']",
               style: {
-                "width": 38,
-                "height": 38,
+                "width": 46,
+                "height": 32,
                 "background-color": "var(--file)",
-                "shape": "round-rectangle"
+                "shape": "rectangle"
               }
             },
             {
               selector: "node[type = 'package']",
               style: {
-                "width": 56,
-                "height": 56,
+                "width": 58,
+                "height": 58,
                 "background-color": "data(color)",
                 "shape": "hexagon"
               }
@@ -465,25 +501,25 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
                 "width": 34,
                 "height": 34,
                 "background-color": "var(--function)",
-                "shape": "round-rectangle"
+                "shape": "ellipse"
               }
             },
             {
               selector: "node[type = 'class']",
               style: {
-                "width": 34,
-                "height": 34,
+                "width": 38,
+                "height": 38,
                 "background-color": "var(--class)",
-                "shape": "round-rectangle"
+                "shape": "diamond"
               }
             },
             {
               selector: "node[type = 'api']",
               style: {
-                "width": 28,
-                "height": 28,
+                "width": 30,
+                "height": 30,
                 "background-color": "var(--api)",
-                "shape": "diamond"
+                "shape": "octagon"
               }
             },
             {
@@ -548,8 +584,8 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
               selector: "edge[relationship = 'CALLS']",
               style: {
                 "width": 2.1,
-                "line-color": "rgba(178, 108, 255, 0.7)",
-                "target-arrow-color": "rgba(178, 108, 255, 0.9)",
+                "line-color": "rgba(56, 211, 159, 0.72)",
+                "target-arrow-color": "rgba(56, 211, 159, 0.92)",
                 "curve-style": "unbundled-bezier",
                 "control-point-distances": 50,
                 "control-point-weights": 0.55
@@ -569,8 +605,8 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
               selector: "edge[relationship = 'INHERITS']",
               style: {
                 "width": 3,
-                "line-color": "rgba(255, 211, 106, 0.85)",
-                "target-arrow-color": "rgba(255, 211, 106, 0.95)",
+                "line-color": "rgba(178, 108, 255, 0.88)",
+                "target-arrow-color": "rgba(178, 108, 255, 0.98)",
                 "target-arrow-shape": "triangle"
               }
             }
@@ -585,6 +621,8 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
             animate: false
           }
         });
+
+        hideDetailedNodes();
 
         const downloadPng = (dataUrlOrBlob, filename) => {
           const link = document.createElement("a");
@@ -629,6 +667,7 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
         };
 
         resetLayoutButton.addEventListener("click", () => {
+          hideDetailedNodes();
           applyLayout();
           setStatus(defaultOverlay(payload.nodes?.length || 0, payload.edges?.length || 0));
         });
@@ -661,7 +700,13 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
 
         cy.on("tap", "node", (event) => {
           const node = event.target;
+          if (node.data('expanded')) {
+            collapseNode(node);
+          } else {
+            expandNode(node);
+          }
           setStatus(describeNode(node.data()));
+          applyLayout();
         });
 
         cy.on("mouseover", "node", (event) => {

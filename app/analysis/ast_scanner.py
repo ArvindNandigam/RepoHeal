@@ -45,6 +45,25 @@ def _node_name(node):
     return None
 
 
+def _attribute_chain_parts(node):
+
+    if isinstance(node, ast.Name):
+        return [node.id]
+
+    if isinstance(node, ast.Attribute):
+        parent_parts = _attribute_chain_parts(node.value)
+
+        if not parent_parts:
+            return [node.attr]
+
+        return parent_parts + [node.attr]
+
+    if isinstance(node, ast.Call):
+        return _attribute_chain_parts(node.func)
+
+    return None
+
+
 def extract_imports_from_python_source(source, module_index=None, import_aliases=None):
 
     imports = {
@@ -167,15 +186,16 @@ def extract_imports_from_python_source(source, module_index=None, import_aliases
                         )
 
             # synthesize attribute-chain usage (strict heuristic)
-            elif isinstance(node, ast.Attribute) or (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
 
                 # get full dotted name
-                full_name = _node_name(node if isinstance(node, ast.Attribute) else node.func)
+                chain_parts = _attribute_chain_parts(node.func)
+                full_name = ".".join(chain_parts or [])
 
-                if not full_name or "." not in full_name:
+                if not chain_parts or len(chain_parts) < 2:
                     continue
 
-                parts = full_name.split(".")
+                parts = chain_parts
                 leftmost = parts[0]
 
                 # resolve alias if present
@@ -201,7 +221,7 @@ def extract_imports_from_python_source(source, module_index=None, import_aliases
                     continue
 
                 # build module_path (all but last) and symbol (last)
-                module_path = ".".join([resolved_root] + parts[1:-1]) if len(parts) > 2 else resolved_root + ("." + parts[1] if len(parts) == 2 else "")
+                module_path = ".".join([resolved_root] + parts[1:-1]) if len(parts) > 2 else resolved_root
                 symbol = parts[-1]
 
                 # normalize for root
@@ -372,6 +392,11 @@ def extract_python_semantics(source, module_name=None, module_index=None):
                     resolved_root = import_aliases.get(root_name, root_name)
                     canonical_root = normalize_package_name(resolved_root)
 
+                    is_local = is_local_import(
+                        resolved_root,
+                        module_index
+                    )
+
                     semantics["calls"].append(
                         {
                             "name": call_name,
@@ -380,13 +405,10 @@ def extract_python_semantics(source, module_name=None, module_index=None):
                             "function": ".".join(function_stack)
                             if function_stack
                             else None,
-                            "is_local": is_local_import(
-                                resolved_root,
-                                module_index
-                            ),
+                            "is_local": is_local,
                             "is_external_api": (
                                 canonical_root in EXTERNAL_API_ROOTS
-                                or canonical_root != resolved_root
+                                or not is_local
                             )
                         }
                     )

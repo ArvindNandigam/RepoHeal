@@ -35,6 +35,31 @@ class GraphVisualizer:
     def _get_dependency_graph(self) -> Dict[str, Dict[str, Any]]:
         return self.analysis.get("dependency_graph", {})
 
+    def _node_view_level(self, node_type: str) -> int:
+        if node_type in {"repository", "file", "package", "module"}:
+            return 0
+
+        return 1
+
+    def _edge_view_level(
+        self,
+        relationship: str,
+        source_type: str,
+        target_type: str
+    ) -> int:
+        relationship = (relationship or "").upper()
+
+        if relationship == "CONTAINS":
+            return 0
+
+        if relationship == "IMPORTS":
+            if source_type in {"file", "repository"} and target_type in {"package", "module"}:
+                return 0
+
+            return 1
+
+        return 1
+
     def _build_function_library_map(self) -> Dict[tuple, List[str]]:
         semantic_files = self._get_semantic_files()
         function_libraries = {}
@@ -103,6 +128,7 @@ class GraphVisualizer:
         class_ids = {}
         namespace_ids = {}
         node_index = {}
+        node_types = {}
 
         nodes.append(
             {
@@ -114,10 +140,12 @@ class GraphVisualizer:
                     "parent": None,
                     "usage_count": 0,
                     "module_path": repo_id,
-                    "leaf_path": repo_id
+                    "leaf_path": repo_id,
+                    "view_level": self._node_view_level("repository")
                 }
             }
         )
+        node_types[repo_id] = "repository"
 
         for file_path, imports in import_files.items():
             file_node_id = f"file_{file_path}"
@@ -141,10 +169,12 @@ class GraphVisualizer:
                         "imports": len(hierarchical_imports),
                         "repo_id": repo_id,
                         "parent": repo_id,
-                        "scope": "repository"
+                        "scope": "repository",
+                        "view_level": self._node_view_level("file")
                     }
                 }
             )
+            node_types[file_node_id] = "file"
 
             edges.append(
                 {
@@ -152,7 +182,8 @@ class GraphVisualizer:
                         "id": f"{repo_id}_contains_{file_path}",
                         "source": repo_id,
                         "target": file_node_id,
-                        "relationship": "CONTAINS"
+                        "relationship": "CONTAINS",
+                        "view_level": self._edge_view_level("CONTAINS", "repository", "file")
                     }
                 }
             )
@@ -187,11 +218,13 @@ class GraphVisualizer:
                                 "usage_count": namespace_usage_counts.get(namespace_path, 0),
                                 "module_path": import_record.get("module_path"),
                                 "leaf_path": import_record.get("leaf_path"),
-                                "inferred": bool(namespace_node.get("inferred", import_record.get("inferred", False)))
+                                "inferred": bool(namespace_node.get("inferred", import_record.get("inferred", False))),
+                                "view_level": self._node_view_level(namespace_node.get("kind", "Module").lower())
                             }
                         }
                     )
                     node_index[namespace_id] = len(nodes) - 1
+                    node_types[namespace_id] = namespace_node.get("kind", "Module").lower()
 
                 for namespace_node in nodes_for_import:
 
@@ -214,7 +247,12 @@ class GraphVisualizer:
                                 "id": f"{parent_id}_{relationship.lower()}_{child_id}",
                                 "source": parent_id,
                                 "target": child_id,
-                                "relationship": relationship
+                                "relationship": relationship,
+                                "view_level": self._edge_view_level(
+                                    relationship,
+                                    node_types.get(parent_id, "module"),
+                                    node_types.get(child_id, "symbol")
+                                )
                             }
                         }
                     )
@@ -227,13 +265,26 @@ class GraphVisualizer:
                 leaf_namespace_id = namespace_ids.get(leaf_node.get("path"))
 
                 if leaf_namespace_id:
+                    visible_namespace_id = leaf_namespace_id
+
+                    for namespace_node in reversed(nodes_for_import):
+                        candidate_path = namespace_node.get("path")
+                        candidate_id = namespace_ids.get(candidate_path)
+                        candidate_type = node_types.get(candidate_id)
+
+                        if candidate_path and candidate_type in {"package", "module"}:
+                            visible_namespace_id = candidate_id or visible_namespace_id
+                            break
+
+                    leaf_node_type = node_types.get(visible_namespace_id, "symbol")
                     edges.append(
                         {
                             "data": {
-                                "id": f"{file_node_id}_imports_{leaf_namespace_id}",
+                                "id": f"{file_node_id}_imports_{visible_namespace_id}",
                                 "source": file_node_id,
-                                "target": leaf_namespace_id,
-                                "relationship": "IMPORTS"
+                                "target": visible_namespace_id,
+                                "relationship": "IMPORTS",
+                                "view_level": self._edge_view_level("IMPORTS", "file", leaf_node_type)
                             }
                         }
                     )
@@ -256,7 +307,8 @@ class GraphVisualizer:
                         "package_type": package_type,
                         "version": details.get("version", "unknown"),
                         "status": details.get("status", "unknown"),
-                        "color": package_colors.get(package_type, "#999999")
+                        "color": package_colors.get(package_type, "#999999"),
+                        "view_level": self._node_view_level("package")
                     }
                 )
 
@@ -277,11 +329,13 @@ class GraphVisualizer:
                         "parent": repo_id,
                         "usage_count": namespace_usage_counts.get(package, 0),
                         "module_path": package,
-                        "leaf_path": package
+                        "leaf_path": package,
+                        "view_level": self._node_view_level("package")
                     }
                 }
             )
             node_index[package_id] = len(nodes) - 1
+            node_types[package_id] = "package"
 
         for file_path, semantics in semantic_files.items():
             file_node_id = f"file_{file_path}"
@@ -307,10 +361,12 @@ class GraphVisualizer:
                             "usage_count": len(function_library_map.get((file_path, qualified_name), [])),
                             "libraries_used": function_library_map.get((file_path, qualified_name), []),
                             "module_path": qualified_name,
-                            "leaf_path": qualified_name
+                            "leaf_path": qualified_name,
+                            "view_level": self._node_view_level("function")
                         }
                     }
                 )
+                node_types[function_id] = "function"
 
                 edges.append(
                     {
@@ -318,7 +374,8 @@ class GraphVisualizer:
                             "id": f"{file_path}_defines_{qualified_name}",
                             "source": file_node_id,
                             "target": function_id,
-                            "relationship": "DEFINES"
+                            "relationship": "DEFINES",
+                            "view_level": self._edge_view_level("DEFINES", "file", "function")
                         }
                     }
                 )
@@ -343,10 +400,12 @@ class GraphVisualizer:
                             "parent": file_node_id,
                             "usage_count": len(class_node.get("bases", [])),
                             "module_path": qualified_name,
-                            "leaf_path": qualified_name
+                            "leaf_path": qualified_name,
+                            "view_level": self._node_view_level("class")
                         }
                     }
                 )
+                node_types[class_id] = "class"
 
                 edges.append(
                     {
@@ -354,7 +413,8 @@ class GraphVisualizer:
                             "id": f"{file_path}_defines_class_{qualified_name}",
                             "source": file_node_id,
                             "target": class_id,
-                            "relationship": "DEFINES"
+                            "relationship": "DEFINES",
+                            "view_level": self._edge_view_level("DEFINES", "file", "class")
                         }
                     }
                 )
@@ -363,6 +423,7 @@ class GraphVisualizer:
                 api_name = api.get("name")
                 api_package = normalize_package_name(api.get("package"))
                 api_id = f"api_{api_package}_{api_name}_{file_path}_{api.get('line')}"
+                api_parent_id = function_ids.get((file_path, api.get("function")))
 
                 nodes.append(
                     {
@@ -374,24 +435,25 @@ class GraphVisualizer:
                             "path": file_path,
                             "line": api.get("line"),
                             "repo_id": repo_id,
-                            "parent": function_id,
+                            "parent": api_parent_id,
                             "usage_count": 1,
                             "module_path": api_package,
-                            "leaf_path": api_name
+                            "leaf_path": api_name,
+                            "view_level": self._node_view_level("api")
                         }
                     }
                 )
+                node_types[api_id] = "api"
 
-                function_id = function_ids.get((file_path, api.get("function")))
-
-                if function_id:
+                if api_parent_id:
                     edges.append(
                         {
                             "data": {
-                                "id": f"{function_id}_uses_{api_id}",
-                                "source": function_id,
+                                "id": f"{api_parent_id}_uses_{api_id}",
+                                "source": api_parent_id,
                                 "target": api_id,
-                                "relationship": "USES_API"
+                                "relationship": "USES_API",
+                                "view_level": self._edge_view_level("USES_API", "function", "api")
                             }
                         }
                     )
@@ -420,7 +482,12 @@ class GraphVisualizer:
                                 "id": f"{caller_id}_calls_{callee_id}",
                                 "source": caller_id,
                                 "target": callee_id,
-                                "relationship": "CALLS"
+                                "relationship": "CALLS",
+                                "view_level": self._edge_view_level(
+                                    "CALLS",
+                                    node_types.get(caller_id, "function"),
+                                    node_types.get(callee_id, "function")
+                                )
                             }
                         }
                     )
@@ -452,7 +519,8 @@ class GraphVisualizer:
                                     "id": f"{class_id}_inherits_{parent_id}",
                                     "source": class_id,
                                     "target": parent_id,
-                                    "relationship": "INHERITS"
+                                    "relationship": "INHERITS",
+                                    "view_level": self._edge_view_level("INHERITS", "class", "class")
                                 }
                             }
                         )
