@@ -1,10 +1,163 @@
 import asyncio
-import base64
-import json
+from io import BytesIO
 
 
-def _build_html(payload_json: str) -> str:
-    template = """<!doctype html>
+NODE_COLORS = {
+    "repository": "#4fd1c5",
+    "file": "#5b8cff",
+    "package": "#ef5350",
+    "module": "#ff9f43",
+    "symbol": "#95a3b3",
+    "function": "#38d39f",
+    "class": "#b26cff",
+    "api": "#ff6fb1",
+}
+
+
+def _build_networkx_png(graph: dict) -> bytes:
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import networkx as nx
+    except Exception as error:
+        raise RuntimeError("Python graph rendering requires networkx and matplotlib: " + str(error))
+
+    nodes = graph.get("nodes", []) or []
+    edges = graph.get("edges", []) or []
+
+    node_map = {}
+    for node in nodes:
+        data = node.get("data", {})
+        node_id = data.get("id")
+        if not node_id:
+            continue
+        node_map[node_id] = data
+
+    graph_nx = nx.DiGraph()
+    for node_id, data in node_map.items():
+        graph_nx.add_node(
+            node_id,
+            label=data.get("label", node_id),
+            type=data.get("type", "symbol"),
+        )
+
+    for edge in edges:
+        data = edge.get("data", {})
+        source = data.get("source")
+        target = data.get("target")
+        if source and target and source in graph_nx and target in graph_nx:
+            graph_nx.add_edge(source, target, relationship=data.get("relationship", "LINK"))
+
+    if graph_nx.number_of_nodes() == 0:
+        raise RuntimeError("Graph payload did not contain any nodes")
+
+    node_count = graph_nx.number_of_nodes()
+    figure_width = max(14, min(30, node_count * 0.42))
+    figure_height = max(10, min(22, node_count * 0.28))
+    layout_k = max(0.35, 2.2 / max(1.0, node_count ** 0.5))
+
+    positions = nx.spring_layout(
+        graph_nx,
+        seed=42,
+        k=layout_k,
+        iterations=250,
+    )
+
+    figure, axis = plt.subplots(figsize=(figure_width, figure_height), dpi=180)
+    figure.patch.set_facecolor("#08121f")
+    axis.set_facecolor("#08121f")
+
+    node_groups = {}
+    for node_id, data in graph_nx.nodes(data=True):
+        node_type = data.get("type", "symbol")
+        node_groups.setdefault(node_type, []).append(node_id)
+
+    for node_type, group in node_groups.items():
+        color = NODE_COLORS.get(node_type, "#6b7a90")
+        size = 1300 if node_type == "repository" else 900 if node_type in {"package", "module"} else 650 if node_type in {"file", "function", "class"} else 420
+        nx.draw_networkx_nodes(
+            graph_nx,
+            positions,
+            nodelist=group,
+            node_color=color,
+            node_size=size,
+            alpha=0.95,
+            linewidths=1.1,
+            edgecolors="#e8eef7",
+            ax=axis,
+        )
+
+    edge_colors = []
+    edge_widths = []
+    for source, target, data in graph_nx.edges(data=True):
+        relationship = data.get("relationship", "LINK")
+        if relationship == "CONTAINS":
+            edge_colors.append("#7d97b8")
+            edge_widths.append(0.8)
+        elif relationship == "IMPORTS":
+            edge_colors.append("#5b8cff")
+            edge_widths.append(1.5)
+        elif relationship == "DEFINES":
+            edge_colors.append("#4fd1c5")
+            edge_widths.append(1.2)
+        elif relationship == "USES_API":
+            edge_colors.append("#ff6fb1")
+            edge_widths.append(1.1)
+        elif relationship == "CALLS":
+            edge_colors.append("#b26cff")
+            edge_widths.append(1.2)
+        else:
+            edge_colors.append("#9fb0c7")
+            edge_widths.append(0.9)
+
+    nx.draw_networkx_edges(
+        graph_nx,
+        positions,
+        edge_color=edge_colors,
+        width=edge_widths,
+        arrows=True,
+        arrowsize=12,
+        arrowstyle="-|>",
+        alpha=0.42,
+        connectionstyle="arc3,rad=0.07",
+        ax=axis,
+    )
+
+    labels = {node_id: data.get("label", node_id) for node_id, data in graph_nx.nodes(data=True)}
+    nx.draw_networkx_labels(
+        graph_nx,
+        positions,
+        labels=labels,
+        font_size=7,
+        font_color="#edf4fb",
+        bbox={"facecolor": "#08121f", "edgecolor": "none", "alpha": 0.0},
+        ax=axis,
+    )
+
+    axis.axis("off")
+    figure.tight_layout(pad=1.0)
+
+    buffer = BytesIO()
+    figure.savefig(buffer, format="png", facecolor=figure.get_facecolor(), bbox_inches="tight")
+    plt.close(figure)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+async def render_graph_png(graph: dict, timeout: int = 10000) -> bytes:
+    try:
+        return await asyncio.to_thread(_build_networkx_png, graph)
+    except Exception as primary_error:
+        try:
+            from playwright.async_api import async_playwright
+        except Exception:
+            raise RuntimeError("Python graph rendering failed: " + str(primary_error))
+
+        import base64
+        import json
+
+        template = """<!doctype html>
 <html>
 <head>
   <meta charset="utf-8">
@@ -50,46 +203,37 @@ def _build_html(payload_json: str) -> str:
 </body>
 </html>"""
 
-    return template.replace("__PAYLOAD__", payload_json)
+        payload_json = json.dumps(graph)
+        html = template.replace("__PAYLOAD__", payload_json)
 
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(args=['--no-sandbox'])
+            page = await browser.new_page()
+            await page.set_content(html, wait_until='networkidle')
 
-async def render_graph_png(graph: dict, timeout: int = 10000) -> bytes:
-    try:
-        from playwright.async_api import async_playwright
-    except Exception as error:
-        raise RuntimeError('Playwright is required for server-side PNG export: ' + str(error))
+            elapsed = 0
+            interval = 200
+            while elapsed < timeout:
+                png_data = await page.evaluate('window.__GRAPH_PNG__')
+                error = await page.evaluate('window.__GRAPH_PNG_ERROR__')
 
-    payload_json = json.dumps(graph)
-    html = _build_html(payload_json)
+                if error:
+                    await browser.close()
+                    raise RuntimeError('Export failed: ' + str(error))
 
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch(args=['--no-sandbox'])
-        page = await browser.new_page()
-        await page.set_content(html, wait_until='networkidle')
+                if png_data:
+                    prefix = 'data:image/png;base64,'
+                    if png_data.startswith(prefix):
+                        b64 = png_data[len(prefix):]
+                    else:
+                        b64 = png_data.split(',')[-1]
 
-        elapsed = 0
-        interval = 200
-        while elapsed < timeout:
-            png_data = await page.evaluate('window.__GRAPH_PNG__')
-            error = await page.evaluate('window.__GRAPH_PNG_ERROR__')
+                    data = base64.b64decode(b64)
+                    await browser.close()
+                    return data
 
-            if error:
-                await browser.close()
-                raise RuntimeError('Export failed: ' + str(error))
+                await asyncio.sleep(interval / 1000.0)
+                elapsed += interval
 
-            if png_data:
-                prefix = 'data:image/png;base64,'
-                if png_data.startswith(prefix):
-                    b64 = png_data[len(prefix):]
-                else:
-                    b64 = png_data.split(',')[-1]
-
-                data = base64.b64decode(b64)
-                await browser.close()
-                return data
-
-            await asyncio.sleep(interval / 1000.0)
-            elapsed += interval
-
-        await browser.close()
-        raise RuntimeError('Timed out waiting for graph render')
+            await browser.close()
+            raise RuntimeError('Timed out waiting for graph render')

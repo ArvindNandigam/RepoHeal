@@ -716,15 +716,19 @@
 
         const applyStyles = (scale) => {
           const s = Number(scale) || 1.0;
-          cy.style()
-            .selector("node[type='package']").style({ width: baseSizes.package * s, height: baseSizes.package * s }).update()
-            .selector("node[type='module']").style({ width: baseSizes.module * s, height: baseSizes.module * s }).update()
-            .selector("node[type='symbol']").style({ width: baseSizes.symbol * s, height: baseSizes.symbol * s }).update()
-            .selector("node[type='repository']").style({ width: baseSizes.repository * s, height: baseSizes.repository * s }).update()
-            .selector("node[type='file']").style({ width: baseSizes.file * s, height: baseSizes.file * s }).update()
-            .selector("node[type='function']").style({ width: baseSizes.function * s, height: baseSizes.function * s }).update()
-            .selector("node[type='class']").style({ width: baseSizes.class * s, height: baseSizes.class * s }).update()
-            .selector("node[type='api']").style({ width: baseSizes.api * s, height: baseSizes.api * s }).update();
+          const stylesheet = cy.style();
+
+          stylesheet
+            .selector("node[type='package']").style({ width: baseSizes.package * s, height: baseSizes.package * s })
+            .selector("node[type='module']").style({ width: baseSizes.module * s, height: baseSizes.module * s })
+            .selector("node[type='symbol']").style({ width: baseSizes.symbol * s, height: baseSizes.symbol * s })
+            .selector("node[type='repository']").style({ width: baseSizes.repository * s, height: baseSizes.repository * s })
+            .selector("node[type='file']").style({ width: baseSizes.file * s, height: baseSizes.file * s })
+            .selector("node[type='function']").style({ width: baseSizes.function * s, height: baseSizes.function * s })
+            .selector("node[type='class']").style({ width: baseSizes.class * s, height: baseSizes.class * s })
+            .selector("node[type='api']").style({ width: baseSizes.api * s, height: baseSizes.api * s });
+
+          stylesheet.update();
         };
 
         const downloadPng = (dataUrlOrBlob, filename) => {
