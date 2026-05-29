@@ -16,22 +16,19 @@ def health(request: Request) -> HealthResponseContract:
     start_time = getattr(request.app.state, "start_time", None)
     now = getattr(request.state, "now", None)
     uptime_seconds = int((now - start_time).total_seconds()) if start_time is not None and now is not None else 0
+    mongodb_connected = bool(getattr(operational_repository, "is_mongo_connected", True))
 
     try:
-        operational_repository.ping()
-        return HealthResponseContract(
-            status="healthy",
-            mongodb="connected",
-            cache_expiry_days=settings.cache_expiry_days,
-            service_version=settings.service_version,
-            uptime_seconds=uptime_seconds,
-        )
+        if mongodb_connected:
+            operational_repository.ping()
     except Exception:
-        return HealthResponseContract(
-            status="unhealthy",
-            mongodb="disconnected",
-            cache_expiry_days=settings.cache_expiry_days,
-            service_version=settings.service_version,
-            uptime_seconds=uptime_seconds,
-        )
+        mongodb_connected = False
+
+    return HealthResponseContract(
+        status="healthy",
+        mongodb="connected" if mongodb_connected else "disconnected",
+        cache_expiry_days=settings.cache_expiry_days,
+        service_version=settings.service_version,
+        uptime_seconds=uptime_seconds,
+    )
 

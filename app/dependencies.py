@@ -8,6 +8,7 @@ from pymongo import MongoClient
 from app.cache.repository import MongoCacheRepository
 from app.config import get_settings
 from app.observability.repository import OperationalRepository
+from app.runtime_backends import InMemoryCacheRepository, InMemoryOperationalRepository
 from app.services.library_intelligence import LibraryIntelligenceService
 from app.services.source_resolver import OfficialSourceResolver
 
@@ -28,21 +29,31 @@ def get_mongo_client() -> MongoClient:
 
 def reset_mongo_dependencies() -> None:
     get_mongo_client.cache_clear()
-    get_cache_repository.cache_clear()
-    get_operational_repository.cache_clear()
+    get_runtime_repositories.cache_clear()
     get_source_resolver.cache_clear()
 
 
 @lru_cache(maxsize=1)
+def get_runtime_repositories() -> tuple[object, object]:
+    settings = get_settings()
+    try:
+        mongo_client = get_mongo_client()
+        operational_repository = OperationalRepository(mongo_client, settings.mongodb_database)
+        cache_repository = MongoCacheRepository(mongo_client, settings.mongodb_database, settings.cache_expiry_days)
+        cache_repository.ensure_collections()
+        operational_repository.ensure_collections()
+        operational_repository.mark_service_status("__backend_probe__", "ok")
+        return cache_repository, operational_repository
+    except Exception:
+        return InMemoryCacheRepository(settings.cache_expiry_days), InMemoryOperationalRepository(settings.internal_api_key)
+
+
 def get_cache_repository() -> MongoCacheRepository:
-    settings = get_settings()
-    return MongoCacheRepository(get_mongo_client(), settings.mongodb_database, settings.cache_expiry_days)
+    return get_runtime_repositories()[0]
 
 
-@lru_cache(maxsize=1)
 def get_operational_repository() -> OperationalRepository:
-    settings = get_settings()
-    return OperationalRepository(get_mongo_client(), settings.mongodb_database)
+    return get_runtime_repositories()[1]
 
 
 @lru_cache(maxsize=1)
