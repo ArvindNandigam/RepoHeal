@@ -30,8 +30,8 @@ def get_operational_repository() -> OperationalRepository:
 
 @lru_cache(maxsize=1)
 def get_source_resolver() -> OfficialSourceResolver:
-    return OfficialSourceResolver()
+    return OfficialSourceResolver(get_operational_repository())
 
 
 def get_library_intelligence_service() -> LibraryIntelligenceService:
-    return LibraryIntelligenceService(get_cache_repository(), get_source_resolver())
+    return LibraryIntelligenceService(get_cache_repository(), get_operational_repository(), get_source_resolver())

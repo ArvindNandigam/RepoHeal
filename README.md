@@ -13,6 +13,8 @@ CACHE_EXPIRY_DAYS=7
 PORT=8000
 INTERNAL_API_KEY=<LONG_RANDOM_SECRET>
 ALLOWED_DOMAINS=pypi.org,github.com,githubusercontent.com,readthedocs.io,readthedocs.com,docs.*
+UPSTREAM_TIMEOUT_SECONDS=8
+UPSTREAM_RETRY_COUNT=3
 ```
 
 ## Run
@@ -30,6 +32,7 @@ Authorization: Bearer <INTERNAL_API_KEY>
 ```
 
 The service rate limits `POST /library-intelligence` and `POST /bulk-library-intelligence` to 100 requests per minute per API key.
+Bulk requests are capped at 25 libraries per request.
 
 ## Render Deployment
 
@@ -58,3 +61,4 @@ On boot the service pings MongoDB, creates required collections and indexes, val
 * `GET /health`
 * `POST /library-intelligence`
 * `POST /bulk-library-intelligence`
+* `POST /symbol-intelligence`

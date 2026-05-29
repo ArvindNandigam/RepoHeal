@@ -125,6 +125,7 @@ class HealthResponseContract(BaseModel):
     mongodb: Literal["connected", "disconnected"]
     cache_expiry_days: int
     service_version: str
+    uptime_seconds: int
 
     model_config = ConfigDict(extra="forbid")
 
@@ -137,6 +138,14 @@ class BulkLibraryRequestContract(BaseModel):
     libraries: list[BulkLibraryRequestItemContract]
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_request_size(self) -> "BulkLibraryRequestContract":
+        from app.config import MAX_LIBRARIES_PER_REQUEST
+
+        if len(self.libraries) > MAX_LIBRARIES_PER_REQUEST:
+            raise ValueError("too_many_libraries")
+        return self
 
 
 class BulkLibraryResultContract(BaseModel):
@@ -213,3 +222,30 @@ class ApiKeyContract(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(extra="forbid")
+
+
+class SymbolIntelligenceRequestContract(BaseModel):
+    library: str
+    symbol: str
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("library")
+    @classmethod
+    def normalize_library(cls, value: str) -> str:
+        cleaned = normalize_library_name(value)
+        if not cleaned:
+            raise ValueError("library is required")
+        return cleaned
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_symbol(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("symbol is required")
+        return cleaned
+
+
+class SymbolIntelligenceResponseContract(SymbolLifecycleContract):
+    pass

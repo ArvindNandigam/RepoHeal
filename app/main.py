@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from time import perf_counter
 from uuid import uuid4
 
@@ -18,6 +19,7 @@ from app.startup import initialize_runtime
 from app.routes.health import router as health_router
 from app.routes.bulk_library_intelligence import router as bulk_library_router
 from app.routes.library_intelligence import router as library_router
+from app.routes.symbol_intelligence import router as symbol_router
 
 
 def _failure_response(reason: str, status_code: int) -> JSONResponse:
@@ -35,15 +37,18 @@ def _extract_bearer_token(request: Request) -> str | None:
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="Restricted Web Tool", version=settings.service_version)
+    app.state.start_time = datetime.now(timezone.utc)
     app.state.limiter = limiter
     app.add_middleware(SlowAPIMiddleware)
     app.include_router(health_router)
     app.include_router(library_router)
     app.include_router(bulk_library_router)
+    app.include_router(symbol_router)
 
     @app.middleware("http")
     async def request_context_middleware(request: Request, call_next):
         request_id = str(uuid4())
+        request.state.now = datetime.now(timezone.utc)
         request.state.request_id = request_id
         request.state.cache_hit = False
         request.state.library = None

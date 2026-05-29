@@ -38,8 +38,11 @@ class MongoCacheRepository:
 
         self.library_cache.create_index("cache_key", unique=True)
         self.library_cache.create_index("library")
+        self.library_cache.create_index("expires_at", expireAfterSeconds=0)
         self.symbol_cache.create_index([("library", 1), ("symbol", 1)], unique=True)
+        self.symbol_cache.create_index("expires_at", expireAfterSeconds=0)
         self.source_cache.create_index([("library", 1), ("source_type", 1)], unique=True)
+        self.source_cache.create_index("expires_at", expireAfterSeconds=0)
         self.jobs.create_index("created_at")
 
     def _is_fresh(self, last_updated: datetime | None) -> bool:
@@ -92,6 +95,7 @@ class MongoCacheRepository:
                     "source_type": source_type,
                     "payload": payload,
                     "last_updated": now,
+                    "expires_at": now + self.cache_expiry,
                 }
             },
             upsert=True,
@@ -107,6 +111,7 @@ class MongoCacheRepository:
                     "symbol": symbol,
                     "payload": payload,
                     "last_updated": now,
+                    "expires_at": now + self.cache_expiry,
                 }
             },
             upsert=True,

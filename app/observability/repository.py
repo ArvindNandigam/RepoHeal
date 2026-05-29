@@ -36,6 +36,10 @@ class OperationalRepository:
     def audit_logs(self) -> Collection:
         return self.database["audit_logs"]
 
+    @property
+    def service_status(self) -> Collection:
+        return self.database["service_status"]
+
     def ensure_collections(self) -> None:
         existing = set(self.database.list_collection_names())
         for name in (
@@ -44,6 +48,7 @@ class OperationalRepository:
             "service_metrics",
             "api_keys",
             "audit_logs",
+            "service_status",
         ):
             if name not in existing:
                 self.database.create_collection(name)
@@ -65,6 +70,10 @@ class OperationalRepository:
         self.audit_logs.create_index("event")
         self.audit_logs.create_index("timestamp")
         self.audit_logs.create_index("library")
+
+        self.service_status.create_index("service", unique=True)
+        self.service_status.create_index("status")
+        self.service_status.create_index("retry_after")
 
     def ping(self) -> bool:
         self.database.command("ping")
@@ -168,3 +177,15 @@ class OperationalRepository:
             },
             upsert=True,
         )
+
+    def get_service_status(self, service: str) -> dict[str, Any] | None:
+        return self.service_status.find_one({"service": service}, {"_id": 0})
+
+    def mark_service_status(self, service: str, status: str, retry_after: datetime | None = None) -> None:
+        payload: dict[str, Any] = {
+            "service": service,
+            "status": status,
+            "retry_after": retry_after,
+            "updated_at": datetime.now(timezone.utc),
+        }
+        self.service_status.update_one({"service": service}, {"$set": payload}, upsert=True)

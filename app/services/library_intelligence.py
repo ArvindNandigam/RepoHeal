@@ -3,13 +3,15 @@ from __future__ import annotations
 from typing import Any
 
 from app.cache.repository import MongoCacheRepository
-from app.contracts.schemas import LibraryFactsContract, ToolResponseContract
+from app.contracts.schemas import LibraryFactsContract, SymbolLifecycleContract, ToolResponseContract
+from app.observability.repository import OperationalRepository
 from app.services.source_resolver import OfficialSourceResolver
 
 
 class LibraryIntelligenceService:
-    def __init__(self, cache_repository: MongoCacheRepository, source_resolver: OfficialSourceResolver) -> None:
+    def __init__(self, cache_repository: MongoCacheRepository, operational_repository: OperationalRepository, source_resolver: OfficialSourceResolver) -> None:
         self.cache_repository = cache_repository
+        self.operational_repository = operational_repository
         self.source_resolver = source_resolver
         self.last_cache_hit = False
 
@@ -46,3 +48,10 @@ class LibraryIntelligenceService:
         for symbol_lifecycle in symbol_lifecycles:
             self.cache_repository.upsert_symbol_payload(library, symbol_lifecycle.symbol, symbol_lifecycle.model_dump(mode="json"))
         return validated
+
+    def resolve_symbol(self, library: str, symbol: str) -> SymbolLifecycleContract:
+        result = self.resolve(library, [symbol])
+        for lifecycle in result.symbol_lifecycles:
+            if lifecycle.symbol == symbol:
+                return lifecycle
+        raise ValueError("symbol lifecycle not found")

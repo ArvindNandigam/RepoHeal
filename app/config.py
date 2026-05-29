@@ -16,6 +16,7 @@ DEFAULT_ALLOWED_DOMAINS = (
     "readthedocs.com",
     "docs.*",
 )
+MAX_LIBRARIES_PER_REQUEST = 25
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,8 @@ class Settings:
     mongodb_database: str = "repoheal"
     cache_expiry_days: int = 7
     port: int = 8000
+    upstream_timeout_seconds: float = 8.0
+    upstream_retry_count: int = 3
     internal_api_key: str | None = None
     allowed_domains: tuple[str, ...] = DEFAULT_ALLOWED_DOMAINS
     service_version: str = SERVICE_VERSION
@@ -37,6 +40,8 @@ class Settings:
         mongodb_database = os.getenv("MONGODB_DATABASE", "repoheal").strip() or "repoheal"
         cache_expiry_days = int(os.getenv("CACHE_EXPIRY_DAYS", "7"))
         port = int(os.getenv("PORT", "8000"))
+        upstream_timeout_seconds = float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "8"))
+        upstream_retry_count = int(os.getenv("UPSTREAM_RETRY_COUNT", "3"))
         internal_api_key = os.getenv("INTERNAL_API_KEY", "").strip() or None
         allowed_domains_env = os.getenv("ALLOWED_DOMAINS", "").strip()
         allowed_domains = tuple(
@@ -50,6 +55,8 @@ class Settings:
             mongodb_database=mongodb_database,
             cache_expiry_days=cache_expiry_days,
             port=port,
+            upstream_timeout_seconds=upstream_timeout_seconds,
+            upstream_retry_count=upstream_retry_count,
             internal_api_key=internal_api_key,
             allowed_domains=allowed_domains,
         )

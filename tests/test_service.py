@@ -41,6 +41,14 @@ class DummyResolver:
         return source_contract, symbol_lifecycles, release_history, migration_guides, {}
 
 
+class DummyOperationalRepository:
+    def get_service_status(self, service: str):
+        return None
+
+    def mark_service_status(self, service: str, status: str, retry_after=None) -> None:
+        return None
+
+
 def test_service_uses_cache_when_present() -> None:
     repository = DummyRepository()
     repository.cached[("openai", ("openai.ChatCompletion.create",))] = {
@@ -53,7 +61,7 @@ def test_service_uses_cache_when_present() -> None:
         "release_history": [],
         "migration_guides": [],
     }
-    service = LibraryIntelligenceService(repository, DummyResolver())
+    service = LibraryIntelligenceService(repository, DummyOperationalRepository(), DummyResolver())
 
     response = service.resolve("openai", ["openai.ChatCompletion.create"])
 

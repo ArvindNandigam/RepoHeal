@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 
 from app.contracts.schemas import BulkLibraryRequestContract, BulkLibraryResponseContract, BulkLibraryResultContract, FailureResponseContract
+from app.config import MAX_LIBRARIES_PER_REQUEST
 from app.dependencies import get_library_intelligence_service, get_operational_repository
 from app.observability.repository import OperationalRepository
 from app.rate_limit import limiter
@@ -20,6 +21,9 @@ def bulk_library_intelligence(
     service: LibraryIntelligenceService = Depends(get_library_intelligence_service),
     operational_repository: OperationalRepository = Depends(get_operational_repository),
 ) -> BulkLibraryResponseContract:
+    if len(payload.libraries) > MAX_LIBRARIES_PER_REQUEST:
+        raise ValueError("too_many_libraries")
+
     request.state.library = "bulk"
     request.state.libraries = [item.library for item in payload.libraries]
     request.state.symbols = None
@@ -53,7 +57,6 @@ def bulk_library_intelligence(
                 error_type=exc.__class__.__name__,
                 error_message=str(exc),
             )
-            operational_repository.update_daily_metrics(cache_hit=False, error=True)
             results.append(
                 BulkLibraryResultContract(
                     library=item.library,

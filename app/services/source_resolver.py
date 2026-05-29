@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urljoin
 
 import httpx
 
+from app.config import get_settings
 from app.contracts.schemas import MigrationGuideContract, ReleaseArtifactContract, SourceContract, SymbolLifecycleContract
+from app.observability.repository import OperationalRepository
 from app.validators.sources import validate_source_urls
 
 
@@ -32,6 +35,10 @@ class _LinkParser(HTMLParser):
         text = attr_map.get("title") or href or ""
         if href:
             self.links.append((text, href))
+
+
+class CircuitBreakerOpenError(RuntimeError):
+    pass
 
 
 def _pick_project_url(project_urls: dict[str, str], preferred_labels: set[str]) -> str | None:
@@ -98,10 +105,10 @@ def _fetch_url(client: httpx.Client, url: str) -> str:
     return response.text
 
 
-def _discover_guide_links(client: httpx.Client, docs_url: str) -> list[MigrationGuideContract]:
+def _discover_guide_links(fetch_page, docs_url: str) -> list[MigrationGuideContract]:
     discovered: list[MigrationGuideContract] = []
     try:
-        html = _fetch_url(client, docs_url)
+        html = fetch_page(docs_url).text
     except Exception:
         return discovered
 
@@ -148,17 +155,81 @@ def _discover_symbol_lifecycle(symbol: str, bundle: LibrarySourceBundle) -> dict
 
 
 class OfficialSourceResolver:
-    def __init__(self, timeout_seconds: float = 20.0) -> None:
-        self.timeout = httpx.Timeout(timeout_seconds)
+    def __init__(self, operational_repository: OperationalRepository, timeout_seconds: float | None = None, retry_count: int | None = None) -> None:
+        settings = get_settings()
+        self.operational_repository = operational_repository
+        self.timeout = httpx.Timeout(timeout_seconds or settings.upstream_timeout_seconds)
+        self.retry_count = retry_count or settings.upstream_retry_count
         self.client = httpx.Client(timeout=self.timeout, headers={"User-Agent": "RestrictedWebTool/1.0"})
 
     def close(self) -> None:
         self.client.close()
 
+    def _get_github_status(self) -> dict[str, Any] | None:
+        return self.operational_repository.get_service_status("github")
+
+    def _is_github_degraded(self) -> bool:
+        status = self._get_github_status()
+        if not status:
+            return False
+        if status.get("status") != "degraded":
+            return False
+        retry_after = status.get("retry_after")
+        if retry_after is None:
+            return False
+        if isinstance(retry_after, str):
+            retry_after = datetime.fromisoformat(retry_after)
+        if retry_after.tzinfo is None:
+            retry_after = retry_after.replace(tzinfo=timezone.utc)
+        return retry_after > datetime.now(timezone.utc)
+
+    def _mark_github_degraded(self, retry_after: datetime) -> None:
+        self.operational_repository.mark_service_status("github", "degraded", retry_after=retry_after)
+
+    def _mark_github_healthy(self) -> None:
+        self.operational_repository.mark_service_status("github", "healthy", retry_after=None)
+
+    def _request_with_retries(self, url: str) -> httpx.Response:
+        is_github_url = "github.com" in url.lower()
+        if is_github_url and self._is_github_degraded():
+            raise CircuitBreakerOpenError("github circuit open")
+
+        last_error: Exception | None = None
+        for attempt in range(self.retry_count):
+            try:
+                response = self.client.get(url, follow_redirects=True)
+                if response.status_code == 429 and is_github_url:
+                    retry_after_header = response.headers.get("Retry-After")
+                    if retry_after_header and retry_after_header.isdigit():
+                        retry_after = datetime.now(timezone.utc) + timedelta(seconds=int(retry_after_header))
+                    else:
+                        retry_after = datetime.now(timezone.utc) + timedelta(minutes=10)
+                    if attempt >= self.retry_count - 1:
+                        self._mark_github_degraded(retry_after)
+                        raise CircuitBreakerOpenError("github rate limited")
+                    last_error = CircuitBreakerOpenError("github rate limited")
+                else:
+                    response.raise_for_status()
+                    if is_github_url:
+                        self._mark_github_healthy()
+                    return response
+            except (httpx.HTTPError, CircuitBreakerOpenError) as exc:
+                last_error = exc
+                if attempt >= self.retry_count - 1:
+                    break
+                backoff_seconds = 0.25 * (2 ** attempt)
+                if is_github_url:
+                    backoff_seconds = min(backoff_seconds, 1.0)
+                import time
+
+                time.sleep(backoff_seconds)
+
+        assert last_error is not None
+        raise last_error
+
     def resolve(self, library: str, symbols: list[str]) -> tuple[SourceContract, list[SymbolLifecycleContract], list[ReleaseArtifactContract], list[MigrationGuideContract], dict[str, Any]]:
         pypi_url = f"https://pypi.org/pypi/{library}/json"
-        response = self.client.get(pypi_url)
-        response.raise_for_status()
+        response = self._request_with_retries(pypi_url)
         pypi_json = response.json()
 
         info = pypi_json["info"]
@@ -178,7 +249,7 @@ class OfficialSourceResolver:
 
         release_history = _extract_release_history(pypi_json.get("releases", {}), github_repo)
         migration_guides = _extract_migration_guides(project_urls)
-        migration_guides.extend(_discover_guide_links(self.client, official_docs))
+        migration_guides.extend(_discover_guide_links(self._request_with_retries, official_docs))
         validate_source_urls([guide.url for guide in migration_guides])
 
         bundle = LibrarySourceBundle(

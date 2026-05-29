@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from app.config import get_settings
 from app.contracts.schemas import HealthResponseContract
@@ -10,9 +10,12 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health", response_model=HealthResponseContract)
-def health() -> HealthResponseContract:
+def health(request: Request) -> HealthResponseContract:
     settings = get_settings()
     operational_repository = get_operational_repository()
+    start_time = getattr(request.app.state, "start_time", None)
+    now = getattr(request.state, "now", None)
+    uptime_seconds = int((now - start_time).total_seconds()) if start_time is not None and now is not None else 0
 
     try:
         operational_repository.ping()
@@ -21,6 +24,7 @@ def health() -> HealthResponseContract:
             mongodb="connected",
             cache_expiry_days=settings.cache_expiry_days,
             service_version=settings.service_version,
+            uptime_seconds=uptime_seconds,
         )
     except Exception:
         return HealthResponseContract(
@@ -28,5 +32,6 @@ def health() -> HealthResponseContract:
             mongodb="disconnected",
             cache_expiry_days=settings.cache_expiry_days,
             service_version=settings.service_version,
+            uptime_seconds=uptime_seconds,
         )
 
