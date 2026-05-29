@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: restricted-web-tool
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    autoDeploy: false
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DATABASE
+        value: repoheal
+      - key: CACHE_EXPIRY_DAYS
+        value: "7"
+      - key: INTERNAL_API_KEY
+        sync: false
+      - key: ALLOWED_DOMAINS
+        value: pypi.org,github.com,githubusercontent.com,readthedocs.io,readthedocs.com,docs.*

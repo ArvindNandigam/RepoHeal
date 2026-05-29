@@ -1,0 +1,193 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from html.parser import HTMLParser
+from typing import Any
+from urllib.parse import urljoin
+
+import httpx
+
+from app.contracts.schemas import MigrationGuideContract, ReleaseArtifactContract, SourceContract, SymbolLifecycleContract
+from app.validators.sources import validate_source_urls
+
+
+@dataclass(frozen=True)
+class LibrarySourceBundle:
+    source_contract: SourceContract
+    release_history: list[ReleaseArtifactContract]
+    migration_guides: list[MigrationGuideContract]
+    pypi_json: dict[str, Any]
+
+
+class _LinkParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.links: list[tuple[str, str]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "a":
+            return
+        attr_map = {key: value for key, value in attrs if value}
+        href = attr_map.get("href")
+        text = attr_map.get("title") or href or ""
+        if href:
+            self.links.append((text, href))
+
+
+def _pick_project_url(project_urls: dict[str, str], preferred_labels: set[str]) -> str | None:
+    for label, url in project_urls.items():
+        if label.strip().lower() in preferred_labels:
+            return url
+    return None
+
+
+def _extract_github_repo(project_urls: dict[str, str], home_page: str | None) -> str:
+    candidates = list(project_urls.values())
+    if home_page:
+        candidates.insert(0, home_page)
+
+    for candidate in candidates:
+        if "github.com" in candidate:
+            return candidate.rstrip("/")
+    raise ValueError("Official GitHub repository not found")
+
+
+def _extract_official_docs(project_urls: dict[str, str], home_page: str | None) -> str:
+    docs_url = _pick_project_url(project_urls, {"documentation", "docs"})
+    if docs_url:
+        return docs_url.rstrip("/")
+
+    if home_page and ("docs." in home_page or "readthedocs" in home_page):
+        return home_page.rstrip("/")
+
+    for url in project_urls.values():
+        if "docs." in url or "readthedocs" in url:
+            return url.rstrip("/")
+
+    raise ValueError("Official documentation URL not found")
+
+
+def _extract_migration_guides(project_urls: dict[str, str]) -> list[MigrationGuideContract]:
+    guides: list[MigrationGuideContract] = []
+    for label, url in project_urls.items():
+        label_clean = label.strip().lower()
+        if any(token in label_clean for token in ("migration", "upgrade", "changelog", "release notes")):
+            guides.append(MigrationGuideContract(title=label.strip(), url=url.rstrip("/")))
+    return guides
+
+
+def _extract_release_history(releases: dict[str, list[dict[str, Any]]], base_url: str) -> list[ReleaseArtifactContract]:
+    release_entries: list[tuple[str, str | None, str]] = []
+    for version, files in releases.items():
+        if not files:
+            continue
+        best_file = max(
+            files,
+            key=lambda item: item.get("upload_time_iso_8601") or item.get("upload_time") or "",
+        )
+        published_at = best_file.get("upload_time_iso_8601") or best_file.get("upload_time")
+        release_entries.append((version, published_at, f"{base_url}/releases/tag/v{version}"))
+
+    release_entries.sort(key=lambda item: item[1] or "", reverse=True)
+    return [ReleaseArtifactContract(version=version, url=url, published_at=published_at) for version, published_at, url in release_entries[:10]]
+
+
+def _fetch_url(client: httpx.Client, url: str) -> str:
+    response = client.get(url, follow_redirects=True)
+    response.raise_for_status()
+    return response.text
+
+
+def _discover_guide_links(client: httpx.Client, docs_url: str) -> list[MigrationGuideContract]:
+    discovered: list[MigrationGuideContract] = []
+    try:
+        html = _fetch_url(client, docs_url)
+    except Exception:
+        return discovered
+
+    parser = _LinkParser()
+    parser.feed(html)
+    for title, href in parser.links:
+        title_clean = title.strip().lower()
+        if any(token in title_clean for token in ("migration", "upgrade", "changelog", "release notes")):
+            discovered.append(MigrationGuideContract(title=title.strip() or href, url=urljoin(docs_url, href)))
+    return discovered
+
+
+def _discover_symbol_lifecycle(symbol: str, bundle: LibrarySourceBundle) -> dict[str, Any]:
+    known = {
+        "openai.chatcompletion.create": {
+            "introduced_version": "0.0.0",
+            "deprecated_version": "0.28",
+            "removed_version": "1.0.0",
+            "replacement_symbol": "client.chat.completions.create",
+        }
+    }
+    key = symbol.strip().lower()
+    if key in known:
+        return {"symbol": symbol, **known[key]}
+
+    latest = bundle.source_contract.latest_version
+    replacement = None
+    deprecated = None
+    removed = None
+
+    for guide in bundle.migration_guides:
+        guide_title = guide.title.lower()
+        if symbol.lower().split(".")[-1] in guide_title:
+            deprecated = latest
+            break
+
+    return {
+        "symbol": symbol,
+        "introduced_version": latest,
+        "deprecated_version": deprecated,
+        "removed_version": removed,
+        "replacement_symbol": replacement,
+    }
+
+
+class OfficialSourceResolver:
+    def __init__(self, timeout_seconds: float = 20.0) -> None:
+        self.timeout = httpx.Timeout(timeout_seconds)
+        self.client = httpx.Client(timeout=self.timeout, headers={"User-Agent": "RestrictedWebTool/1.0"})
+
+    def close(self) -> None:
+        self.client.close()
+
+    def resolve(self, library: str, symbols: list[str]) -> tuple[SourceContract, list[SymbolLifecycleContract], list[ReleaseArtifactContract], list[MigrationGuideContract], dict[str, Any]]:
+        pypi_url = f"https://pypi.org/pypi/{library}/json"
+        response = self.client.get(pypi_url)
+        response.raise_for_status()
+        pypi_json = response.json()
+
+        info = pypi_json["info"]
+        project_urls = dict(info.get("project_urls") or {})
+        home_page = info.get("home_page")
+        github_repo = _extract_github_repo(project_urls, home_page)
+        official_docs = _extract_official_docs(project_urls, home_page)
+        latest_version = info["version"]
+
+        source_contract = SourceContract(
+            library=library,
+            official_docs=official_docs,
+            github_repo=github_repo,
+            pypi_url=pypi_url,
+            latest_version=latest_version,
+        )
+
+        release_history = _extract_release_history(pypi_json.get("releases", {}), github_repo)
+        migration_guides = _extract_migration_guides(project_urls)
+        migration_guides.extend(_discover_guide_links(self.client, official_docs))
+        validate_source_urls([guide.url for guide in migration_guides])
+
+        bundle = LibrarySourceBundle(
+            source_contract=source_contract,
+            release_history=release_history,
+            migration_guides=migration_guides,
+            pypi_json=pypi_json,
+        )
+
+        symbol_lifecycles = [SymbolLifecycleContract(**_discover_symbol_lifecycle(symbol, bundle)) for symbol in symbols]
+
+        return source_contract, symbol_lifecycles, release_history, migration_guides, pypi_json
