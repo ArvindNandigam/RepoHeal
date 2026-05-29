@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import traceback
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -26,7 +28,21 @@ def library_intelligence(
     request.state.symbols = payload.symbols
     request.state.libraries = [payload.library]
 
-    response_payload = service.build_response_payload(payload.library, payload.symbols)
+    try:
+        response_payload = service.build_response_payload(payload.library, payload.symbols)
+    except Exception as exc:
+        print("RETRIEVAL ERROR:")
+        print(exc)
+        print("TRACEBACK:")
+        print(traceback.format_exc())
+        return JSONResponse(
+            status_code=500,
+            content={
+                "retrieval_error": exc.__class__.__name__,
+                "message": str(exc),
+                "traceback": traceback.format_exc(),
+            },
+        )
 
     try:
         validated = ToolResponseContract.model_validate(response_payload)
