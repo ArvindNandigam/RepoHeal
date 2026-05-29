@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from app import dependencies
 from app.contracts.schemas import MigrationGuideContract, ReleaseArtifactContract, SourceContract
 from app.services.library_intelligence import LibraryIntelligenceService
 
@@ -67,4 +68,17 @@ def test_service_uses_cache_when_present() -> None:
 
     assert response.library == "openai"
     assert response.latest_version == "1.52.0"
+
+
+def test_reset_mongo_dependencies_clears_cached_singletons(monkeypatch) -> None:
+    cleared: list[str] = []
+
+    monkeypatch.setattr(dependencies.get_mongo_client, "cache_clear", lambda: cleared.append("get_mongo_client"))
+    monkeypatch.setattr(dependencies.get_cache_repository, "cache_clear", lambda: cleared.append("get_cache_repository"))
+    monkeypatch.setattr(dependencies.get_operational_repository, "cache_clear", lambda: cleared.append("get_operational_repository"))
+    monkeypatch.setattr(dependencies.get_source_resolver, "cache_clear", lambda: cleared.append("get_source_resolver"))
+
+    dependencies.reset_mongo_dependencies()
+
+    assert cleared == ["get_mongo_client", "get_cache_repository", "get_operational_repository", "get_source_resolver"]
 

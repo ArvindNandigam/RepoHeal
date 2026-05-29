@@ -26,6 +26,13 @@ def get_mongo_client() -> MongoClient:
     )
 
 
+def reset_mongo_dependencies() -> None:
+    get_mongo_client.cache_clear()
+    get_cache_repository.cache_clear()
+    get_operational_repository.cache_clear()
+    get_source_resolver.cache_clear()
+
+
 @lru_cache(maxsize=1)
 def get_cache_repository() -> MongoCacheRepository:
     settings = get_settings()
