@@ -17,6 +17,7 @@ from app.dependencies import get_cache_repository, get_operational_repository
 from app.observability.repository import OperationalRepository
 from app.rate_limit import limiter
 from app.startup import initialize_runtime
+from app.routes.debug_openai import router as debug_openai_router
 from app.routes.health import router as health_router
 from app.routes.bulk_library_intelligence import router as bulk_library_router
 from app.routes.library_intelligence import router as library_router
@@ -42,6 +43,7 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_middleware(SlowAPIMiddleware)
     app.include_router(health_router)
+    app.include_router(debug_openai_router)
     app.include_router(library_router)
     app.include_router(bulk_library_router)
     app.include_router(symbol_router)

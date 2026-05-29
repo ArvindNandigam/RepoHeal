@@ -15,11 +15,11 @@ class LibraryIntelligenceService:
         self.source_resolver = source_resolver
         self.last_cache_hit = False
 
-    def resolve(self, library: str, symbols: list[str]) -> ToolResponseContract:
+    def build_response_payload(self, library: str, symbols: list[str]) -> dict[str, Any]:
         cached_payload = self.cache_repository.get_library_payload(library, symbols)
         if cached_payload is not None:
             self.last_cache_hit = True
-            return ToolResponseContract.model_validate(cached_payload)
+            return cached_payload
 
         self.last_cache_hit = False
         source_contract, symbol_lifecycles, release_history, migration_guides, _ = self.source_resolver.resolve(library, symbols)
@@ -31,7 +31,7 @@ class LibraryIntelligenceService:
             migration_guides=migration_guides,
         )
 
-        response_payload: dict[str, Any] = {
+        return {
             "library": source_contract.library,
             "latest_version": source_contract.latest_version,
             "official_docs": source_contract.official_docs,
@@ -42,10 +42,12 @@ class LibraryIntelligenceService:
             "migration_guides": facts_contract.migration_guides,
         }
 
+    def resolve(self, library: str, symbols: list[str]) -> ToolResponseContract:
+        response_payload = self.build_response_payload(library, symbols)
         validated = ToolResponseContract.model_validate(response_payload)
         self.cache_repository.upsert_library_payload(library, symbols, validated.model_dump(mode="json"))
-        self.cache_repository.upsert_source_payload(library, "pypi_json", {"latest_version": source_contract.latest_version})
-        for symbol_lifecycle in symbol_lifecycles:
+        self.cache_repository.upsert_source_payload(library, "pypi_json", {"latest_version": validated.latest_version})
+        for symbol_lifecycle in validated.symbol_lifecycles:
             self.cache_repository.upsert_symbol_payload(library, symbol_lifecycle.symbol, symbol_lifecycle.model_dump(mode="json"))
         return validated
 
