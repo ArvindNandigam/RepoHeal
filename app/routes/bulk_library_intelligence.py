@@ -44,11 +44,11 @@ def bulk_library_intelligence(
                 )
 
             results.append(
-                    {
-                    library=item.library,
-                    status="success",
-                    result=result,
-                    }
+                {
+                    "library": item.library,
+                    "status": "success",
+                    "result": result,
+                }
             )
         except Exception as exc:
             operational_repository.log_error(
@@ -58,12 +58,12 @@ def bulk_library_intelligence(
                 error_message=str(exc),
             )
             results.append(
-                    {
-                        "library": item.library,
-                        "status": "failed",
-                        "reason": "contract_validation_failed",
-                    }
+                {
+                    "library": item.library,
+                    "status": "failed",
+                    "reason": "contract_validation_failed",
+                }
             )
 
     request.state.cache_hit = any_cache_hit
-        return {"results": results}
+    return {"results": results}
