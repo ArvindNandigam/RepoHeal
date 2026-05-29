@@ -236,8 +236,13 @@ class OfficialSourceResolver:
         project_urls = dict(info.get("project_urls") or {})
         home_page = info.get("home_page")
         github_repo = _extract_github_repo(project_urls, home_page)
-        official_docs = _extract_official_docs(project_urls, home_page)
         latest_version = info["version"]
+
+        try:
+            official_docs = _extract_official_docs(project_urls, home_page)
+        except ValueError:
+            fallback_url = home_page or github_repo or pypi_url
+            official_docs = fallback_url.rstrip("/")
 
         source_contract = SourceContract(
             library=library,

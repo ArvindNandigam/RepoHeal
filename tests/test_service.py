@@ -6,6 +6,7 @@ from app import dependencies
 from app.contracts.schemas import MigrationGuideContract, ReleaseArtifactContract, SourceContract
 from app.runtime_backends import InMemoryCacheRepository, InMemoryOperationalRepository
 from app.services.library_intelligence import LibraryIntelligenceService
+from app.services import source_resolver
 
 
 class DummyRepository:
@@ -133,4 +134,38 @@ def test_runtime_repositories_fall_back_to_memory_when_write_probe_fails(monkeyp
 
     assert isinstance(cache_repository, InMemoryCacheRepository)
     assert isinstance(operational_repository, InMemoryOperationalRepository)
+
+
+def test_source_resolver_falls_back_when_docs_metadata_missing(monkeypatch) -> None:
+    class DummyResponse:
+        def json(self):
+            return {
+                "info": {
+                    "project_urls": {},
+                    "home_page": None,
+                    "version": "1.0.0",
+                },
+                "releases": {},
+            }
+
+    class DummyOperationalRepository:
+        def get_service_status(self, service: str):
+            return None
+
+        def mark_service_status(self, service: str, status: str, retry_after=None) -> None:
+            return None
+
+    resolver = source_resolver.OfficialSourceResolver(DummyOperationalRepository())
+    monkeypatch.setattr(resolver, "_request_with_retries", lambda url: DummyResponse())
+    monkeypatch.setattr(source_resolver, "_extract_github_repo", lambda project_urls, home_page: "https://github.com/openai/openai-python")
+
+    source_contract, symbol_lifecycles, release_history, migration_guides, pypi_json = resolver.resolve("openai", [])
+
+    assert source_contract.official_docs == "https://github.com/openai/openai-python"
+    assert source_contract.github_repo == "https://github.com/openai/openai-python"
+    assert source_contract.latest_version == "1.0.0"
+    assert symbol_lifecycles == []
+    assert release_history == []
+    assert migration_guides == []
+    assert pypi_json["info"]["version"] == "1.0.0"
 
