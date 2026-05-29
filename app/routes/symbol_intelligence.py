@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
-from app.contracts.schemas import FailureResponseContract, SymbolIntelligenceRequestContract, SymbolIntelligenceResponseContract
+from app.contracts.schemas import SymbolIntelligenceRequestContract
 from app.dependencies import get_library_intelligence_service, get_operational_repository
 from app.observability.repository import OperationalRepository
 from app.rate_limit import limiter
@@ -12,14 +12,14 @@ from app.services.library_intelligence import LibraryIntelligenceService
 router = APIRouter(tags=["symbol-intelligence"])
 
 
-@router.post("/symbol-intelligence", response_model=SymbolIntelligenceResponseContract, responses={400: {"model": FailureResponseContract}})
+@router.post("/symbol-intelligence")
 @limiter.limit("100/minute")
 def symbol_intelligence(
     request: Request,
     payload: SymbolIntelligenceRequestContract,
     service: LibraryIntelligenceService = Depends(get_library_intelligence_service),
     operational_repository: OperationalRepository = Depends(get_operational_repository),
-) -> SymbolIntelligenceResponseContract:
+) -> dict:
     request.state.library = payload.library
     request.state.symbols = [payload.symbol]
     request.state.libraries = [payload.library]
@@ -34,4 +34,4 @@ def symbol_intelligence(
             library=payload.library,
         )
 
-    return SymbolIntelligenceResponseContract.model_validate(result)
+    return result

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
-from app.contracts.schemas import BulkLibraryRequestContract, BulkLibraryResponseContract, BulkLibraryResultContract, FailureResponseContract
+from app.contracts.schemas import BulkLibraryRequestContract
 from app.config import MAX_LIBRARIES_PER_REQUEST
 from app.dependencies import get_library_intelligence_service, get_operational_repository
 from app.observability.repository import OperationalRepository
@@ -13,14 +13,14 @@ from app.services.library_intelligence import LibraryIntelligenceService
 router = APIRouter(tags=["library-intelligence"])
 
 
-@router.post("/bulk-library-intelligence", response_model=BulkLibraryResponseContract, responses={400: {"model": FailureResponseContract}})
+@router.post("/bulk-library-intelligence")
 @limiter.limit("100/minute")
 def bulk_library_intelligence(
     request: Request,
     payload: BulkLibraryRequestContract,
     service: LibraryIntelligenceService = Depends(get_library_intelligence_service),
     operational_repository: OperationalRepository = Depends(get_operational_repository),
-) -> BulkLibraryResponseContract:
+) -> dict:
     if len(payload.libraries) > MAX_LIBRARIES_PER_REQUEST:
         raise ValueError("too_many_libraries")
 
@@ -29,7 +29,7 @@ def bulk_library_intelligence(
     request.state.symbols = None
     any_cache_hit = False
 
-    results: list[BulkLibraryResultContract] = []
+    results: list[dict] = []
     for item in payload.libraries:
         try:
             result = service.resolve(item.library, item.symbols)
@@ -44,11 +44,11 @@ def bulk_library_intelligence(
                 )
 
             results.append(
-                BulkLibraryResultContract(
+                    {
                     library=item.library,
                     status="success",
                     result=result,
-                )
+                    }
             )
         except Exception as exc:
             operational_repository.log_error(
@@ -58,12 +58,12 @@ def bulk_library_intelligence(
                 error_message=str(exc),
             )
             results.append(
-                BulkLibraryResultContract(
-                    library=item.library,
-                    status="failed",
-                    reason="contract_validation_failed",
-                )
+                    {
+                        "library": item.library,
+                        "status": "failed",
+                        "reason": "contract_validation_failed",
+                    }
             )
 
     request.state.cache_hit = any_cache_hit
-    return BulkLibraryResponseContract(results=results)
+        return {"results": results}

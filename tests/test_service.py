@@ -68,8 +68,8 @@ def test_service_uses_cache_when_present() -> None:
 
     response = service.resolve("openai", ["openai.ChatCompletion.create"])
 
-    assert response.library == "openai"
-    assert response.latest_version == "1.52.0"
+    assert response["library"] == "openai"
+    assert response["latest_version"] == "1.52.0"
 
 
 def test_reset_mongo_dependencies_clears_cached_singletons(monkeypatch) -> None:
