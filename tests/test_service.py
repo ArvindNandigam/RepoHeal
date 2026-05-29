@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from fastapi.testclient import TestClient
+
 from app import dependencies
+from app.main import app
 from app.contracts.schemas import MigrationGuideContract, ReleaseArtifactContract, SourceContract
 from app.runtime_backends import InMemoryCacheRepository, InMemoryOperationalRepository
 from app.services.library_intelligence import LibraryIntelligenceService
 from app.services import source_resolver
+from app.services.source_resolver import LibraryNotFoundError
 
 
 class DummyRepository:
@@ -170,4 +174,96 @@ def test_source_resolver_falls_back_when_docs_metadata_missing(monkeypatch) -> N
     assert release_history == []
     assert migration_guides == []
     assert pypi_json["info"]["version"] == "1.0.0"
+
+
+def test_source_resolver_prefers_real_github_repo_and_dedupes_guides(monkeypatch) -> None:
+    class DummyResponse:
+        text = "<html><body><a href=\"https://github.com/openai/openai-python/blob/main/CHANGELOG.md\">CHANGELOG.md</a></body></html>"
+
+        def json(self):
+            return {
+                "info": {
+                    "project_urls": {
+                        "Sponsor": "https://github.com/sponsors/samuelcolvin",
+                        "Repository": "https://github.com/openai/openai-python",
+                        "Changelog": "https://github.com/openai/openai-python/blob/main/CHANGELOG.md",
+                    },
+                    "home_page": "https://github.com/sponsors/samuelcolvin",
+                    "version": "2.0.0",
+                },
+                "releases": {},
+            }
+
+    class DummyOperationalRepository:
+        def get_service_status(self, service: str):
+            return None
+
+        def mark_service_status(self, service: str, status: str, retry_after=None) -> None:
+            return None
+
+    resolver = source_resolver.OfficialSourceResolver(DummyOperationalRepository())
+    monkeypatch.setattr(resolver, "_request_with_retries", lambda url: DummyResponse())
+
+    source_contract, symbol_lifecycles, release_history, migration_guides, pypi_json = resolver.resolve("openai", [])
+
+    assert source_contract.github_repo == "https://github.com/openai/openai-python"
+    assert source_contract.official_docs == "https://github.com/openai/openai-python"
+    assert [guide.title for guide in migration_guides] == ["Changelog"]
+    assert [guide.url for guide in migration_guides] == ["https://github.com/openai/openai-python/blob/main/CHANGELOG.md"]
+    assert symbol_lifecycles == []
+    assert release_history == []
+    assert pypi_json["info"]["version"] == "2.0.0"
+
+
+def test_source_resolver_raises_library_not_found_on_pypi_404(monkeypatch) -> None:
+    class DummyResponse:
+        status_code = 404
+
+        def raise_for_status(self):
+            raise source_resolver.httpx.HTTPStatusError(
+                "not found",
+                request=source_resolver.httpx.Request("GET", "https://pypi.org/pypi/missing-package/json"),
+                response=DummyResponse(),
+            )
+
+    class DummyOperationalRepository:
+        def get_service_status(self, service: str):
+            return None
+
+        def mark_service_status(self, service: str, status: str, retry_after=None) -> None:
+            return None
+
+    resolver = source_resolver.OfficialSourceResolver(DummyOperationalRepository())
+    monkeypatch.setattr(resolver, "_request_with_retries", lambda url: (_ for _ in ()).throw(LibraryNotFoundError("missing-package")))
+
+    try:
+        resolver.resolve("missing-package", [])
+    except LibraryNotFoundError:
+        return
+
+    raise AssertionError("LibraryNotFoundError was not raised")
+
+
+def test_library_route_returns_library_not_found(monkeypatch) -> None:
+    class FailingService:
+        last_cache_hit = False
+
+        def resolve(self, library: str, symbols: list[str]):
+            raise LibraryNotFoundError(library)
+
+    app.dependency_overrides.clear()
+    app.dependency_overrides[dependencies.get_library_intelligence_service] = lambda: FailingService()
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/library-intelligence",
+            headers={"Authorization": "Bearer vT5X3du/efIgYBGtXSC1B++jlF/7vszfSl6EtcE/wzLIQgjLZ7qyvtamNE7ZhqxI"},
+            json={"library": "missing-package"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json() == {"status": "failed", "reason": "library_not_found"}
 

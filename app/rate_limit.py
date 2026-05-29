@@ -15,4 +15,4 @@ def _rate_limit_key(request: object) -> str:
     return "anonymous"
 
 
-limiter = Limiter(key_func=_rate_limit_key, default_limits=[])
+limiter = Limiter(key_func=_rate_limit_key, default_limits=[], storage_uri="memory://")

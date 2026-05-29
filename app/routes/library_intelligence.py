@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
 
 from app.contracts.schemas import RequestContract
 from app.dependencies import get_library_intelligence_service, get_operational_repository
 from app.rate_limit import limiter
 from app.services.library_intelligence import LibraryIntelligenceService
 from app.observability.repository import OperationalRepository
+from app.services.source_resolver import LibraryNotFoundError, SourceUnavailableError
 
 
 router = APIRouter(tags=["library-intelligence"])
@@ -24,7 +26,12 @@ def library_intelligence(
     request.state.symbols = payload.symbols
     request.state.libraries = [payload.library]
 
-    response_payload = service.resolve(payload.library, payload.symbols)
+    try:
+        response_payload = service.resolve(payload.library, payload.symbols)
+    except LibraryNotFoundError:
+        return JSONResponse(status_code=404, content={"status": "failed", "reason": "library_not_found"})
+    except SourceUnavailableError:
+        return JSONResponse(status_code=503, content={"status": "failed", "reason": "source_unavailable"})
 
     request.state.cache_hit = service.last_cache_hit
 

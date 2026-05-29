@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
 
 from app.contracts.schemas import BulkLibraryRequestContract
 from app.config import MAX_LIBRARIES_PER_REQUEST
@@ -8,6 +9,7 @@ from app.dependencies import get_library_intelligence_service, get_operational_r
 from app.observability.repository import OperationalRepository
 from app.rate_limit import limiter
 from app.services.library_intelligence import LibraryIntelligenceService
+from app.services.source_resolver import LibraryNotFoundError, SourceUnavailableError
 
 
 router = APIRouter(tags=["library-intelligence"])
@@ -50,6 +52,22 @@ def bulk_library_intelligence(
                     "result": result,
                 }
             )
+        except LibraryNotFoundError:
+            results.append(
+                {
+                    "library": item.library,
+                    "status": "failed",
+                    "reason": "library_not_found",
+                }
+            )
+        except SourceUnavailableError:
+            results.append(
+                {
+                    "library": item.library,
+                    "status": "failed",
+                    "reason": "source_unavailable",
+                }
+            )
         except Exception as exc:
             operational_repository.log_error(
                 request_id=request.state.request_id,
@@ -61,7 +79,7 @@ def bulk_library_intelligence(
                 {
                     "library": item.library,
                     "status": "failed",
-                    "reason": "contract_validation_failed",
+                    "reason": "source_unavailable",
                 }
             )
 

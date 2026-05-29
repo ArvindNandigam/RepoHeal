@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urljoin
+from urllib.parse import urlparse
 
 import httpx
 
@@ -41,6 +42,14 @@ class CircuitBreakerOpenError(RuntimeError):
     pass
 
 
+class LibraryNotFoundError(RuntimeError):
+    pass
+
+
+class SourceUnavailableError(RuntimeError):
+    pass
+
+
 def _pick_project_url(project_urls: dict[str, str], preferred_labels: set[str]) -> str | None:
     for label, url in project_urls.items():
         if label.strip().lower() in preferred_labels:
@@ -48,15 +57,56 @@ def _pick_project_url(project_urls: dict[str, str], preferred_labels: set[str]) 
     return None
 
 
+def _is_real_github_repo_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.netloc.lower() != "github.com":
+        return False
+
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if len(path_parts) < 2:
+        return False
+
+    blocked_roots = {
+        "about",
+        "blog",
+        "collections",
+        "contact",
+        "explore",
+        "features",
+        "login",
+        "new",
+        "notifications",
+        "orgs",
+        "pricing",
+        "pull",
+        "pulls",
+        "search",
+        "sessions",
+        "site",
+        "sponsors",
+        "topics",
+        "trending",
+    }
+    return path_parts[0] not in blocked_roots
+
+
 def _extract_github_repo(project_urls: dict[str, str], home_page: str | None) -> str:
-    candidates = list(project_urls.values())
+    candidates: list[str] = []
+
+    for label, url in project_urls.items():
+        label_clean = label.strip().lower()
+        if any(token in label_clean for token in ("source", "github", "repo", "repository", "code")):
+            candidates.append(url)
+
     if home_page:
-        candidates.insert(0, home_page)
+        candidates.append(home_page)
+
+    candidates.extend(project_urls.values())
 
     for candidate in candidates:
-        if "github.com" in candidate:
+        if _is_real_github_repo_url(candidate):
             return candidate.rstrip("/")
-    raise ValueError("Official GitHub repository not found")
+    raise SourceUnavailableError("Official GitHub repository not found")
 
 
 def _extract_official_docs(project_urls: dict[str, str], home_page: str | None) -> str:
@@ -81,6 +131,18 @@ def _extract_migration_guides(project_urls: dict[str, str]) -> list[MigrationGui
         if any(token in label_clean for token in ("migration", "upgrade", "changelog", "release notes")):
             guides.append(MigrationGuideContract(title=label.strip(), url=url.rstrip("/")))
     return guides
+
+
+def _dedupe_migration_guides(guides: list[MigrationGuideContract]) -> list[MigrationGuideContract]:
+    deduped: list[MigrationGuideContract] = []
+    seen: set[str] = set()
+    for guide in guides:
+        key = guide.url.rstrip("/")
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(guide)
+    return deduped
 
 
 def _extract_release_history(releases: dict[str, list[dict[str, Any]]], base_url: str) -> list[ReleaseArtifactContract]:
@@ -212,11 +274,16 @@ class OfficialSourceResolver:
                         raise CircuitBreakerOpenError("github rate limited")
                     last_error = CircuitBreakerOpenError("github rate limited")
                 else:
-                    response.raise_for_status()
+                    try:
+                        response.raise_for_status()
+                    except httpx.HTTPStatusError as exc:
+                        if "pypi.org/pypi/" in url and exc.response.status_code == 404:
+                            raise LibraryNotFoundError(url) from exc
+                        raise SourceUnavailableError(url) from exc
                     if is_github_url:
                         self._mark_github_healthy()
                     return response
-            except (httpx.HTTPError, CircuitBreakerOpenError) as exc:
+            except (httpx.HTTPError, CircuitBreakerOpenError, LibraryNotFoundError, SourceUnavailableError) as exc:
                 last_error = exc
                 if attempt >= self.retry_count - 1:
                     break
@@ -244,8 +311,7 @@ class OfficialSourceResolver:
         try:
             official_docs = _extract_official_docs(project_urls, home_page)
         except ValueError:
-            fallback_url = home_page or github_repo or pypi_url
-            official_docs = fallback_url.rstrip("/")
+            official_docs = github_repo
 
         source_contract = SourceContract(
             library=library,
@@ -258,6 +324,7 @@ class OfficialSourceResolver:
         release_history = _extract_release_history(pypi_json.get("releases", {}), github_repo)
         migration_guides = _extract_migration_guides(project_urls)
         migration_guides.extend(_discover_guide_links(self._request_with_retries, official_docs))
+        migration_guides = _dedupe_migration_guides(migration_guides)
         validate_source_urls([guide.url for guide in migration_guides])
 
         bundle = LibrarySourceBundle(
