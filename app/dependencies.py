@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+import certifi
 from pymongo import MongoClient
 
 from app.cache.repository import MongoCacheRepository
@@ -13,7 +14,16 @@ from app.services.source_resolver import OfficialSourceResolver
 
 @lru_cache(maxsize=1)
 def get_mongo_client() -> MongoClient:
-    return MongoClient(get_settings().mongodb_uri)
+    return MongoClient(
+        get_settings().mongodb_uri,
+        tls=True,
+        tlsCAFile=certifi.where(),
+        connectTimeoutMS=10000,
+        serverSelectionTimeoutMS=10000,
+        socketTimeoutMS=10000,
+        retryWrites=True,
+        retryReads=True,
+    )
 
 
 @lru_cache(maxsize=1)
