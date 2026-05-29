@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from threading import Thread
 from time import perf_counter
 from uuid import uuid4
 
@@ -161,7 +162,12 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     def startup_event() -> None:
-        initialize_runtime(get_operational_repository(), get_cache_repository(), settings)
+        background_thread = Thread(
+            target=initialize_runtime,
+            args=(get_operational_repository(), get_cache_repository(), settings),
+            daemon=True,
+        )
+        background_thread.start()
 
     return app
 
