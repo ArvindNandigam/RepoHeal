@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -9,6 +10,9 @@ from pymongo.database import Database
 
 from app.contracts.schemas import ApiKeyContract, AuditLogContract, ErrorLogContract, RequestLogContract, ServiceMetricsContract
 from app.security import hash_api_key, is_bearer_token_valid
+
+
+logger = logging.getLogger(__name__)
 
 
 class OperationalRepository:
@@ -99,13 +103,20 @@ class OperationalRepository:
         return ApiKeyContract(name=name, key_hash=key_hash, active=True, created_at=now)
 
     def get_active_api_key_hashes(self) -> list[str]:
-        return [record["key_hash"] for record in self.api_keys.find({"active": True}, {"_id": 0, "key_hash": 1})]
+        try:
+            return [record["key_hash"] for record in self.api_keys.find({"active": True}, {"_id": 0, "key_hash": 1})]
+        except Exception as exc:
+            logger.warning("failed to read active api key hashes: %s", exc)
+            return []
 
     def find_matching_api_key(self, raw_token: str) -> tuple[bool, str | None, str]:
         token_hash = hash_api_key(raw_token)
-        for record in self.api_keys.find({"active": True}, {"_id": 0, "name": 1, "key_hash": 1}):
-            if is_bearer_token_valid(raw_token, [record["key_hash"]]):
-                return True, record.get("name"), token_hash
+        try:
+            for record in self.api_keys.find({"active": True}, {"_id": 0, "name": 1, "key_hash": 1}):
+                if is_bearer_token_valid(raw_token, [record["key_hash"]]):
+                    return True, record.get("name"), token_hash
+        except Exception as exc:
+            logger.warning("failed to validate api key: %s", exc)
         return False, None, token_hash
 
     def log_request(
@@ -119,28 +130,34 @@ class OperationalRepository:
         status: str,
         libraries: list[str] | None = None,
     ) -> None:
-        payload = RequestLogContract(
-            request_id=request_id,
-            endpoint=endpoint,
-            library=library,
-            libraries=libraries,
-            symbols=symbols,
-            cache_hit=cache_hit,
-            response_time_ms=response_time_ms,
-            status=status,
-            timestamp=datetime.now(timezone.utc),
-        )
-        self.request_logs.insert_one(payload.model_dump())
+        try:
+            payload = RequestLogContract(
+                request_id=request_id,
+                endpoint=endpoint,
+                library=library,
+                libraries=libraries,
+                symbols=symbols,
+                cache_hit=cache_hit,
+                response_time_ms=response_time_ms,
+                status=status,
+                timestamp=datetime.now(timezone.utc),
+            )
+            self.request_logs.insert_one(payload.model_dump())
+        except Exception as exc:
+            logger.warning("failed to write request log: %s", exc)
 
     def log_error(self, request_id: str, endpoint: str, error_type: str, error_message: str) -> None:
-        payload = ErrorLogContract(
-            request_id=request_id,
-            endpoint=endpoint,
-            error_type=error_type,
-            error_message=error_message,
-            timestamp=datetime.now(timezone.utc),
-        )
-        self.error_logs.insert_one(payload.model_dump())
+        try:
+            payload = ErrorLogContract(
+                request_id=request_id,
+                endpoint=endpoint,
+                error_type=error_type,
+                error_message=error_message,
+                timestamp=datetime.now(timezone.utc),
+            )
+            self.error_logs.insert_one(payload.model_dump())
+        except Exception as exc:
+            logger.warning("failed to write error log: %s", exc)
 
     def log_audit_event(
         self,
@@ -149,43 +166,56 @@ class OperationalRepository:
         library: str | None = None,
         details: dict[str, Any] | None = None,
     ) -> None:
-        payload = AuditLogContract(
-            event=event,
-            request_id=request_id,
-            library=library,
-            details=details,
-            timestamp=datetime.now(timezone.utc),
-        )
-        self.audit_logs.insert_one(payload.model_dump())
+        try:
+            payload = AuditLogContract(
+                event=event,
+                request_id=request_id,
+                library=library,
+                details=details,
+                timestamp=datetime.now(timezone.utc),
+            )
+            self.audit_logs.insert_one(payload.model_dump())
+        except Exception as exc:
+            logger.warning("failed to write audit log: %s", exc)
 
     def update_daily_metrics(self, cache_hit: bool | None = None, error: bool = False) -> None:
-        now = datetime.now(timezone.utc)
-        metrics = {"requests": 1}
-        if cache_hit is True:
-            metrics["cache_hits"] = 1
-        elif cache_hit is False:
-            metrics["cache_misses"] = 1
-        if error:
-            metrics["errors"] = 1
+        try:
+            now = datetime.now(timezone.utc)
+            metrics = {"requests": 1}
+            if cache_hit is True:
+                metrics["cache_hits"] = 1
+            elif cache_hit is False:
+                metrics["cache_misses"] = 1
+            if error:
+                metrics["errors"] = 1
 
-        self.service_metrics.update_one(
-            {"date": now.date().isoformat()},
-            {
-                "$setOnInsert": {"date": now.date().isoformat()},
-                "$set": {"updated_at": now},
-                "$inc": metrics,
-            },
-            upsert=True,
-        )
+            self.service_metrics.update_one(
+                {"date": now.date().isoformat()},
+                {
+                    "$setOnInsert": {"date": now.date().isoformat()},
+                    "$set": {"updated_at": now},
+                    "$inc": metrics,
+                },
+                upsert=True,
+            )
+        except Exception as exc:
+            logger.warning("failed to update metrics: %s", exc)
 
     def get_service_status(self, service: str) -> dict[str, Any] | None:
-        return self.service_status.find_one({"service": service}, {"_id": 0})
+        try:
+            return self.service_status.find_one({"service": service}, {"_id": 0})
+        except Exception as exc:
+            logger.warning("failed to read service status for %s: %s", service, exc)
+            return None
 
     def mark_service_status(self, service: str, status: str, retry_after: datetime | None = None) -> None:
-        payload: dict[str, Any] = {
-            "service": service,
-            "status": status,
-            "retry_after": retry_after,
-            "updated_at": datetime.now(timezone.utc),
-        }
-        self.service_status.update_one({"service": service}, {"$set": payload}, upsert=True)
+        try:
+            payload: dict[str, Any] = {
+                "service": service,
+                "status": status,
+                "retry_after": retry_after,
+                "updated_at": datetime.now(timezone.utc),
+            }
+            self.service_status.update_one({"service": service}, {"$set": payload}, upsert=True)
+        except Exception as exc:
+            logger.warning("failed to write service status for %s: %s", service, exc)
