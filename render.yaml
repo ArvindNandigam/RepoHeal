@@ -18,4 +18,4 @@ services:
       - key: INTERNAL_API_KEY
         sync: false
       - key: ALLOWED_DOMAINS
-        value: pypi.org,github.com,githubusercontent.com,readthedocs.io,readthedocs.com,docs.*
+        value: pypi.org,github.com,githubusercontent.com,numpy.org,pandas.pydata.org,scikit-learn.org,readthedocs.io,readthedocs.com,docs.*
