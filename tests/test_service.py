@@ -138,6 +138,8 @@ def test_runtime_repositories_fall_back_to_memory_when_write_probe_fails(monkeyp
 
 def test_source_resolver_falls_back_when_docs_metadata_missing(monkeypatch) -> None:
     class DummyResponse:
+        text = "<html><body><a href=\"https://github.blog/changelog\">Changelog</a></body></html>"
+
         def json(self):
             return {
                 "info": {

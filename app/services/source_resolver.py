@@ -11,7 +11,7 @@ import httpx
 from app.config import get_settings
 from app.contracts.schemas import MigrationGuideContract, ReleaseArtifactContract, SourceContract, SymbolLifecycleContract
 from app.observability.repository import OperationalRepository
-from app.validators.sources import validate_source_urls
+from app.validators.sources import is_approved_source_url, validate_source_urls
 
 
 @dataclass(frozen=True)
@@ -117,7 +117,10 @@ def _discover_guide_links(fetch_page, docs_url: str) -> list[MigrationGuideContr
     for title, href in parser.links:
         title_clean = title.strip().lower()
         if any(token in title_clean for token in ("migration", "upgrade", "changelog", "release notes")):
-            discovered.append(MigrationGuideContract(title=title.strip() or href, url=urljoin(docs_url, href)))
+            guide_url = urljoin(docs_url, href)
+            if not is_approved_source_url(guide_url):
+                continue
+            discovered.append(MigrationGuideContract(title=title.strip() or href, url=guide_url))
     return discovered
 
 
