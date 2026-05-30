@@ -315,4 +315,213 @@
     "official_docs": "https://filesystem-spec.readthedocs.io/",
     "github": "https://github.com/fsspec/fsspec"
   }
+  ,
+  "langchain": {
+    "official_docs": "https://python.langchain.com/docs/",
+    "github": "https://github.com/langchain-ai/langchain"
+  },
+  "llama-index": {
+    "official_docs": "https://llama-index.readthedocs.io/",
+    "github": "https://github.com/jerryjliu/llama_index"
+  },
+  "openai": {
+    "official_docs": "https://platform.openai.com/docs/api-reference",
+    "github": "https://github.com/openai/openai-python"
+  },
+  "diffusers": {
+    "official_docs": "https://huggingface.co/docs/diffusers/index",
+    "github": "https://github.com/huggingface/diffusers"
+  },
+  "accelerate": {
+    "official_docs": "https://huggingface.co/docs/accelerate/index",
+    "github": "https://github.com/huggingface/accelerate"
+  },
+  "bitsandbytes": {
+    "official_docs": "https://github.com/TimDettmers/bitsandbytes",
+    "github": "https://github.com/TimDettmers/bitsandbytes"
+  },
+  "peft": {
+    "official_docs": "https://peft.readthedocs.io/",
+    "github": "https://github.com/huggingface/peft"
+  },
+  "sentence-transformers": {
+    "official_docs": "https://www.sbert.net/",
+    "github": "https://github.com/UKPLab/sentence-transformers"
+  },
+  "tokenizers": {
+    "official_docs": "https://huggingface.co/docs/tokenizers/index",
+    "github": "https://github.com/huggingface/tokenizers"
+  },
+  "sentencepiece": {
+    "official_docs": "https://github.com/google/sentencepiece",
+    "github": "https://github.com/google/sentencepiece"
+  },
+  "huggingface-hub": {
+    "official_docs": "https://huggingface.co/docs/huggingface_hub/index",
+    "github": "https://github.com/huggingface/huggingface_hub"
+  },
+  "gradio": {
+    "official_docs": "https://gradio.app/docs/",
+    "github": "https://github.com/gradio-app/gradio"
+  },
+  "streamlit": {
+    "official_docs": "https://docs.streamlit.io/",
+    "github": "https://github.com/streamlit/streamlit"
+  },
+  "jupyter": {
+    "official_docs": "https://jupyter.org/",
+    "github": "https://github.com/jupyter"
+  },
+  "notebook": {
+    "official_docs": "https://jupyter.org/documentation",
+    "github": "https://github.com/jupyter/notebook"
+  },
+  "jupyterlab": {
+    "official_docs": "https://jupyterlab.readthedocs.io/",
+    "github": "https://github.com/jupyterlab/jupyterlab"
+  },
+  "ipython": {
+    "official_docs": "https://ipython.org/",
+    "github": "https://github.com/ipython/ipython"
+  },
+  "ipykernel": {
+    "official_docs": "https://ipykernel.readthedocs.io/",
+    "github": "https://github.com/ipython/ipykernel"
+  },
+  "nbconvert": {
+    "official_docs": "https://nbconvert.readthedocs.io/",
+    "github": "https://github.com/jupyter/nbconvert"
+  },
+  "voila": {
+    "official_docs": "https://voila.readthedocs.io/",
+    "github": "https://github.com/voila-dashboards/voila"
+  },
+  "altair": {
+    "official_docs": "https://altair-viz.github.io/",
+    "github": "https://github.com/altair-viz/altair"
+  },
+  "bokeh": {
+    "official_docs": "https://docs.bokeh.org/",
+    "github": "https://github.com/bokeh/bokeh"
+  },
+  "holoviews": {
+    "official_docs": "https://holoviews.org/",
+    "github": "https://github.com/holoviz/holoviews"
+  },
+  "panel": {
+    "official_docs": "https://panel.holoviz.org/",
+    "github": "https://github.com/holoviz/panel"
+  },
+  "numba": {
+    "official_docs": "https://numba.pydata.org/",
+    "github": "https://github.com/numba/numba"
+  },
+  "xarray": {
+    "official_docs": "https://xarray.dev/",
+    "github": "https://github.com/pydata/xarray"
+  },
+  "pyarrow": {
+    "official_docs": "https://arrow.apache.org/docs/python/",
+    "github": "https://github.com/apache/arrow"
+  },
+  "polars": {
+    "official_docs": "https://pola-rs.github.io/polars/py-polars/html/",
+    "github": "https://github.com/pola-rs/polars"
+  },
+  "vaex": {
+    "official_docs": "https://vaex.io/",
+    "github": "https://github.com/vaexio/vaex"
+  },
+  "pyspark": {
+    "official_docs": "https://spark.apache.org/docs/latest/api/python/",
+    "github": "https://github.com/apache/spark"
+  },
+  "openpyxl": {
+    "official_docs": "https://openpyxl.readthedocs.io/",
+    "github": "https://bitbucket.org/openpyxl/openpyxl"
+  },
+  "xlrd": {
+    "official_docs": "https://xlrd.readthedocs.io/",
+    "github": "https://github.com/python-excel/xlrd"
+  },
+  "xlsxwriter": {
+    "official_docs": "https://xlsxwriter.readthedocs.io/",
+    "github": "https://github.com/jmcnamara/XlsxWriter"
+  },
+  "python-dateutil": {
+    "official_docs": "https://dateutil.readthedocs.io/",
+    "github": "https://github.com/dateutil/dateutil"
+  },
+  "pytz": {
+    "official_docs": "https://pytz.sourceforge.net/",
+    "github": "https://github.com/stub42/pytz"
+  },
+  "polars": {
+    "official_docs": "https://pola-rs.github.io/polars/py-polars/html/",
+    "github": "https://github.com/pola-rs/polars"
+  },
+  "sentry-sdk": {
+    "official_docs": "https://docs.sentry.io/platforms/python/",
+    "github": "https://github.com/getsentry/sentry-python"
+  },
+  "streamz": {
+    "official_docs": "https://streamz.readthedocs.io/",
+    "github": "https://github.com/python-streamz/streamz"
+  },
+  "gunicorn": {
+    "official_docs": "https://docs.gunicorn.org/",
+    "github": "https://github.com/benoitc/gunicorn"
+  },
+  "uvloop": {
+    "official_docs": "https://uvloop.readthedocs.io/",
+    "github": "https://github.com/MagicStack/uvloop"
+  },
+  "ansible": {
+    "official_docs": "https://docs.ansible.com/",
+    "github": "https://github.com/ansible/ansible"
+  },
+  "fabric": {
+    "official_docs": "https://www.fabfile.org/",
+    "github": "https://github.com/fabric/fabric"
+  },
+  "docker": {
+    "official_docs": "https://docker-py.readthedocs.io/",
+    "github": "https://github.com/docker/docker-py"
+  },
+  "paramiko": {
+    "official_docs": "http://docs.paramiko.org/",
+    "github": "https://github.com/paramiko/paramiko"
+  },
+  "python-dotenv": {
+    "official_docs": "https://saurabh-kumar.com/python-dotenv/",
+    "github": "https://github.com/theskumar/python-dotenv"
+  },
+  "sphinx": {
+    "official_docs": "https://www.sphinx-doc.org/",
+    "github": "https://github.com/sphinx-doc/sphinx"
+  },
+  "mkdocs": {
+    "official_docs": "https://www.mkdocs.org/",
+    "github": "https://github.com/mkdocs/mkdocs"
+  },
+  "dvc": {
+    "official_docs": "https://dvc.org/doc",
+    "github": "https://github.com/iterative/dvc"
+  },
+  "mlflow": {
+    "official_docs": "https://www.mlflow.org/docs/latest/index.html",
+    "github": "https://github.com/mlflow/mlflow"
+  },
+  "s3transfer": {
+    "official_docs": "https://aws.github.io/aws-sdk-pandas/",
+    "github": "https://github.com/boto/s3transfer"
+  },
+  "pandas-profiling": {
+    "official_docs": "https://pandas-profiling.ydata.ai/",
+    "github": "https://github.com/ydataai/pandas-profiling"
+  },
+  "yfinance": {
+    "official_docs": "https://pypi.org/project/yfinance/",
+    "github": "https://github.com/ranaroussi/yfinance"
+  }
 }

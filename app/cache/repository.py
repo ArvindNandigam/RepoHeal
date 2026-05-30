@@ -19,6 +19,10 @@ class MongoCacheRepository:
         return self.database["library_cache"]
 
     @property
+    def library_registry(self) -> Collection:
+        return self.database["library_registry"]
+
+    @property
     def symbol_cache(self) -> Collection:
         return self.database["symbol_cache"]
 
@@ -35,6 +39,8 @@ class MongoCacheRepository:
         for name in ("library_cache", "symbol_cache", "source_cache", "jobs"):
             if name not in existing:
                 self.database.create_collection(name)
+        if "library_registry" not in existing:
+            self.database.create_collection("library_registry")
 
         self.library_cache.create_index("cache_key", unique=True)
         self.library_cache.create_index("library")
@@ -43,6 +49,7 @@ class MongoCacheRepository:
         self.symbol_cache.create_index("expires_at", expireAfterSeconds=0)
         self.source_cache.create_index([("library", 1), ("source_type", 1)], unique=True)
         self.source_cache.create_index("expires_at", expireAfterSeconds=0)
+        self.library_registry.create_index("library", unique=True)
         self.jobs.create_index("created_at")
 
     def _is_fresh(self, last_updated: datetime | None) -> bool:
@@ -134,3 +141,14 @@ class MongoCacheRepository:
             },
             upsert=True,
         )
+
+    def get_library_record(self, library: str) -> dict[str, Any] | None:
+        record = self.library_registry.find_one({"library": library})
+        return record if record else None
+
+    def upsert_library_record(self, library: str, record: dict[str, Any]) -> None:
+        now = datetime.now(timezone.utc)
+        record_copy = dict(record)
+        record_copy["library"] = library
+        record_copy.setdefault("last_verified", now.isoformat())
+        self.library_registry.update_one({"library": library}, {"$set": record_copy}, upsert=True)

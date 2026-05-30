@@ -297,7 +297,7 @@ class OfficialSourceResolver:
         assert last_error is not None
         raise last_error
 
-    def resolve(self, library: str, symbols: list[str]) -> tuple[SourceContract, list[SymbolLifecycleContract], list[ReleaseArtifactContract], list[MigrationGuideContract], dict[str, Any]]:
+    def resolve(self, library: str, symbols: list[str], trust_sources: bool = False) -> tuple[SourceContract, list[SymbolLifecycleContract], list[ReleaseArtifactContract], list[MigrationGuideContract], dict[str, Any]]:
         pypi_url = f"https://pypi.org/pypi/{library}/json"
         response = self._request_with_retries(pypi_url)
         pypi_json = response.json()
@@ -313,13 +313,25 @@ class OfficialSourceResolver:
         except ValueError:
             official_docs = github_repo
 
-        source_contract = SourceContract(
-            library=library,
-            official_docs=official_docs,
-            github_repo=github_repo,
-            pypi_url=pypi_url,
-            latest_version=latest_version,
-        )
+        if trust_sources:
+            # construct without pydantic validation when caller indicates trust
+            source_contract = SourceContract.model_construct(
+                {
+                    "library": library,
+                    "official_docs": official_docs,
+                    "github_repo": github_repo,
+                    "pypi_url": pypi_url,
+                    "latest_version": latest_version,
+                }
+            )
+        else:
+            source_contract = SourceContract(
+                library=library,
+                official_docs=official_docs,
+                github_repo=github_repo,
+                pypi_url=pypi_url,
+                latest_version=latest_version,
+            )
 
         release_history = _extract_release_history(pypi_json.get("releases", {}), github_repo)
         migration_guides = _extract_migration_guides(project_urls)
@@ -341,7 +353,8 @@ class OfficialSourceResolver:
 
         migration_guides.extend(_discover_guide_links(self._request_with_retries, official_docs, extra_domains=verified_hosts))
         migration_guides = _dedupe_migration_guides(migration_guides)
-        validate_source_urls([guide.url for guide in migration_guides], extra_domains=verified_hosts)
+        if not trust_sources:
+            validate_source_urls([guide.url for guide in migration_guides], extra_domains=verified_hosts)
 
         bundle = LibrarySourceBundle(
             source_contract=source_contract,
