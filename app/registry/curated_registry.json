@@ -1,0 +1,318 @@
+{
+  "numpy": {
+    "official_docs": "https://numpy.org/doc",
+    "github": "https://github.com/numpy/numpy"
+  },
+  "pandas": {
+    "official_docs": "https://pandas.pydata.org/docs",
+    "github": "https://github.com/pandas-dev/pandas"
+  },
+  "scipy": {
+    "official_docs": "https://docs.scipy.org/doc/scipy/reference/",
+    "github": "https://github.com/scipy/scipy"
+  },
+  "scikit-learn": {
+    "official_docs": "https://scikit-learn.org/stable/documentation.html",
+    "github": "https://github.com/scikit-learn/scikit-learn"
+  },
+  "matplotlib": {
+    "official_docs": "https://matplotlib.org/stable/contents.html",
+    "github": "https://github.com/matplotlib/matplotlib"
+  },
+  "seaborn": {
+    "official_docs": "https://seaborn.pydata.org",
+    "github": "https://github.com/mwaskom/seaborn"
+  },
+  "plotly": {
+    "official_docs": "https://plotly.com/python/",
+    "github": "https://github.com/plotly/plotly.py"
+  },
+  "tensorflow": {
+    "official_docs": "https://www.tensorflow.org/api_docs/python",
+    "github": "https://github.com/tensorflow/tensorflow"
+  },
+  "torch": {
+    "official_docs": "https://pytorch.org/docs/stable/index.html",
+    "github": "https://github.com/pytorch/pytorch"
+  },
+  "jax": {
+    "official_docs": "https://jax.readthedocs.io/en/latest/",
+    "github": "https://github.com/google/jax"
+  },
+  "transformers": {
+    "official_docs": "https://huggingface.co/docs/transformers/index",
+    "github": "https://github.com/huggingface/transformers"
+  },
+  "datasets": {
+    "official_docs": "https://huggingface.co/docs/datasets/",
+    "github": "https://github.com/huggingface/datasets"
+  },
+  "spacy": {
+    "official_docs": "https://spacy.io/usage",
+    "github": "https://github.com/explosion/spaCy"
+  },
+  "nltk": {
+    "official_docs": "https://www.nltk.org/",
+    "github": "https://github.com/nltk/nltk"
+  },
+  "gensim": {
+    "official_docs": "https://radimrehurek.com/gensim/",
+    "github": "https://github.com/RaRe-Technologies/gensim"
+  },
+  "pillow": {
+    "official_docs": "https://pillow.readthedocs.io/en/stable/",
+    "github": "https://github.com/python-pillow/Pillow"
+  },
+  "opencv-python": {
+    "official_docs": "https://docs.opencv.org/",
+    "github": "https://github.com/opencv/opencv"
+  },
+  "requests": {
+    "official_docs": "https://docs.python-requests.org/",
+    "github": "https://github.com/psf/requests"
+  },
+  "httpx": {
+    "official_docs": "https://www.python-httpx.org/",
+    "github": "https://github.com/encode/httpx"
+  },
+  "aiohttp": {
+    "official_docs": "https://docs.aiohttp.org/",
+    "github": "https://github.com/aio-libs/aiohttp"
+  },
+  "fastapi": {
+    "official_docs": "https://fastapi.tiangolo.com/",
+    "github": "https://github.com/tiangolo/fastapi"
+  },
+  "starlette": {
+    "official_docs": "https://www.starlette.io/",
+    "github": "https://github.com/encode/starlette"
+  },
+  "uvicorn": {
+    "official_docs": "https://www.uvicorn.org/",
+    "github": "https://github.com/encode/uvicorn"
+  },
+  "flask": {
+    "official_docs": "https://flask.palletsprojects.com/",
+    "github": "https://github.com/pallets/flask"
+  },
+  "django": {
+    "official_docs": "https://docs.djangoproject.com/",
+    "github": "https://github.com/django/django"
+  },
+  "sqlalchemy": {
+    "official_docs": "https://docs.sqlalchemy.org/",
+    "github": "https://github.com/sqlalchemy/sqlalchemy"
+  },
+  "alembic": {
+    "official_docs": "https://alembic.sqlalchemy.org/",
+    "github": "https://github.com/sqlalchemy/alembic"
+  },
+  "celery": {
+    "official_docs": "https://docs.celeryq.dev/",
+    "github": "https://github.com/celery/celery"
+  },
+  "redis": {
+    "official_docs": "https://redis-py.readthedocs.io/",
+    "github": "https://github.com/redis/redis-py"
+  },
+  "rq": {
+    "official_docs": "https://python-rq.org/",
+    "github": "https://github.com/rq/rq"
+  },
+  "pytest": {
+    "official_docs": "https://docs.pytest.org/",
+    "github": "https://github.com/pytest-dev/pytest"
+  },
+  "hypothesis": {
+    "official_docs": "https://hypothesis.readthedocs.io/",
+    "github": "https://github.com/HypothesisWorks/hypothesis"
+  },
+  "tox": {
+    "official_docs": "https://tox.wiki/",
+    "github": "https://github.com/tox-dev/tox"
+  },
+  "coverage": {
+    "official_docs": "https://coverage.readthedocs.io/",
+    "github": "https://github.com/nedbat/coveragepy"
+  },
+  "black": {
+    "official_docs": "https://black.readthedocs.io/",
+    "github": "https://github.com/psf/black"
+  },
+  "flake8": {
+    "official_docs": "https://flake8.pycqa.org/",
+    "github": "https://github.com/PyCQA/flake8"
+  },
+  "mypy": {
+    "official_docs": "http://mypy-lang.org/",
+    "github": "https://github.com/python/mypy"
+  },
+  "typing-extensions": {
+    "official_docs": "https://pypi.org/project/typing-extensions/",
+    "github": "https://github.com/python/typing"
+  },
+  "pydantic": {
+    "official_docs": "https://docs.pydantic.dev/",
+    "github": "https://github.com/pydantic/pydantic"
+  },
+  "attrs": {
+    "official_docs": "https://www.attrs.org/",
+    "github": "https://github.com/python-attrs/attrs"
+  },
+  "orjson": {
+    "official_docs": "https://github.com/ijl/orjson",
+    "github": "https://github.com/ijl/orjson"
+  },
+  "jsonschema": {
+    "official_docs": "https://json-schema.org/",
+    "github": "https://github.com/json-schema-org/json-schema-spec"
+  },
+  "psycopg2": {
+    "official_docs": "https://www.psycopg.org/docs/",
+    "github": "https://github.com/psycopg/psycopg2"
+  },
+  "asyncpg": {
+    "official_docs": "https://magicstack.github.io/asyncpg/current/",
+    "github": "https://github.com/MagicStack/asyncpg"
+  },
+  "pymysql": {
+    "official_docs": "https://pymysql.readthedocs.io/",
+    "github": "https://github.com/PyMySQL/PyMySQL"
+  },
+  "pymongo": {
+    "official_docs": "https://pymongo.readthedocs.io/",
+    "github": "https://github.com/mongodb/mongo-python-driver"
+  },
+  "motor": {
+    "official_docs": "https://motor.readthedocs.io/",
+    "github": "https://github.com/mongodb/motor"
+  },
+  "boto3": {
+    "official_docs": "https://boto3.amazonaws.com/v1/documentation/api/latest/index.html",
+    "github": "https://github.com/boto/boto3"
+  },
+  "dask": {
+    "official_docs": "https://docs.dask.org/",
+    "github": "https://github.com/dask/dask"
+  },
+  "ray": {
+    "official_docs": "https://docs.ray.io/",
+    "github": "https://github.com/ray-project/ray"
+  },
+  "luigi": {
+    "official_docs": "https://luigi.readthedocs.io/",
+    "github": "https://github.com/spotify/luigi"
+  },
+  "prefect": {
+    "official_docs": "https://docs.prefect.io/",
+    "github": "https://github.com/PrefectHQ/prefect"
+  },
+  "airflow": {
+    "official_docs": "https://airflow.apache.org/docs/",
+    "github": "https://github.com/apache/airflow"
+  },
+  "great_expectations": {
+    "official_docs": "https://docs.greatexpectations.io/",
+    "github": "https://github.com/great-expectations/great_expectations"
+  },
+  "mlflow": {
+    "official_docs": "https://www.mlflow.org/docs/latest/index.html",
+    "github": "https://github.com/mlflow/mlflow"
+  },
+  "optuna": {
+    "official_docs": "https://optuna.org/",
+    "github": "https://github.com/optuna/optuna"
+  },
+  "xgboost": {
+    "official_docs": "https://xgboost.readthedocs.io/",
+    "github": "https://github.com/dmlc/xgboost"
+  },
+  "lightgbm": {
+    "official_docs": "https://lightgbm.readthedocs.io/",
+    "github": "https://github.com/microsoft/LightGBM"
+  },
+  "catboost": {
+    "official_docs": "https://catboost.ai/docs/",
+    "github": "https://github.com/catboost/catboost"
+  },
+  "statsmodels": {
+    "official_docs": "https://www.statsmodels.org/",
+    "github": "https://github.com/statsmodels/statsmodels"
+  },
+  "sympy": {
+    "official_docs": "https://docs.sympy.org/",
+    "github": "https://github.com/sympy/sympy"
+  },
+  "networkx": {
+    "official_docs": "https://networkx.org/documentation/",
+    "github": "https://github.com/networkx/networkx"
+  },
+  "protobuf": {
+    "official_docs": "https://developers.google.com/protocol-buffers/docs/overview",
+    "github": "https://github.com/protocolbuffers/protobuf"
+  },
+  "grpcio": {
+    "official_docs": "https://grpc.io/docs/",
+    "github": "https://github.com/grpc/grpc"
+  },
+  "beautifulsoup4": {
+    "official_docs": "https://www.crummy.com/software/BeautifulSoup/bs4/doc/",
+    "github": "https://www.crummy.com/software/BeautifulSoup/"
+  },
+  "lxml": {
+    "official_docs": "https://lxml.de/",
+    "github": "https://github.com/lxml/lxml"
+  },
+  "scrapy": {
+    "official_docs": "https://docs.scrapy.org/",
+    "github": "https://github.com/scrapy/scrapy"
+  },
+  "jinja2": {
+    "official_docs": "https://jinja.palletsprojects.com/",
+    "github": "https://github.com/pallets/jinja"
+  },
+  "click": {
+    "official_docs": "https://click.palletsprojects.com/",
+    "github": "https://github.com/pallets/click"
+  },
+  "typer": {
+    "official_docs": "https://typer.tiangolo.com/",
+    "github": "https://github.com/tiangolo/typer"
+  },
+  "rich": {
+    "official_docs": "https://rich.readthedocs.io/",
+    "github": "https://github.com/Textualize/rich"
+  },
+  "prompt-toolkit": {
+    "official_docs": "https://python-prompt-toolkit.readthedocs.io/",
+    "github": "https://github.com/prompt-toolkit/python-prompt-toolkit"
+  },
+  "cryptography": {
+    "official_docs": "https://cryptography.io/",
+    "github": "https://github.com/pyca/cryptography"
+  },
+  "pyjwt": {
+    "official_docs": "https://pyjwt.readthedocs.io/",
+    "github": "https://github.com/jpadilla/pyjwt"
+  },
+  "bcrypt": {
+    "official_docs": "https://pypi.org/project/bcrypt/",
+    "github": "https://github.com/pyca/bcrypt"
+  },
+  "passlib": {
+    "official_docs": "https://passlib.readthedocs.io/",
+    "github": "https://github.com/benjaminp/six"
+  },
+  "sentry-sdk": {
+    "official_docs": "https://docs.sentry.io/platforms/python/",
+    "github": "https://github.com/getsentry/sentry-python"
+  },
+  "s3fs": {
+    "official_docs": "https://s3fs.readthedocs.io/",
+    "github": "https://github.com/dask/s3fs"
+  },
+  "fsspec": {
+    "official_docs": "https://filesystem-spec.readthedocs.io/",
+    "github": "https://github.com/fsspec/fsspec"
+  }
+}

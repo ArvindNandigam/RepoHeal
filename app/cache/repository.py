@@ -101,6 +101,24 @@ class MongoCacheRepository:
             upsert=True,
         )
 
+    def upsert_permanent_source_payload(self, library: str, source_type: str, payload: dict[str, Any]) -> None:
+        """Persist a verified source payload permanently (no expiry)."""
+        now = datetime.now(timezone.utc)
+        # Do not set an expires_at so TTL index won't remove this document.
+        self.source_cache.update_one(
+            {"library": library, "source_type": source_type},
+            {
+                "$set": {
+                    "library": library,
+                    "source_type": source_type,
+                    "payload": payload,
+                    "last_updated": now,
+                    "permanent": True,
+                }
+            },
+            upsert=True,
+        )
+
     def upsert_symbol_payload(self, library: str, symbol: str, payload: dict[str, Any]) -> None:
         now = datetime.now(timezone.utc)
         self.symbol_cache.update_one(

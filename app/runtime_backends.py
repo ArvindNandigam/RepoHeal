@@ -59,6 +59,16 @@ class InMemoryCacheRepository:
             "expires_at": now + self.cache_expiry,
         }
 
+    def upsert_permanent_source_payload(self, library: str, source_type: str, payload: dict[str, Any]) -> None:
+        now = datetime.now(timezone.utc)
+        self.source_cache[(library, source_type)] = {
+            "library": library,
+            "source_type": source_type,
+            "payload": payload,
+            "last_updated": now,
+            "permanent": True,
+        }
+
     def upsert_symbol_payload(self, library: str, symbol: str, payload: dict[str, Any]) -> None:
         now = datetime.now(timezone.utc)
         self.symbol_cache[(library, symbol)] = {

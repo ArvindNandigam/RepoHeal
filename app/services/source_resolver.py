@@ -167,7 +167,7 @@ def _fetch_url(client: httpx.Client, url: str) -> str:
     return response.text
 
 
-def _discover_guide_links(fetch_page, docs_url: str) -> list[MigrationGuideContract]:
+def _discover_guide_links(fetch_page, docs_url: str, extra_domains: list[str] | None = None) -> list[MigrationGuideContract]:
     discovered: list[MigrationGuideContract] = []
     try:
         html = fetch_page(docs_url).text
@@ -180,7 +180,7 @@ def _discover_guide_links(fetch_page, docs_url: str) -> list[MigrationGuideContr
         title_clean = title.strip().lower()
         if any(token in title_clean for token in ("migration", "upgrade", "changelog", "release notes")):
             guide_url = urljoin(docs_url, href)
-            if not is_approved_source_url(guide_url):
+            if not is_approved_source_url(guide_url, extra_domains=extra_domains):
                 continue
             discovered.append(MigrationGuideContract(title=title.strip() or href, url=guide_url))
     return discovered
@@ -323,9 +323,25 @@ class OfficialSourceResolver:
 
         release_history = _extract_release_history(pypi_json.get("releases", {}), github_repo)
         migration_guides = _extract_migration_guides(project_urls)
-        migration_guides.extend(_discover_guide_links(self._request_with_retries, official_docs))
+        # Allow verified hosts (official docs + github) to be treated as approved
+        verified_hosts: list[str] = []
+        try:
+            from urllib.parse import urlparse as _urlparse
+
+            if official_docs:
+                parsed = _urlparse(official_docs)
+                if parsed.hostname:
+                    verified_hosts.append(parsed.hostname)
+            if github_repo:
+                parsed = _urlparse(github_repo)
+                if parsed.hostname:
+                    verified_hosts.append(parsed.hostname)
+        except Exception:
+            verified_hosts = []
+
+        migration_guides.extend(_discover_guide_links(self._request_with_retries, official_docs, extra_domains=verified_hosts))
         migration_guides = _dedupe_migration_guides(migration_guides)
-        validate_source_urls([guide.url for guide in migration_guides])
+        validate_source_urls([guide.url for guide in migration_guides], extra_domains=verified_hosts)
 
         bundle = LibrarySourceBundle(
             source_contract=source_contract,

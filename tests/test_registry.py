@@ -1,0 +1,34 @@
+from __future__ import annotations
+
+from app.runtime_backends import InMemoryCacheRepository
+from app.services.registry_service import RegistryService
+from app.contracts.schemas import SourceContract, SymbolLifecycleContract, ReleaseArtifactContract, MigrationGuideContract
+
+
+class FakeResolver:
+    def resolve(self, library: str, symbols: list[str]):
+        source = SourceContract(
+            library=library,
+            official_docs=f"https://{library}.org/doc",
+            github_repo=f"https://github.com/example/{library}",
+            pypi_url=f"https://pypi.org/pypi/{library}/json",
+            latest_version="1.2.3",
+        )
+        lifecycles = [SymbolLifecycleContract(symbol=sym, introduced_version="1.0.0") for sym in symbols]
+        releases = [ReleaseArtifactContract(version="1.2.3", url=source.github_repo)]
+        guides = [MigrationGuideContract(title="Guide", url=source.official_docs)]
+        return source, lifecycles, releases, guides, {}
+
+
+def test_registry_service_curated_lookup():
+    cache = InMemoryCacheRepository(cache_expiry_days=7)
+    resolver = FakeResolver()
+    svc = RegistryService(cache, resolver)
+
+    # pick a curated library we added
+    library = "numpy"
+    result = svc.get_library_metadata(library, ["array"])
+
+    assert result["library"] == "numpy"
+    assert "official_docs" in result and result["official_docs"]
+    assert "symbol_lifecycles" in result
