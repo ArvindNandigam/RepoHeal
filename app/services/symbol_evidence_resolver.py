@@ -91,9 +91,9 @@ def _extract_version_hint(snippet: str) -> str | None:
     return None
 
 
-def _classify_snippet(source_kind: str, symbol: str, snippet: str, release_version: str | None = None) -> tuple[str, str | None, str | None, str | None, float]:
+def _classify_snippet(source_kind: str, symbol: str, snippet: str) -> tuple[str | None, str | None, str | None, float]:
     lowered = snippet.lower()
-    lifecycle = "inferred"
+    lifecycle: str | None = None
     if "renamed" in lowered:
         lifecycle = "renamed"
     elif "removed" in lowered or "no longer" in lowered:
@@ -102,37 +102,21 @@ def _classify_snippet(source_kind: str, symbol: str, snippet: str, release_versi
         lifecycle = "replacement"
     elif "deprecated" in lowered:
         lifecycle = "deprecated"
-    elif any(token in lowered for token in ("introduced", "added", "new")):
+    elif any(token in lowered for token in ("introduced", "added")):
         lifecycle = "introduced"
 
     version_hint = _extract_version_hint(snippet)
-    if version_hint is None and release_version and source_kind in {"release_notes", "changelog"} and lifecycle != "inferred":
-        version_hint = release_version
-
     replacement_symbol = _extract_replacement_symbol(snippet)
 
-    confidence = 0.5
-    if source_kind == "migration_guide" and lifecycle != "inferred":
+    confidence = 0.0
+    if source_kind == "migration_guide" and lifecycle is not None:
         confidence = 1.0
-    elif source_kind in {"release_notes", "changelog"} and lifecycle != "inferred":
-        confidence = 0.7
+    elif source_kind == "changelog" and lifecycle is not None:
+        confidence = 0.9
+    elif source_kind == "release_notes" and lifecycle is not None:
+        confidence = 0.8
 
-    if source_kind == "api_reference" and lifecycle != "inferred":
-        confidence = max(confidence, 0.9)
-
-    return lifecycle, version_hint, replacement_symbol, None, confidence
-
-
-def _lifecycle_priority(lifecycle: str) -> int:
-    priorities = {
-        "removed": 4,
-        "deprecated": 3,
-        "renamed": 3,
-        "replacement": 3,
-        "introduced": 2,
-        "inferred": 0,
-    }
-    return priorities.get(lifecycle, 0)
+    return lifecycle, version_hint, replacement_symbol, confidence
 
 
 class SymbolEvidenceResolver:
@@ -221,59 +205,51 @@ class SymbolEvidenceResolver:
         results: list[dict[str, Any]] = []
         for symbol in symbols:
             evidence: list[dict[str, str]] = []
-            lifecycle = "inferred"
-            lifecycle_score = 0
+            verified_lifecycles: list[dict[str, Any]] = []
             introduced_version = None
             deprecated_version = None
             removed_version = None
             replacement_symbol = None
-            evidence_types: set[str] = set()
 
             for page in page_texts:
                 page_type = str(page["type"])
-                release_version = page.get("release_version")
                 snippets = self._find_snippets(str(page["text"]), symbol)
                 for snippet in snippets:
-                    lifecycle_hint, version_hint, replacement_hint, _, _ = _classify_snippet(
-                        page_type,
-                        symbol,
-                        snippet,
-                        release_version=str(release_version) if release_version else None,
-                    )
-                    hint_score = _lifecycle_priority(lifecycle_hint)
-                    if hint_score > lifecycle_score:
-                        lifecycle = lifecycle_hint
-                        lifecycle_score = hint_score
+                    lifecycle_hint, version_hint, replacement_hint, confidence = _classify_snippet(page_type, symbol, snippet)
+                    if lifecycle_hint is None or confidence <= 0:
+                        continue
+
                     if lifecycle_hint == "introduced" and introduced_version is None:
-                        introduced_version = version_hint or (str(release_version) if release_version else None)
+                        introduced_version = version_hint
                     if lifecycle_hint == "deprecated" and deprecated_version is None:
-                        deprecated_version = version_hint or (str(release_version) if release_version else None)
+                        deprecated_version = version_hint
                     if lifecycle_hint == "removed" and removed_version is None:
-                        removed_version = version_hint or (str(release_version) if release_version else None)
+                        removed_version = version_hint
                     if lifecycle_hint in {"renamed", "replacement"} and replacement_symbol is None:
                         replacement_symbol = replacement_hint
 
                     evidence.append({"type": page_type, "url": str(page["url"]), "matched_text": snippet})
-                    evidence_types.add(page_type)
+                    verified_lifecycles.append(
+                        {
+                            "source_kind": page_type,
+                            "confidence": confidence,
+                        }
+                    )
 
             if not evidence:
-                evidence = [{"type": "fallback", "url": source_bundle["source_contract"]["official_docs"], "matched_text": symbol}]
+                verified_lifecycles = []
 
-            confidence = 0.5
-            if "migration_guide" in evidence_types and lifecycle != "inferred":
-                confidence = 1.0
-            elif {"api_reference", "changelog"}.issubset(evidence_types) or {"api_reference", "release_notes"}.issubset(evidence_types):
-                confidence = 0.9
-            elif evidence_types.intersection({"release_notes", "changelog"}):
-                confidence = 0.7
-
-            if lifecycle == "inferred" and evidence_types:
-                confidence = 0.5
+            confidence = max((item["confidence"] for item in verified_lifecycles), default=0.0)
+            if confidence <= 0:
+                introduced_version = None
+                deprecated_version = None
+                removed_version = None
+                replacement_symbol = None
 
             results.append(
                 {
                     "symbol": symbol,
-                    "lifecycle": lifecycle,
+                    "lifecycle": None,
                     "introduced_version": introduced_version,
                     "deprecated_version": deprecated_version,
                     "removed_version": removed_version,

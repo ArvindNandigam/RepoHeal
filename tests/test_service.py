@@ -151,6 +151,52 @@ def test_symbol_evidence_resolver_extracts_evidence_and_versions() -> None:
     assert all("url" in item for item in lifecycle["evidence"])
 
 
+def test_symbol_evidence_resolver_returns_nulls_without_explicit_evidence() -> None:
+    class NoEvidenceSource:
+        def resolve_sources(self, library: str, trust_sources: bool = False):
+            source_contract = {
+                "library": library,
+                "official_docs": "https://docs.openai.com/api",
+                "github_repo": "https://github.com/openai/openai-python",
+                "pypi_url": "https://pypi.org/pypi/openai/json",
+                "latest_version": "1.52.0",
+            }
+            return source_contract, [], [{"title": "API Reference", "url": "https://docs.openai.com/api"}], {}
+
+        def _request_with_retries(self, url: str):
+            class Response:
+                text = "<html><body><p>openai.ChatCompletion.create is referenced here only.</p></body></html>"
+
+            return Response()
+
+    resolver = SymbolEvidenceResolver(NoEvidenceSource())
+
+    result = resolver.resolve_from_source_bundle(
+        "openai",
+        ["openai.ChatCompletion.create"],
+        {
+            "source_contract": {
+                "library": "openai",
+                "official_docs": "https://docs.openai.com/api",
+                "github_repo": "https://github.com/openai/openai-python",
+                "pypi_url": "https://pypi.org/pypi/openai/json",
+                "latest_version": "1.52.0",
+            },
+            "release_history": [],
+            "migration_guides": [{"title": "API Reference", "url": "https://docs.openai.com/api"}],
+            "pypi_json": {},
+        },
+    )
+
+    lifecycle = result[0]
+    assert lifecycle["introduced_version"] is None
+    assert lifecycle["deprecated_version"] is None
+    assert lifecycle["removed_version"] is None
+    assert lifecycle["replacement_symbol"] is None
+    assert lifecycle["confidence"] == 0
+    assert lifecycle["evidence"] == []
+
+
 def test_reset_mongo_dependencies_clears_cached_singletons(monkeypatch) -> None:
     cleared: list[str] = []
 
