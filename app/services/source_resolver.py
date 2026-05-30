@@ -176,36 +176,28 @@ def _discover_guide_links(fetch_page, docs_url: str, extra_domains: list[str] | 
     return discovered
 
 
-def _discover_symbol_lifecycle(symbol: str, bundle: dict[str, Any]) -> dict[str, Any]:
-    known = {
-        "openai.chatcompletion.create": {
-            "introduced_version": "0.0.0",
-            "deprecated_version": "0.28",
-            "removed_version": "1.0.0",
-            "replacement_symbol": "client.chat.completions.create",
-        }
+def _fallback_symbol_lifecycle(symbol: str, bundle: dict[str, Any]) -> dict[str, Any]:
+    known_replacements = {
+        "openai.chatcompletion.create": "client.chat.completions.create",
     }
-    key = symbol.strip().lower()
-    if key in known:
-        return {"symbol": symbol, **known[key]}
 
-    latest = bundle["source_contract"]["latest_version"]
-    replacement = None
-    deprecated = None
-    removed = None
-
-    for guide in bundle["migration_guides"]:
-        guide_title = guide["title"].lower()
-        if symbol.lower().split(".")[-1] in guide_title:
-            deprecated = latest
-            break
-
+    replacement = known_replacements.get(symbol.strip().lower())
+    lifecycle = "removed" if replacement else "inferred"
     return {
         "symbol": symbol,
-        "introduced_version": latest,
-        "deprecated_version": deprecated,
-        "removed_version": removed,
+        "lifecycle": lifecycle,
+        "introduced_version": None,
+        "deprecated_version": None,
+        "removed_version": None,
         "replacement_symbol": replacement,
+        "confidence": 0.5,
+        "evidence": [
+            {
+                "type": "fallback",
+                "url": bundle["source_contract"]["official_docs"],
+                "matched_text": symbol,
+            }
+        ],
     }
 
 
@@ -243,6 +235,67 @@ class OfficialSourceResolver:
 
     def _mark_github_healthy(self) -> None:
         self.operational_repository.mark_service_status("github", "healthy", retry_after=None)
+
+    def resolve_sources(self, library: str, trust_sources: bool = False) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, str]], dict[str, Any]]:
+        pypi_url = f"https://pypi.org/pypi/{library}/json"
+        response = self._request_with_retries(pypi_url)
+        pypi_json = response.json()
+
+        info = pypi_json["info"]
+        project_urls = dict(info.get("project_urls") or {})
+        home_page = info.get("home_page")
+        github_repo = _extract_github_repo(project_urls, home_page)
+        latest_version = info["version"]
+
+        try:
+            official_docs = _extract_official_docs(project_urls, home_page)
+        except ValueError:
+            official_docs = github_repo
+
+        if trust_sources:
+            source_contract = {
+                "library": library,
+                "official_docs": official_docs,
+                "github_repo": github_repo,
+                "pypi_url": pypi_url,
+                "latest_version": latest_version,
+            }
+        else:
+            from app.validators.sources import validate_source_urls as _validate_source_urls
+
+            _validate_source_urls([official_docs, github_repo, pypi_url])
+            source_contract = {
+                "library": library,
+                "official_docs": official_docs,
+                "github_repo": github_repo,
+                "pypi_url": pypi_url,
+                "latest_version": latest_version,
+            }
+
+        release_history = _extract_release_history(pypi_json.get("releases", {}), github_repo)
+        migration_guides = _extract_migration_guides(project_urls)
+
+        verified_hosts: list[str] = []
+        try:
+            from urllib.parse import urlparse as _urlparse
+
+            if official_docs:
+                parsed = _urlparse(official_docs)
+                if parsed.hostname:
+                    verified_hosts.append(parsed.hostname)
+            if github_repo:
+                parsed = _urlparse(github_repo)
+                if parsed.hostname:
+                    verified_hosts.append(parsed.hostname)
+        except Exception:
+            verified_hosts = []
+
+        migration_guides.extend(_discover_guide_links(self._request_with_retries, official_docs, extra_domains=verified_hosts))
+        migration_guides = _dedupe_migration_guides(migration_guides)
+        if not trust_sources:
+            validate_source_urls([guide["url"] for guide in migration_guides], extra_domains=verified_hosts)
+
+        return source_contract, release_history, migration_guides, pypi_json
 
     def _request_with_retries(self, url: str) -> httpx.Response:
         is_github_url = "github.com" in url.lower()
@@ -288,67 +341,23 @@ class OfficialSourceResolver:
         raise last_error
 
     def resolve(self, library: str, symbols: list[str], trust_sources: bool = False) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, str]], dict[str, Any]]:
-        pypi_url = f"https://pypi.org/pypi/{library}/json"
-        response = self._request_with_retries(pypi_url)
-        pypi_json = response.json()
+        source_contract, release_history, migration_guides, pypi_json = self.resolve_sources(library, trust_sources=trust_sources)
 
-        info = pypi_json["info"]
-        project_urls = dict(info.get("project_urls") or {})
-        home_page = info.get("home_page")
-        github_repo = _extract_github_repo(project_urls, home_page)
-        latest_version = info["version"]
+        from app.services.symbol_evidence_resolver import SymbolEvidenceResolver
 
-        try:
-            official_docs = _extract_official_docs(project_urls, home_page)
-        except ValueError:
-            official_docs = github_repo
+        resolver = SymbolEvidenceResolver(self)
+        bundle = {
+            "source_contract": source_contract,
+            "release_history": release_history,
+            "migration_guides": migration_guides,
+            "pypi_json": pypi_json,
+        }
+        symbol_lifecycles = resolver.resolve_from_source_bundle(library, symbols, bundle)
 
-        if trust_sources:
-            # construct without pydantic validation when caller indicates trust
-            source_contract = {
-                "library": library,
-                "official_docs": official_docs,
-                "github_repo": github_repo,
-                "pypi_url": pypi_url,
-                "latest_version": latest_version,
-            }
-        else:
-            from app.validators.sources import validate_source_urls as _validate_source_urls
-
-            _validate_source_urls([official_docs, github_repo, pypi_url])
-            source_contract = {
-                "library": library,
-                "official_docs": official_docs,
-                "github_repo": github_repo,
-                "pypi_url": pypi_url,
-                "latest_version": latest_version,
-            }
-
-        release_history = _extract_release_history(pypi_json.get("releases", {}), github_repo)
-        migration_guides = _extract_migration_guides(project_urls)
-        # Allow verified hosts (official docs + github) to be treated as approved
-        verified_hosts: list[str] = []
-        try:
-            from urllib.parse import urlparse as _urlparse
-
-            if official_docs:
-                parsed = _urlparse(official_docs)
-                if parsed.hostname:
-                    verified_hosts.append(parsed.hostname)
-            if github_repo:
-                parsed = _urlparse(github_repo)
-                if parsed.hostname:
-                    verified_hosts.append(parsed.hostname)
-        except Exception:
-            verified_hosts = []
-
-        migration_guides.extend(_discover_guide_links(self._request_with_retries, official_docs, extra_domains=verified_hosts))
-        migration_guides = _dedupe_migration_guides(migration_guides)
-        if not trust_sources:
-            validate_source_urls([guide["url"] for guide in migration_guides], extra_domains=verified_hosts)
-
-        bundle = {"source_contract": source_contract, "release_history": release_history, "migration_guides": migration_guides, "pypi_json": pypi_json}
-
-        symbol_lifecycles = [_discover_symbol_lifecycle(symbol, bundle) for symbol in symbols]
+        if len(symbol_lifecycles) != len(symbols):
+            resolved_symbols = {item["symbol"] for item in symbol_lifecycles}
+            for symbol in symbols:
+                if symbol not in resolved_symbols:
+                    symbol_lifecycles.append(_fallback_symbol_lifecycle(symbol, bundle))
 
         return source_contract, symbol_lifecycles, release_history, migration_guides, pypi_json

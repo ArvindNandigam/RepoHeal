@@ -44,6 +44,16 @@ class LibraryIntelligenceService:
         return response_payload
 
     def resolve_symbol(self, library: str, symbol: str) -> dict[str, Any]:
+        cached_symbol = None
+        try:
+            cached_symbol = self.cache_repository.get_symbol_payload(library, symbol)
+        except Exception:
+            cached_symbol = None
+
+        if cached_symbol is not None:
+            self.last_cache_hit = True
+            return cached_symbol
+
         result = self.resolve(library, [symbol])
         for lifecycle in result["symbol_lifecycles"]:
             if lifecycle["symbol"] == symbol:

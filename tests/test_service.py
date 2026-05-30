@@ -10,12 +10,14 @@ from app.runtime_backends import InMemoryCacheRepository, InMemoryOperationalRep
 from app.services.library_intelligence import LibraryIntelligenceService
 from app.services import source_resolver
 from app.services.source_resolver import LibraryNotFoundError
+from app.services.symbol_evidence_resolver import SymbolEvidenceResolver
 
 
 class DummyRepository:
     def __init__(self) -> None:
         self.cached: dict[str, dict] = {}
         self.saved: list[tuple[str, str, dict]] = []
+        self.symbols: dict[tuple[str, str], dict] = {}
 
     def get_library_payload(self, library: str, symbols: list[str]):
         return self.cached.get((library, tuple(sorted(symbols))))
@@ -28,6 +30,9 @@ class DummyRepository:
 
     def upsert_symbol_payload(self, library: str, symbol: str, payload: dict) -> None:
         self.saved.append((library, symbol, payload))
+
+    def get_symbol_payload(self, library: str, symbol: str):
+        return self.symbols.get((library, symbol))
 
 
 class DummyResolver:
@@ -43,6 +48,33 @@ class DummyResolver:
         migration_guides = [{"title": "Migration Guide", "url": "https://docs.openai.com/migration"}]
         symbol_lifecycles = [{"symbol": symbols[0], "introduced_version": "0.0.0", "deprecated_version": None, "removed_version": None, "replacement_symbol": None}] if symbols else []
         return source_contract, symbol_lifecycles, release_history, migration_guides, {}
+
+
+class EvidenceResolverSource:
+    def resolve_sources(self, library: str, trust_sources: bool = False):
+        source_contract = {
+            "library": library,
+            "official_docs": "https://docs.openai.com/api",
+            "github_repo": "https://github.com/openai/openai-python",
+            "pypi_url": "https://pypi.org/pypi/openai/json",
+            "latest_version": "1.52.0",
+        }
+        release_history = [{"version": "1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0"}]
+        migration_guides = [{"title": "Migration Guide", "url": "https://docs.openai.com/migration"}]
+        return source_contract, release_history, migration_guides, {}
+
+    def _request_with_retries(self, url: str):
+        class Response:
+            def __init__(self, text: str) -> None:
+                self.text = text
+
+        pages = {
+            "https://docs.openai.com/api": "<html><body><h1>OpenAI API</h1><p>ChatCompletion.create is deprecated and renamed to client.chat.completions.create.</p></body></html>",
+            "https://github.com/openai/openai-python": "<html><body><p>client.chat.completions.create is the new method.</p></body></html>",
+            "https://github.com/openai/openai-python/releases/tag/v1.52.0": "<html><body><p>Removed ChatCompletion.create in 1.52.0. Use client.chat.completions.create instead.</p></body></html>",
+            "https://docs.openai.com/migration": "<html><body><p>ChatCompletion.create was renamed to client.chat.completions.create.</p></body></html>",
+        }
+        return Response(pages[url])
 
 
 class DummyOperationalRepository:
@@ -71,6 +103,52 @@ def test_service_uses_cache_when_present() -> None:
 
     assert response["library"] == "openai"
     assert response["latest_version"] == "1.52.0"
+
+
+def test_service_resolve_symbol_uses_symbol_cache_when_present() -> None:
+    repository = DummyRepository()
+    repository.symbols[("openai", "openai.ChatCompletion.create")] = {
+        "symbol": "openai.ChatCompletion.create",
+        "lifecycle": "removed",
+        "confidence": 1.0,
+        "evidence": [{"type": "migration_guide", "url": "https://docs.openai.com/migration", "matched_text": "ChatCompletion.create was renamed to client.chat.completions.create."}],
+    }
+    service = LibraryIntelligenceService(repository, DummyOperationalRepository(), DummyResolver())
+
+    result = service.resolve_symbol("openai", "openai.ChatCompletion.create")
+
+    assert result["lifecycle"] == "removed"
+    assert service.last_cache_hit is True
+
+
+def test_symbol_evidence_resolver_extracts_evidence_and_versions() -> None:
+    resolver = SymbolEvidenceResolver(EvidenceResolverSource())
+
+    result = resolver.resolve_from_source_bundle(
+        "openai",
+        ["openai.ChatCompletion.create"],
+        {
+            "source_contract": {
+                "library": "openai",
+                "official_docs": "https://docs.openai.com/api",
+                "github_repo": "https://github.com/openai/openai-python",
+                "pypi_url": "https://pypi.org/pypi/openai/json",
+                "latest_version": "1.52.0",
+            },
+            "release_history": [{"version": "1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0"}],
+            "migration_guides": [{"title": "Migration Guide", "url": "https://docs.openai.com/migration"}],
+            "pypi_json": {},
+        },
+    )
+
+    assert len(result) == 1
+    lifecycle = result[0]
+    assert lifecycle["symbol"] == "openai.ChatCompletion.create"
+    assert lifecycle["confidence"] == 1.0
+    assert lifecycle["removed_version"] == "1.52.0"
+    assert lifecycle["replacement_symbol"] == "client.chat.completions.create"
+    assert lifecycle["evidence"]
+    assert all("url" in item for item in lifecycle["evidence"])
 
 
 def test_reset_mongo_dependencies_clears_cached_singletons(monkeypatch) -> None:

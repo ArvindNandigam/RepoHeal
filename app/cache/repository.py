@@ -134,6 +134,9 @@ class MongoCacheRepository:
                 "$set": {
                     "library": library,
                     "symbol": symbol,
+                    "lifecycle": payload.get("lifecycle"),
+                    "confidence": payload.get("confidence"),
+                    "evidence": payload.get("evidence", []),
                     "payload": payload,
                     "last_updated": now,
                     "expires_at": now + self.cache_expiry,
@@ -141,6 +144,17 @@ class MongoCacheRepository:
             },
             upsert=True,
         )
+
+    def get_symbol_payload(self, library: str, symbol: str) -> dict[str, Any] | None:
+        record = self.symbol_cache.find_one({"library": library, "symbol": symbol})
+        if not record:
+            return None
+
+        if not self._is_fresh(record.get("last_updated")):
+            return None
+
+        payload = record.get("payload")
+        return payload if isinstance(payload, dict) else None
 
     def get_library_record(self, library: str) -> dict[str, Any] | None:
         record = self.library_registry.find_one({"library": library})

@@ -73,10 +73,22 @@ class InMemoryCacheRepository:
         self.symbol_cache[(library, symbol)] = {
             "library": library,
             "symbol": symbol,
+            "lifecycle": payload.get("lifecycle"),
+            "confidence": payload.get("confidence"),
+            "evidence": payload.get("evidence", []),
             "payload": payload,
             "last_updated": now,
             "expires_at": now + self.cache_expiry,
         }
+
+    def get_symbol_payload(self, library: str, symbol: str) -> dict[str, Any] | None:
+        record = self.symbol_cache.get((library, symbol))
+        if not record:
+            return None
+        if not self._is_fresh(record.get("last_updated")):
+            return None
+        payload = record.get("payload")
+        return payload if isinstance(payload, dict) else None
 
 
 class InMemoryOperationalRepository:
