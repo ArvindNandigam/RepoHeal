@@ -316,13 +316,11 @@ class OfficialSourceResolver:
         if trust_sources:
             # construct without pydantic validation when caller indicates trust
             source_contract = SourceContract.model_construct(
-                {
-                    "library": library,
-                    "official_docs": official_docs,
-                    "github_repo": github_repo,
-                    "pypi_url": pypi_url,
-                    "latest_version": latest_version,
-                }
+                library=library,
+                official_docs=official_docs,
+                github_repo=github_repo,
+                pypi_url=pypi_url,
+                latest_version=latest_version,
             )
         else:
             source_contract = SourceContract(

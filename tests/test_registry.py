@@ -6,17 +6,30 @@ from app.contracts.schemas import SourceContract, SymbolLifecycleContract, Relea
 
 
 class FakeResolver:
-    def resolve(self, library: str, symbols: list[str]):
-        source = SourceContract(
-            library=library,
-            official_docs=f"https://{library}.org/doc",
-            github_repo=f"https://github.com/example/{library}",
-            pypi_url=f"https://pypi.org/pypi/{library}/json",
-            latest_version="1.2.3",
-        )
+    def resolve(self, library: str, symbols: list[str], trust_sources: bool = False):
+        if trust_sources:
+            source = SourceContract.model_construct(
+                library=library,
+                official_docs="https://example.org/docs",
+                github_repo=f"https://github.com/example/{library}",
+                pypi_url=f"https://pypi.org/pypi/{library}/json",
+                latest_version="1.2.3",
+            )
+        else:
+            source = SourceContract(
+                library=library,
+                official_docs=f"https://{library}.org/doc",
+                github_repo=f"https://github.com/example/{library}",
+                pypi_url=f"https://pypi.org/pypi/{library}/json",
+                latest_version="1.2.3",
+            )
         lifecycles = [SymbolLifecycleContract(symbol=sym, introduced_version="1.0.0") for sym in symbols]
-        releases = [ReleaseArtifactContract(version="1.2.3", url=source.github_repo)]
-        guides = [MigrationGuideContract(title="Guide", url=source.official_docs)]
+        if trust_sources:
+            releases = [ReleaseArtifactContract.model_construct(version="1.2.3", url=source.github_repo)]
+            guides = [MigrationGuideContract.model_construct(title="Guide", url=source.official_docs)]
+        else:
+            releases = [ReleaseArtifactContract(version="1.2.3", url=source.github_repo)]
+            guides = [MigrationGuideContract(title="Guide", url=source.official_docs)]
         return source, lifecycles, releases, guides, {}
 
 
@@ -25,10 +38,11 @@ def test_registry_service_curated_lookup():
     resolver = FakeResolver()
     svc = RegistryService(cache, resolver)
 
-    # pick a curated library we added
-    library = "numpy"
+    # pick a curated library we added; the resolver returns an unapproved docs host,
+    # but curated entries should bypass validation.
+    library = "fastapi"
     result = svc.get_library_metadata(library, ["array"])
 
-    assert result["library"] == "numpy"
+    assert result["library"] == "fastapi"
     assert "official_docs" in result and result["official_docs"]
     assert "symbol_lifecycles" in result

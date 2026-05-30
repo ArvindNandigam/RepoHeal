@@ -35,7 +35,7 @@ class RegistryService:
         curated_entry = self.curated.get(library)
         if curated_entry:
             # Use resolver to fetch full details (release history, symbol lifecycles)
-            source_contract, symbol_lifecycles, release_history, migration_guides, pypi_json = self.source_resolver.resolve(library, symbols)
+            source_contract, symbol_lifecycles, release_history, migration_guides, pypi_json = self.source_resolver.resolve(library, symbols, trust_sources=True)
 
             result = {
                 "library": source_contract.library,
