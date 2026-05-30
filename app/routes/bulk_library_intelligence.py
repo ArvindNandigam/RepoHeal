@@ -10,6 +10,7 @@ from app.rate_limit import limiter
 from app.services.library_intelligence import LibraryIntelligenceService
 from app.services.source_resolver import LibraryNotFoundError, SourceUnavailableError
 from app.validators.library import normalize_library_name, normalize_symbol_list
+from app.routes.response_formatters import format_bulk_response
 
 
 router = APIRouter(tags=["library-intelligence"])
@@ -25,17 +26,17 @@ async def bulk_library_intelligence(
     try:
         body = await request.json()
         if not isinstance(body, dict):
-            raise ValueError("invalid body")
+            body = {}
         libraries_payload = body.get("libraries")
         if not isinstance(libraries_payload, list):
-            raise ValueError("libraries must be a list")
+            libraries_payload = []
         if len(libraries_payload) > MAX_LIBRARIES_PER_REQUEST:
             return JSONResponse(status_code=400, content={"status": "failed", "reason": "too_many_libraries"})
 
         normalized_items: list[dict[str, list[str] | str]] = []
         for item in libraries_payload:
             if not isinstance(item, dict):
-                raise ValueError("invalid item")
+                continue
             normalized_items.append(
                 {
                     "library": normalize_library_name(str(item.get("library", ""))),
@@ -43,7 +44,7 @@ async def bulk_library_intelligence(
                 }
             )
     except Exception:
-        return JSONResponse(status_code=400, content={"status": "failed", "reason": "contract_validation_failed"})
+        return JSONResponse(status_code=400, content={"status": "failed", "reason": "failed"})
 
     request.state.library = "bulk"
     request.state.libraries = [item["library"] for item in normalized_items]
@@ -103,4 +104,4 @@ async def bulk_library_intelligence(
             )
 
     request.state.cache_hit = any_cache_hit
-    return {"results": results}
+    return format_bulk_response(results)

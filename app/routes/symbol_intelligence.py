@@ -11,6 +11,7 @@ from app.rate_limit import limiter
 from app.services.library_intelligence import LibraryIntelligenceService
 from app.services.source_resolver import LibraryNotFoundError, SourceUnavailableError
 from app.validators.library import normalize_library_name
+from app.routes.response_formatters import format_symbol_response, is_debug_enabled
 
 
 router = APIRouter(tags=["symbol-intelligence"])
@@ -54,10 +55,7 @@ async def symbol_intelligence(
     request.state.libraries = [library]
 
     try:
-        if len(symbols) == 1:
-            result = service.resolve_symbol(library, symbols[0])
-        else:
-            result = service.resolve(library, symbols)
+        result = service.resolve(library, symbols)
     except LibraryNotFoundError:
         return JSONResponse(status_code=404, content={"status": "failed", "reason": "library_not_found"})
     except SourceUnavailableError:
@@ -71,4 +69,4 @@ async def symbol_intelligence(
             library=library,
         )
 
-    return result
+    return format_symbol_response(result, debug=is_debug_enabled(request.query_params))

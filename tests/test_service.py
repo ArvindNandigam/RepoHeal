@@ -343,6 +343,96 @@ def test_library_route_returns_library_not_found(monkeypatch) -> None:
     assert response.json() == {"status": "failed", "reason": "library_not_found"}
 
 
+def test_library_route_returns_condensed_payload(monkeypatch) -> None:
+    class CondensedService:
+        last_cache_hit = False
+
+        def resolve(self, library: str, symbols: list[str]):
+            return {
+                "library": library,
+                "latest_version": "1.52.0",
+                "official_docs": "https://docs.openai.com/",
+                "github_repo": "https://github.com/openai/openai-python",
+                "pypi_url": "https://pypi.org/pypi/openai/json",
+                "symbol_lifecycles": [{"symbol": "openai.ChatCompletion.create", "confidence": 0.97, "evidence": []}],
+                "release_history": [{"version": "1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0"}],
+                "migration_guides": [{"title": "Migration Guide", "url": "https://docs.openai.com/migration"}],
+            }
+
+    class OperationalRepositoryStub:
+        def log_audit_event(self, *args, **kwargs) -> None:
+            return None
+
+    app.dependency_overrides.clear()
+    app.dependency_overrides[dependencies.get_library_intelligence_service] = lambda: CondensedService()
+    app.dependency_overrides[dependencies.get_operational_repository] = lambda: OperationalRepositoryStub()
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/library-intelligence",
+            headers={"Authorization": "Bearer vT5X3du/efIgYBGtXSC1B++jlF/7vszfSl6EtcE/wzLIQgjLZ7qyvtamNE7ZhqxI"},
+            json={"library": "openai"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "library": "openai",
+        "latest_version": "1.52.0",
+        "official_docs": "https://docs.openai.com/",
+        "github_repo": "https://github.com/openai/openai-python",
+    }
+
+
+def test_bulk_route_returns_condensed_results(monkeypatch) -> None:
+    class CondensedService:
+        last_cache_hit = False
+
+        def resolve(self, library: str, symbols: list[str]):
+            version = {"openai": "1.52.0", "fastapi": "0.136.3"}.get(library, "0.0.0")
+            return {
+                "library": library,
+                "latest_version": version,
+                "official_docs": "https://example.org/docs",
+                "github_repo": "https://example.org/repo",
+                "pypi_url": "https://example.org/pypi",
+                "symbol_lifecycles": [],
+                "release_history": [],
+                "migration_guides": [],
+            }
+
+    class OperationalRepositoryStub:
+        def log_audit_event(self, *args, **kwargs) -> None:
+            return None
+
+        def log_error(self, *args, **kwargs) -> None:
+            return None
+
+    app.dependency_overrides.clear()
+    app.dependency_overrides[dependencies.get_library_intelligence_service] = lambda: CondensedService()
+    app.dependency_overrides[dependencies.get_operational_repository] = lambda: OperationalRepositoryStub()
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/bulk-library-intelligence",
+            headers={"Authorization": "Bearer vT5X3du/efIgYBGtXSC1B++jlF/7vszfSl6EtcE/wzLIQgjLZ7qyvtamNE7ZhqxI"},
+            json={"libraries": [{"library": "openai"}, {"library": "fastapi"}]},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "results": [
+            {"library": "openai", "latest_version": "1.52.0"},
+            {"library": "fastapi", "latest_version": "0.136.3"},
+        ]
+    }
+
+
 def test_symbol_route_accepts_symbols_list(monkeypatch) -> None:
     class FailingOperationalRepository:
         def log_audit_event(self, *args, **kwargs) -> None:
@@ -386,5 +476,60 @@ def test_symbol_route_accepts_symbols_list(monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["library"] == "openai"
-    assert len(payload["symbol_lifecycles"]) == 2
+    assert payload["latest_version"] == "1.52.0"
+    assert [item["symbol"] for item in payload["symbols"]] == ["openai.ChatCompletion.create", "openai.Embedding.create"]
+    assert "symbol_lifecycles" not in payload
+
+
+def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
+    class OperationalRepositoryStub:
+        def log_audit_event(self, *args, **kwargs) -> None:
+            return None
+
+    class DebugService:
+        last_cache_hit = False
+
+        def resolve(self, library: str, symbols: list[str]):
+            return {
+                "library": library,
+                "latest_version": "1.52.0",
+                "official_docs": "https://docs.openai.com/",
+                "github_repo": "https://github.com/openai/openai-python",
+                "pypi_url": "https://pypi.org/pypi/openai/json",
+                "symbol_lifecycles": [
+                    {
+                        "symbol": symbols[0],
+                        "introduced_version": "0.0.0",
+                        "deprecated_version": None,
+                        "removed_version": "1.0.0",
+                        "replacement_symbol": "client.chat.completions.create",
+                        "confidence": 0.97,
+                        "evidence": [{"type": "migration_guide", "url": "https://docs.openai.com/migration", "matched_text": "omitted"}],
+                    }
+                ],
+                "release_history": [{"version": "1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0"}],
+                "migration_guides": [{"title": "Migration Guide", "url": "https://docs.openai.com/migration"}],
+            }
+
+    app.dependency_overrides.clear()
+    app.dependency_overrides[dependencies.get_library_intelligence_service] = lambda: DebugService()
+    app.dependency_overrides[dependencies.get_operational_repository] = lambda: OperationalRepositoryStub()
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/symbol-intelligence?debug=true",
+            headers={"Authorization": "Bearer vT5X3du/efIgYBGtXSC1B++jlF/7vszfSl6EtcE/wzLIQgjLZ7qyvtamNE7ZhqxI"},
+            json={"library": "openai", "symbols": ["openai.ChatCompletion.create"]},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sources"]
+    assert payload["evidence"]
+    assert all("url" in item for item in payload["sources"])
+    assert all("url" in item for item in payload["evidence"])
+    assert "matched_text" not in str(payload)
 

@@ -9,6 +9,7 @@ from app.services.library_intelligence import LibraryIntelligenceService
 from app.observability.repository import OperationalRepository
 from app.services.source_resolver import LibraryNotFoundError, SourceUnavailableError
 from app.validators.library import normalize_library_name, normalize_symbol_list
+from app.routes.response_formatters import format_library_response, is_debug_enabled
 
 
 router = APIRouter(tags=["library-intelligence"])
@@ -24,11 +25,11 @@ async def library_intelligence(
     try:
         body = await request.json()
         if not isinstance(body, dict):
-            raise ValueError("invalid body")
+            body = {}
         library = normalize_library_name(str(body.get("library", "")))
         symbols = normalize_symbol_list(body.get("symbols") or [])
     except Exception:
-        return JSONResponse(status_code=400, content={"status": "failed", "reason": "contract_validation_failed"})
+        return JSONResponse(status_code=400, content={"status": "failed", "reason": "failed"})
 
     request.state.library = library
     request.state.symbols = symbols
@@ -50,5 +51,5 @@ async def library_intelligence(
             library=library,
         )
 
-    return response_payload
+    return format_library_response(response_payload, debug=is_debug_enabled(request.query_params))
 
