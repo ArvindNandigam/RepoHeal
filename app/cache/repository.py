@@ -8,6 +8,9 @@ from pymongo.collection import Collection
 from pymongo.database import Database
 
 
+CACHE_PAYLOAD_SCHEMA_VERSION = 3
+
+
 class MongoCacheRepository:
     def __init__(self, mongo_client: MongoClient, database_name: str, cache_expiry_days: int) -> None:
         self.mongo_client = mongo_client
@@ -68,6 +71,9 @@ class MongoCacheRepository:
         if not record:
             return None
 
+        if record.get("payload_schema_version") != CACHE_PAYLOAD_SCHEMA_VERSION:
+            return None
+
         if not self._is_fresh(record.get("last_updated")):
             return None
 
@@ -84,6 +90,7 @@ class MongoCacheRepository:
                     "cache_key": self._cache_key(library, symbols),
                     "symbols": sorted(symbols),
                     "latest_version": payload["latest_version"],
+                    "payload_schema_version": CACHE_PAYLOAD_SCHEMA_VERSION,
                     "payload": payload,
                     "last_updated": now,
                     "expires_at": now + self.cache_expiry,
@@ -134,6 +141,7 @@ class MongoCacheRepository:
                 "$set": {
                     "library": library,
                     "symbol": symbol,
+                    "payload_schema_version": CACHE_PAYLOAD_SCHEMA_VERSION,
                     "lifecycle": payload.get("lifecycle"),
                     "confidence": payload.get("confidence"),
                     "evidence": payload.get("evidence", []),
@@ -148,6 +156,9 @@ class MongoCacheRepository:
     def get_symbol_payload(self, library: str, symbol: str) -> dict[str, Any] | None:
         record = self.symbol_cache.find_one({"library": library, "symbol": symbol})
         if not record:
+            return None
+
+        if record.get("payload_schema_version") != CACHE_PAYLOAD_SCHEMA_VERSION:
             return None
 
         if not self._is_fresh(record.get("last_updated")):

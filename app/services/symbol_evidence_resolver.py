@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import logging
 import re
 from html.parser import HTMLParser
 from typing import Any
 
 from app.validators.sources import is_approved_source_url
+
+
+logger = logging.getLogger(__name__)
+
+EXPLICIT_EVIDENCE_SOURCES = {"migration_guide", "changelog", "release_notes", "official_deprecation_notice"}
 
 
 class _TextExtractor(HTMLParser):
@@ -92,6 +98,9 @@ def _extract_version_hint(snippet: str) -> str | None:
 
 
 def _classify_snippet(source_kind: str, symbol: str, snippet: str) -> tuple[str | None, str | None, str | None, float]:
+    if source_kind not in EXPLICIT_EVIDENCE_SOURCES:
+        return None, None, None, 0.0
+
     lowered = snippet.lower()
     lifecycle: str | None = None
     if "renamed" in lowered:
@@ -119,6 +128,18 @@ def _classify_snippet(source_kind: str, symbol: str, snippet: str) -> tuple[str 
     return lifecycle, version_hint, replacement_symbol, confidence
 
 
+def _log_lifecycle_evidence(symbol: str, field: str, value: str, source_kind: str, url: str, matched_text: str) -> None:
+    logger.info(
+        "LIFECYCLE_EVIDENCE: symbol=%s field=%s value=%s source=%s url=%s matched_text=%s",
+        symbol,
+        field,
+        value,
+        source_kind,
+        url,
+        matched_text,
+    )
+
+
 class SymbolEvidenceResolver:
     def __init__(self, source_resolver: Any) -> None:
         self.source_resolver = source_resolver
@@ -137,6 +158,8 @@ class SymbolEvidenceResolver:
             guide_type = "changelog" if "changelog" in title else "migration_guide"
             if "release notes" in title:
                 guide_type = "release_notes"
+            elif "deprecat" in title:
+                guide_type = "official_deprecation_notice"
             elif any(token in title for token in ("api reference", "reference", "api docs")):
                 guide_type = "api_reference"
             pages.append({"type": guide_type, "url": guide["url"], "release_version": None})
@@ -205,7 +228,6 @@ class SymbolEvidenceResolver:
         results: list[dict[str, Any]] = []
         for symbol in symbols:
             evidence: list[dict[str, str]] = []
-            verified_lifecycles: list[dict[str, Any]] = []
             introduced_version = None
             deprecated_version = None
             removed_version = None
@@ -221,25 +243,32 @@ class SymbolEvidenceResolver:
 
                     if lifecycle_hint == "introduced" and introduced_version is None:
                         introduced_version = version_hint
+                        if introduced_version is not None:
+                            _log_lifecycle_evidence(symbol, "introduced_version", introduced_version, page_type, str(page["url"]), snippet)
                     if lifecycle_hint == "deprecated" and deprecated_version is None:
                         deprecated_version = version_hint
+                        if deprecated_version is not None:
+                            _log_lifecycle_evidence(symbol, "deprecated_version", deprecated_version, page_type, str(page["url"]), snippet)
                     if lifecycle_hint == "removed" and removed_version is None:
                         removed_version = version_hint
+                        if removed_version is not None:
+                            _log_lifecycle_evidence(symbol, "removed_version", removed_version, page_type, str(page["url"]), snippet)
                     if lifecycle_hint in {"renamed", "replacement"} and replacement_symbol is None:
                         replacement_symbol = replacement_hint
+                        if replacement_symbol is not None:
+                            _log_lifecycle_evidence(symbol, "replacement_symbol", replacement_symbol, page_type, str(page["url"]), snippet)
 
                     evidence.append({"type": page_type, "url": str(page["url"]), "matched_text": snippet})
-                    verified_lifecycles.append(
-                        {
-                            "source_kind": page_type,
-                            "confidence": confidence,
-                        }
+
+            confidence = 0.0
+            if evidence:
+                confidence = max(
+                    (
+                        1.0 if item["type"] in {"migration_guide", "official_deprecation_notice"} else 0.9 if item["type"] == "changelog" else 0.8 if item["type"] == "release_notes" else 0.0
                     )
+                    for item in evidence
+                )
 
-            if not evidence:
-                verified_lifecycles = []
-
-            confidence = max((item["confidence"] for item in verified_lifecycles), default=0.0)
             if confidence <= 0:
                 introduced_version = None
                 deprecated_version = None

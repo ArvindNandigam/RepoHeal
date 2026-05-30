@@ -168,37 +168,13 @@ def _discover_guide_links(fetch_page, docs_url: str, extra_domains: list[str] | 
     parser.feed(html)
     for title, href in parser.links:
         title_clean = title.strip().lower()
-        if any(token in title_clean for token in ("migration", "upgrade", "changelog", "release notes")):
+        if any(token in title_clean for token in ("migration", "upgrade", "changelog", "release notes", "deprecat")):
             guide_url = urljoin(docs_url, href)
             if not is_approved_source_url(guide_url, extra_domains=extra_domains):
                 continue
-            discovered.append({"title": title.strip() or href, "url": guide_url})
+            guide_title = title.strip() or href
+            discovered.append({"title": guide_title, "url": guide_url})
     return discovered
-
-
-def _fallback_symbol_lifecycle(symbol: str, bundle: dict[str, Any]) -> dict[str, Any]:
-    known_replacements = {
-        "openai.chatcompletion.create": "client.chat.completions.create",
-    }
-
-    replacement = known_replacements.get(symbol.strip().lower())
-    lifecycle = "removed" if replacement else "inferred"
-    return {
-        "symbol": symbol,
-        "lifecycle": lifecycle,
-        "introduced_version": None,
-        "deprecated_version": None,
-        "removed_version": None,
-        "replacement_symbol": replacement,
-        "confidence": 0.5,
-        "evidence": [
-            {
-                "type": "fallback",
-                "url": bundle["source_contract"]["official_docs"],
-                "matched_text": symbol,
-            }
-        ],
-    }
 
 
 class OfficialSourceResolver:
@@ -353,11 +329,5 @@ class OfficialSourceResolver:
             "pypi_json": pypi_json,
         }
         symbol_lifecycles = resolver.resolve_from_source_bundle(library, symbols, bundle)
-
-        if len(symbol_lifecycles) != len(symbols):
-            resolved_symbols = {item["symbol"] for item in symbol_lifecycles}
-            for symbol in symbols:
-                if symbol not in resolved_symbols:
-                    symbol_lifecycles.append(_fallback_symbol_lifecycle(symbol, bundle))
 
         return source_contract, symbol_lifecycles, release_history, migration_guides, pypi_json

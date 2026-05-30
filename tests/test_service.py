@@ -151,6 +151,32 @@ def test_symbol_evidence_resolver_extracts_evidence_and_versions() -> None:
     assert all("url" in item for item in lifecycle["evidence"])
 
 
+def test_symbol_evidence_resolver_logs_explicit_evidence(caplog) -> None:
+    resolver = SymbolEvidenceResolver(EvidenceResolverSource())
+
+    caplog.set_level("INFO")
+    resolver.resolve_from_source_bundle(
+        "openai",
+        ["openai.ChatCompletion.create"],
+        {
+            "source_contract": {
+                "library": "openai",
+                "official_docs": "https://docs.openai.com/api",
+                "github_repo": "https://github.com/openai/openai-python",
+                "pypi_url": "https://pypi.org/pypi/openai/json",
+                "latest_version": "1.52.0",
+            },
+            "release_history": [{"version": "1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0"}],
+            "migration_guides": [{"title": "Migration Guide", "url": "https://docs.openai.com/migration"}],
+            "pypi_json": {},
+        },
+    )
+
+    assert any("LIFECYCLE_EVIDENCE:" in record.message for record in caplog.records)
+    assert any("field=removed_version" in record.message for record in caplog.records)
+    assert any("url=https://github.com/openai/openai-python/releases/tag/v1.52.0" in record.message for record in caplog.records)
+
+
 def test_symbol_evidence_resolver_returns_nulls_without_explicit_evidence() -> None:
     class NoEvidenceSource:
         def resolve_sources(self, library: str, trust_sources: bool = False):

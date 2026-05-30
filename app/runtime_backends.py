@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.security import hash_api_key, is_bearer_token_valid
+from app.cache.repository import CACHE_PAYLOAD_SCHEMA_VERSION
 
 
 class InMemoryCacheRepository:
@@ -31,6 +32,8 @@ class InMemoryCacheRepository:
         record = self.library_cache.get(self._cache_key(library, symbols))
         if not record:
             return None
+        if record.get("payload_schema_version") != CACHE_PAYLOAD_SCHEMA_VERSION:
+            return None
         if not self._is_fresh(record.get("last_updated")):
             return None
         payload = record.get("payload")
@@ -43,6 +46,7 @@ class InMemoryCacheRepository:
             "cache_key": self._cache_key(library, symbols),
             "symbols": sorted(symbols),
             "latest_version": payload["latest_version"],
+            "payload_schema_version": CACHE_PAYLOAD_SCHEMA_VERSION,
             "payload": payload,
             "last_updated": now,
             "expires_at": now + self.cache_expiry,
@@ -73,6 +77,7 @@ class InMemoryCacheRepository:
         self.symbol_cache[(library, symbol)] = {
             "library": library,
             "symbol": symbol,
+            "payload_schema_version": CACHE_PAYLOAD_SCHEMA_VERSION,
             "lifecycle": payload.get("lifecycle"),
             "confidence": payload.get("confidence"),
             "evidence": payload.get("evidence", []),
@@ -84,6 +89,8 @@ class InMemoryCacheRepository:
     def get_symbol_payload(self, library: str, symbol: str) -> dict[str, Any] | None:
         record = self.symbol_cache.get((library, symbol))
         if not record:
+            return None
+        if record.get("payload_schema_version") != CACHE_PAYLOAD_SCHEMA_VERSION:
             return None
         if not self._is_fresh(record.get("last_updated")):
             return None
