@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from app.contracts.schemas import ApiKeyContract
 from app.security import hash_api_key, is_bearer_token_valid
 
 
@@ -94,12 +93,12 @@ class InMemoryOperationalRepository:
     def ensure_collections(self) -> None:
         return None
 
-    def ensure_api_key(self, name: str, raw_key: str) -> ApiKeyContract:
+    def ensure_api_key(self, name: str, raw_key: str) -> dict[str, Any]:
         now = datetime.now(timezone.utc)
         key_hash = hash_api_key(raw_key)
         if key_hash not in self._api_key_hashes:
             self._api_key_hashes.append(key_hash)
-        return ApiKeyContract(name=name, key_hash=key_hash, active=True, created_at=now)
+        return {"name": name, "key_hash": key_hash, "active": True, "created_at": now}
 
     def get_active_api_key_hashes(self) -> list[str]:
         return list(self._api_key_hashes)

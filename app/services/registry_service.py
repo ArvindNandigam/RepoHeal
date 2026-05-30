@@ -4,8 +4,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from app.contracts.schemas import SourceContract, ToolResponseContract
-
 
 @lru_cache(maxsize=1)
 def _load_curated_registry() -> dict[str, dict[str, str]]:
@@ -38,14 +36,14 @@ class RegistryService:
             source_contract, symbol_lifecycles, release_history, migration_guides, pypi_json = self.source_resolver.resolve(library, symbols, trust_sources=True)
 
             result = {
-                "library": source_contract.library,
-                "latest_version": source_contract.latest_version,
-                "official_docs": curated_entry.get("official_docs") or source_contract.official_docs,
-                "github_repo": curated_entry.get("github") or source_contract.github_repo,
-                "pypi_url": source_contract.pypi_url,
-                "symbol_lifecycles": [s.model_dump(mode="json") for s in symbol_lifecycles],
-                "release_history": [r.model_dump(mode="json") for r in release_history],
-                "migration_guides": [g.model_dump(mode="json") for g in migration_guides],
+                "library": source_contract["library"],
+                "latest_version": source_contract["latest_version"],
+                "official_docs": curated_entry.get("official_docs") or source_contract["official_docs"],
+                "github_repo": curated_entry.get("github") or source_contract["github_repo"],
+                "pypi_url": source_contract["pypi_url"],
+                "symbol_lifecycles": symbol_lifecycles,
+                "release_history": release_history,
+                "migration_guides": migration_guides,
             }
 
             # persist permanent source metadata (curated)
@@ -79,27 +77,27 @@ class RegistryService:
             source_contract, symbol_lifecycles, release_history, migration_guides, pypi_json = self.source_resolver.resolve(library, symbols, trust_sources=True)
             result = {
                 "library": record.get("library", library),
-                "latest_version": source_contract.latest_version,
-                "official_docs": record.get("official_docs") or source_contract.official_docs,
-                "github_repo": record.get("github_repo") or source_contract.github_repo,
-                "pypi_url": source_contract.pypi_url,
-                "symbol_lifecycles": [s.model_dump(mode="json") for s in symbol_lifecycles],
-                "release_history": [r.model_dump(mode="json") for r in release_history],
-                "migration_guides": [g.model_dump(mode="json") for g in migration_guides],
+                "latest_version": source_contract["latest_version"],
+                "official_docs": record.get("official_docs") or source_contract["official_docs"],
+                "github_repo": record.get("github_repo") or source_contract["github_repo"],
+                "pypi_url": source_contract["pypi_url"],
+                "symbol_lifecycles": symbol_lifecycles,
+                "release_history": release_history,
+                "migration_guides": migration_guides,
             }
             return result
 
         # 4) fallback to resolver discovery (first-time discovery + verification)
         source_contract, symbol_lifecycles, release_history, migration_guides, pypi_json = self.source_resolver.resolve(library, symbols)
         result = {
-            "library": source_contract.library,
-            "latest_version": source_contract.latest_version,
-            "official_docs": source_contract.official_docs,
-            "github_repo": source_contract.github_repo,
-            "pypi_url": source_contract.pypi_url,
-            "symbol_lifecycles": [s.model_dump(mode="json") for s in symbol_lifecycles],
-            "release_history": [r.model_dump(mode="json") for r in release_history],
-            "migration_guides": [g.model_dump(mode="json") for g in migration_guides],
+            "library": source_contract["library"],
+            "latest_version": source_contract["latest_version"],
+            "official_docs": source_contract["official_docs"],
+            "github_repo": source_contract["github_repo"],
+            "pypi_url": source_contract["pypi_url"],
+            "symbol_lifecycles": symbol_lifecycles,
+            "release_history": release_history,
+            "migration_guides": migration_guides,
         }
 
         # Verify the hosts are within an allowed small whitelist before marking as verified
@@ -107,16 +105,16 @@ class RegistryService:
         from urllib.parse import urlparse as _urlparse
 
         try:
-            docs_host = _urlparse(source_contract.official_docs).hostname or ""
-            repo_host = _urlparse(source_contract.github_repo).hostname or ""
+            docs_host = _urlparse(source_contract["official_docs"]).hostname or ""
+            repo_host = _urlparse(source_contract["github_repo"]).hostname or ""
             docs_ok = any(docs_host == h or docs_host.endswith(f".{h}") for h in allowed_hosts)
             repo_ok = any(repo_host == h or repo_host.endswith(f".{h}") for h in allowed_hosts)
             if repo_ok or docs_ok:
                 # persist verified library record
                 try:
                     self.cache_repository.upsert_library_record(library, {
-                        "official_docs": source_contract.official_docs,
-                        "github_repo": source_contract.github_repo,
+                        "official_docs": source_contract["official_docs"],
+                        "github_repo": source_contract["github_repo"],
                         "verified": True,
                         "verification_source": "pypi",
                     })

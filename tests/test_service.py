@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 
 from app import dependencies
 from app.main import app
-from app.contracts.schemas import MigrationGuideContract, ReleaseArtifactContract, SourceContract
 from app.runtime_backends import InMemoryCacheRepository, InMemoryOperationalRepository
 from app.services.library_intelligence import LibraryIntelligenceService
 from app.services import source_resolver
@@ -33,18 +32,16 @@ class DummyRepository:
 
 class DummyResolver:
     def resolve(self, library: str, symbols: list[str]):
-        source_contract = SourceContract.model_validate(
-            {
-                "library": library,
-                "official_docs": "https://docs.openai.com/",
-                "github_repo": "https://github.com/openai/openai-python",
-                "pypi_url": "https://pypi.org/pypi/openai/json",
-                "latest_version": "1.52.0",
-            }
-        )
-        release_history = [ReleaseArtifactContract(version="1.52.0", url="https://github.com/openai/openai-python/releases/tag/v1.52.0")]
-        migration_guides = [MigrationGuideContract(title="Migration Guide", url="https://docs.openai.com/migration")]
-        symbol_lifecycles = [SimpleNamespace(symbol=symbols[0], model_dump=lambda mode="json": {"symbol": symbols[0], "introduced_version": "0.0.0", "deprecated_version": None, "removed_version": None, "replacement_symbol": None})] if symbols else []
+        source_contract = {
+            "library": library,
+            "official_docs": "https://docs.openai.com/",
+            "github_repo": "https://github.com/openai/openai-python",
+            "pypi_url": "https://pypi.org/pypi/openai/json",
+            "latest_version": "1.52.0",
+        }
+        release_history = [{"version": "1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0"}]
+        migration_guides = [{"title": "Migration Guide", "url": "https://docs.openai.com/migration"}]
+        symbol_lifecycles = [{"symbol": symbols[0], "introduced_version": "0.0.0", "deprecated_version": None, "removed_version": None, "replacement_symbol": None}] if symbols else []
         return source_contract, symbol_lifecycles, release_history, migration_guides, {}
 
 
@@ -167,9 +164,9 @@ def test_source_resolver_falls_back_when_docs_metadata_missing(monkeypatch) -> N
 
     source_contract, symbol_lifecycles, release_history, migration_guides, pypi_json = resolver.resolve("openai", [])
 
-    assert source_contract.official_docs == "https://github.com/openai/openai-python"
-    assert source_contract.github_repo == "https://github.com/openai/openai-python"
-    assert source_contract.latest_version == "1.0.0"
+    assert source_contract["official_docs"] == "https://github.com/openai/openai-python"
+    assert source_contract["github_repo"] == "https://github.com/openai/openai-python"
+    assert source_contract["latest_version"] == "1.0.0"
     assert symbol_lifecycles == []
     assert release_history == []
     assert migration_guides == []
@@ -206,10 +203,10 @@ def test_source_resolver_prefers_real_github_repo_and_dedupes_guides(monkeypatch
 
     source_contract, symbol_lifecycles, release_history, migration_guides, pypi_json = resolver.resolve("openai", [])
 
-    assert source_contract.github_repo == "https://github.com/openai/openai-python"
-    assert source_contract.official_docs == "https://github.com/openai/openai-python"
-    assert [guide.title for guide in migration_guides] == ["Changelog"]
-    assert [guide.url for guide in migration_guides] == ["https://github.com/openai/openai-python/blob/main/CHANGELOG.md"]
+    assert source_contract["github_repo"] == "https://github.com/openai/openai-python"
+    assert source_contract["official_docs"] == "https://github.com/openai/openai-python"
+    assert [guide["title"] for guide in migration_guides] == ["Changelog"]
+    assert [guide["url"] for guide in migration_guides] == ["https://github.com/openai/openai-python/blob/main/CHANGELOG.md"]
     assert symbol_lifecycles == []
     assert release_history == []
     assert pypi_json["info"]["version"] == "2.0.0"

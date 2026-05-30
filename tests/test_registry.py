@@ -2,34 +2,33 @@ from __future__ import annotations
 
 from app.runtime_backends import InMemoryCacheRepository
 from app.services.registry_service import RegistryService
-from app.contracts.schemas import SourceContract, SymbolLifecycleContract, ReleaseArtifactContract, MigrationGuideContract
 
 
 class FakeResolver:
     def resolve(self, library: str, symbols: list[str], trust_sources: bool = False):
         if trust_sources:
-            source = SourceContract.model_construct(
-                library=library,
-                official_docs="https://example.org/docs",
-                github_repo=f"https://github.com/example/{library}",
-                pypi_url=f"https://pypi.org/pypi/{library}/json",
-                latest_version="1.2.3",
-            )
+            source = {
+                "library": library,
+                "official_docs": "https://example.org/docs",
+                "github_repo": f"https://github.com/example/{library}",
+                "pypi_url": f"https://pypi.org/pypi/{library}/json",
+                "latest_version": "1.2.3",
+            }
         else:
-            source = SourceContract(
-                library=library,
-                official_docs=f"https://{library}.org/doc",
-                github_repo=f"https://github.com/example/{library}",
-                pypi_url=f"https://pypi.org/pypi/{library}/json",
-                latest_version="1.2.3",
-            )
-        lifecycles = [SymbolLifecycleContract(symbol=sym, introduced_version="1.0.0") for sym in symbols]
+            source = {
+                "library": library,
+                "official_docs": f"https://{library}.org/doc",
+                "github_repo": f"https://github.com/example/{library}",
+                "pypi_url": f"https://pypi.org/pypi/{library}/json",
+                "latest_version": "1.2.3",
+            }
+        lifecycles = [{"symbol": sym, "introduced_version": "1.0.0"} for sym in symbols]
         if trust_sources:
-            releases = [ReleaseArtifactContract.model_construct(version="1.2.3", url=source.github_repo)]
-            guides = [MigrationGuideContract.model_construct(title="Guide", url=source.official_docs)]
+            releases = [{"version": "1.2.3", "url": source["github_repo"]}]
+            guides = [{"title": "Guide", "url": source["official_docs"]}]
         else:
-            releases = [ReleaseArtifactContract(version="1.2.3", url=source.github_repo)]
-            guides = [MigrationGuideContract(title="Guide", url=source.official_docs)]
+            releases = [{"version": "1.2.3", "url": source["github_repo"]}]
+            guides = [{"title": "Guide", "url": source["official_docs"]}]
         return source, lifecycles, releases, guides, {}
 
 

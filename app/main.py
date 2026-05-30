@@ -12,7 +12,6 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import get_settings
-from app.contracts.schemas import FailureResponseContract
 from app.dependencies import get_cache_repository, get_operational_repository
 from app.observability.repository import OperationalRepository
 from app.rate_limit import limiter
@@ -24,7 +23,7 @@ from app.routes.symbol_intelligence import router as symbol_router
 
 
 def _failure_response(reason: str, status_code: int) -> JSONResponse:
-    return JSONResponse(status_code=status_code, content=FailureResponseContract(reason=reason).model_dump())
+    return JSONResponse(status_code=status_code, content={"status": "failed", "reason": reason})
 
 
 def _extract_bearer_token(request: Request) -> str | None:

@@ -9,7 +9,6 @@ from pymongo.collection import Collection
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
-from app.contracts.schemas import ApiKeyContract, AuditLogContract, ErrorLogContract, RequestLogContract, ServiceMetricsContract
 from app.security import hash_api_key, is_bearer_token_valid
 
 
@@ -118,7 +117,7 @@ class OperationalRepository:
         self._clear_mongo_disable()
         return True
 
-    def ensure_api_key(self, name: str, raw_key: str) -> ApiKeyContract:
+    def ensure_api_key(self, name: str, raw_key: str) -> dict[str, Any]:
         now = datetime.now(timezone.utc)
         key_hash = hash_api_key(raw_key)
         self.api_keys.update_one(
@@ -135,7 +134,7 @@ class OperationalRepository:
             },
             upsert=True,
         )
-        return ApiKeyContract(name=name, key_hash=key_hash, active=True, created_at=now)
+        return {"name": name, "key_hash": key_hash, "active": True, "created_at": now}
 
     def get_active_api_key_hashes(self) -> list[str]:
         if self._is_mongo_temporarily_disabled():
@@ -172,18 +171,18 @@ class OperationalRepository:
         if self._is_mongo_temporarily_disabled():
             return
         try:
-            payload = RequestLogContract(
-                request_id=request_id,
-                endpoint=endpoint,
-                library=library,
-                libraries=libraries,
-                symbols=symbols,
-                cache_hit=cache_hit,
-                response_time_ms=response_time_ms,
-                status=status,
-                timestamp=datetime.now(timezone.utc),
-            )
-            self.request_logs.insert_one(payload.model_dump())
+            payload = {
+                "request_id": request_id,
+                "endpoint": endpoint,
+                "library": library,
+                "libraries": libraries,
+                "symbols": symbols,
+                "cache_hit": cache_hit,
+                "response_time_ms": response_time_ms,
+                "status": status,
+                "timestamp": datetime.now(timezone.utc),
+            }
+            self.request_logs.insert_one(payload)
         except Exception as exc:
             self._handle_mongo_failure(exc, "failed to write request log: %s")
 
@@ -191,14 +190,14 @@ class OperationalRepository:
         if self._is_mongo_temporarily_disabled():
             return
         try:
-            payload = ErrorLogContract(
-                request_id=request_id,
-                endpoint=endpoint,
-                error_type=error_type,
-                error_message=error_message,
-                timestamp=datetime.now(timezone.utc),
-            )
-            self.error_logs.insert_one(payload.model_dump())
+            payload = {
+                "request_id": request_id,
+                "endpoint": endpoint,
+                "error_type": error_type,
+                "error_message": error_message,
+                "timestamp": datetime.now(timezone.utc),
+            }
+            self.error_logs.insert_one(payload)
         except Exception as exc:
             self._handle_mongo_failure(exc, "failed to write error log: %s")
 
@@ -212,14 +211,14 @@ class OperationalRepository:
         if self._is_mongo_temporarily_disabled():
             return
         try:
-            payload = AuditLogContract(
-                event=event,
-                request_id=request_id,
-                library=library,
-                details=details,
-                timestamp=datetime.now(timezone.utc),
-            )
-            self.audit_logs.insert_one(payload.model_dump())
+            payload = {
+                "event": event,
+                "request_id": request_id,
+                "library": library,
+                "details": details,
+                "timestamp": datetime.now(timezone.utc),
+            }
+            self.audit_logs.insert_one(payload)
         except Exception as exc:
             self._handle_mongo_failure(exc, "failed to write audit log: %s")
 

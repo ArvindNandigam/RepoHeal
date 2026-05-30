@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from typing import Any
@@ -10,17 +9,8 @@ from urllib.parse import urlparse
 import httpx
 
 from app.config import get_settings
-from app.contracts.schemas import MigrationGuideContract, ReleaseArtifactContract, SourceContract, SymbolLifecycleContract
 from app.observability.repository import OperationalRepository
 from app.validators.sources import is_approved_source_url, validate_source_urls
-
-
-@dataclass(frozen=True)
-class LibrarySourceBundle:
-    source_contract: SourceContract
-    release_history: list[ReleaseArtifactContract]
-    migration_guides: list[MigrationGuideContract]
-    pypi_json: dict[str, Any]
 
 
 class _LinkParser(HTMLParser):
@@ -124,20 +114,20 @@ def _extract_official_docs(project_urls: dict[str, str], home_page: str | None) 
     raise ValueError("Official documentation URL not found")
 
 
-def _extract_migration_guides(project_urls: dict[str, str]) -> list[MigrationGuideContract]:
-    guides: list[MigrationGuideContract] = []
+def _extract_migration_guides(project_urls: dict[str, str]) -> list[dict[str, str]]:
+    guides: list[dict[str, str]] = []
     for label, url in project_urls.items():
         label_clean = label.strip().lower()
         if any(token in label_clean for token in ("migration", "upgrade", "changelog", "release notes")):
-            guides.append(MigrationGuideContract(title=label.strip(), url=url.rstrip("/")))
+            guides.append({"title": label.strip(), "url": url.rstrip("/")})
     return guides
 
 
-def _dedupe_migration_guides(guides: list[MigrationGuideContract]) -> list[MigrationGuideContract]:
-    deduped: list[MigrationGuideContract] = []
+def _dedupe_migration_guides(guides: list[dict[str, str]]) -> list[dict[str, str]]:
+    deduped: list[dict[str, str]] = []
     seen: set[str] = set()
     for guide in guides:
-        key = guide.url.rstrip("/")
+        key = guide["url"].rstrip("/")
         if key in seen:
             continue
         seen.add(key)
@@ -145,7 +135,7 @@ def _dedupe_migration_guides(guides: list[MigrationGuideContract]) -> list[Migra
     return deduped
 
 
-def _extract_release_history(releases: dict[str, list[dict[str, Any]]], base_url: str) -> list[ReleaseArtifactContract]:
+def _extract_release_history(releases: dict[str, list[dict[str, Any]]], base_url: str) -> list[dict[str, Any]]:
     release_entries: list[tuple[str, str | None, str]] = []
     for version, files in releases.items():
         if not files:
@@ -158,7 +148,7 @@ def _extract_release_history(releases: dict[str, list[dict[str, Any]]], base_url
         release_entries.append((version, published_at, f"{base_url}/releases/tag/v{version}"))
 
     release_entries.sort(key=lambda item: item[1] or "", reverse=True)
-    return [ReleaseArtifactContract(version=version, url=url, published_at=published_at) for version, published_at, url in release_entries[:10]]
+    return [{"version": version, "url": url, "published_at": published_at} for version, published_at, url in release_entries[:10]]
 
 
 def _fetch_url(client: httpx.Client, url: str) -> str:
@@ -167,8 +157,8 @@ def _fetch_url(client: httpx.Client, url: str) -> str:
     return response.text
 
 
-def _discover_guide_links(fetch_page, docs_url: str, extra_domains: list[str] | None = None) -> list[MigrationGuideContract]:
-    discovered: list[MigrationGuideContract] = []
+def _discover_guide_links(fetch_page, docs_url: str, extra_domains: list[str] | None = None) -> list[dict[str, str]]:
+    discovered: list[dict[str, str]] = []
     try:
         html = fetch_page(docs_url).text
     except Exception:
@@ -182,11 +172,11 @@ def _discover_guide_links(fetch_page, docs_url: str, extra_domains: list[str] | 
             guide_url = urljoin(docs_url, href)
             if not is_approved_source_url(guide_url, extra_domains=extra_domains):
                 continue
-            discovered.append(MigrationGuideContract(title=title.strip() or href, url=guide_url))
+            discovered.append({"title": title.strip() or href, "url": guide_url})
     return discovered
 
 
-def _discover_symbol_lifecycle(symbol: str, bundle: LibrarySourceBundle) -> dict[str, Any]:
+def _discover_symbol_lifecycle(symbol: str, bundle: dict[str, Any]) -> dict[str, Any]:
     known = {
         "openai.chatcompletion.create": {
             "introduced_version": "0.0.0",
@@ -199,13 +189,13 @@ def _discover_symbol_lifecycle(symbol: str, bundle: LibrarySourceBundle) -> dict
     if key in known:
         return {"symbol": symbol, **known[key]}
 
-    latest = bundle.source_contract.latest_version
+    latest = bundle["source_contract"]["latest_version"]
     replacement = None
     deprecated = None
     removed = None
 
-    for guide in bundle.migration_guides:
-        guide_title = guide.title.lower()
+    for guide in bundle["migration_guides"]:
+        guide_title = guide["title"].lower()
         if symbol.lower().split(".")[-1] in guide_title:
             deprecated = latest
             break
@@ -297,7 +287,7 @@ class OfficialSourceResolver:
         assert last_error is not None
         raise last_error
 
-    def resolve(self, library: str, symbols: list[str], trust_sources: bool = False) -> tuple[SourceContract, list[SymbolLifecycleContract], list[ReleaseArtifactContract], list[MigrationGuideContract], dict[str, Any]]:
+    def resolve(self, library: str, symbols: list[str], trust_sources: bool = False) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, str]], dict[str, Any]]:
         pypi_url = f"https://pypi.org/pypi/{library}/json"
         response = self._request_with_retries(pypi_url)
         pypi_json = response.json()
@@ -315,21 +305,24 @@ class OfficialSourceResolver:
 
         if trust_sources:
             # construct without pydantic validation when caller indicates trust
-            source_contract = SourceContract.model_construct(
-                library=library,
-                official_docs=official_docs,
-                github_repo=github_repo,
-                pypi_url=pypi_url,
-                latest_version=latest_version,
-            )
+            source_contract = {
+                "library": library,
+                "official_docs": official_docs,
+                "github_repo": github_repo,
+                "pypi_url": pypi_url,
+                "latest_version": latest_version,
+            }
         else:
-            source_contract = SourceContract(
-                library=library,
-                official_docs=official_docs,
-                github_repo=github_repo,
-                pypi_url=pypi_url,
-                latest_version=latest_version,
-            )
+            from app.validators.sources import validate_source_urls as _validate_source_urls
+
+            _validate_source_urls([official_docs, github_repo, pypi_url])
+            source_contract = {
+                "library": library,
+                "official_docs": official_docs,
+                "github_repo": github_repo,
+                "pypi_url": pypi_url,
+                "latest_version": latest_version,
+            }
 
         release_history = _extract_release_history(pypi_json.get("releases", {}), github_repo)
         migration_guides = _extract_migration_guides(project_urls)
@@ -352,15 +345,10 @@ class OfficialSourceResolver:
         migration_guides.extend(_discover_guide_links(self._request_with_retries, official_docs, extra_domains=verified_hosts))
         migration_guides = _dedupe_migration_guides(migration_guides)
         if not trust_sources:
-            validate_source_urls([guide.url for guide in migration_guides], extra_domains=verified_hosts)
+            validate_source_urls([guide["url"] for guide in migration_guides], extra_domains=verified_hosts)
 
-        bundle = LibrarySourceBundle(
-            source_contract=source_contract,
-            release_history=release_history,
-            migration_guides=migration_guides,
-            pypi_json=pypi_json,
-        )
+        bundle = {"source_contract": source_contract, "release_history": release_history, "migration_guides": migration_guides, "pypi_json": pypi_json}
 
-        symbol_lifecycles = [SymbolLifecycleContract(**_discover_symbol_lifecycle(symbol, bundle)) for symbol in symbols]
+        symbol_lifecycles = [_discover_symbol_lifecycle(symbol, bundle) for symbol in symbols]
 
         return source_contract, symbol_lifecycles, release_history, migration_guides, pypi_json
