@@ -342,3 +342,49 @@ def test_library_route_returns_library_not_found(monkeypatch) -> None:
     assert response.status_code == 404
     assert response.json() == {"status": "failed", "reason": "library_not_found"}
 
+
+def test_symbol_route_accepts_symbols_list(monkeypatch) -> None:
+    class FailingOperationalRepository:
+        def log_audit_event(self, *args, **kwargs) -> None:
+            return None
+
+    class MultiSymbolService:
+        last_cache_hit = False
+
+        def resolve(self, library: str, symbols: list[str]):
+            return {
+                "library": library,
+                "latest_version": "1.52.0",
+                "official_docs": "https://docs.openai.com/",
+                "github_repo": "https://github.com/openai/openai-python",
+                "pypi_url": "https://pypi.org/pypi/openai/json",
+                "symbol_lifecycles": [
+                    {"symbol": symbol, "lifecycle": "inferred", "confidence": 0.5, "evidence": []}
+                    for symbol in symbols
+                ],
+                "release_history": [],
+                "migration_guides": [],
+            }
+
+        def resolve_symbol(self, library: str, symbol: str):
+            return {"symbol": symbol, "lifecycle": "inferred", "confidence": 0.5, "evidence": []}
+
+    app.dependency_overrides.clear()
+    app.dependency_overrides[dependencies.get_library_intelligence_service] = lambda: MultiSymbolService()
+    app.dependency_overrides[dependencies.get_operational_repository] = lambda: FailingOperationalRepository()
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/symbol-intelligence",
+            headers={"Authorization": "Bearer vT5X3du/efIgYBGtXSC1B++jlF/7vszfSl6EtcE/wzLIQgjLZ7qyvtamNE7ZhqxI"},
+            json={"library": "openai", "symbols": ["openai.ChatCompletion.create", "openai.Embedding.create"]},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["library"] == "openai"
+    assert len(payload["symbol_lifecycles"]) == 2
+
