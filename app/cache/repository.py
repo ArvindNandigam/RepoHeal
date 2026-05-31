@@ -8,7 +8,7 @@ from pymongo.collection import Collection
 from pymongo.database import Database
 
 
-CACHE_PAYLOAD_SCHEMA_VERSION = 3
+CACHE_PAYLOAD_SCHEMA_VERSION = 4
 
 
 class MongoCacheRepository:
@@ -142,8 +142,6 @@ class MongoCacheRepository:
                     "library": library,
                     "symbol": symbol,
                     "payload_schema_version": CACHE_PAYLOAD_SCHEMA_VERSION,
-                    "lifecycle": payload.get("lifecycle"),
-                    "confidence": payload.get("confidence"),
                     "evidence": payload.get("evidence", []),
                     "payload": payload,
                     "last_updated": now,

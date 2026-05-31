@@ -78,8 +78,6 @@ class InMemoryCacheRepository:
             "library": library,
             "symbol": symbol,
             "payload_schema_version": CACHE_PAYLOAD_SCHEMA_VERSION,
-            "lifecycle": payload.get("lifecycle"),
-            "confidence": payload.get("confidence"),
             "evidence": payload.get("evidence", []),
             "payload": payload,
             "last_updated": now,

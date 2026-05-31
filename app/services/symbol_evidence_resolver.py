@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import logging
 import re
 from html.parser import HTMLParser
 from typing import Any
 
 from app.validators.sources import is_approved_source_url
-
-
-logger = logging.getLogger(__name__)
 
 EXPLICIT_EVIDENCE_SOURCES = {"migration_guide", "changelog", "release_notes", "official_deprecation_notice"}
 
@@ -69,75 +65,14 @@ def _snippet(text: str, start: int, length: int, window: int = 140) -> str:
     return _normalize_whitespace(text[snippet_start:snippet_end])
 
 
-def _extract_replacement_symbol(snippet: str) -> str | None:
-    patterns = [
-        r"renamed\s+to\s+([A-Za-z0-9_.]+)",
-        r"replaced\s+by\s+([A-Za-z0-9_.]+)",
-        r"use\s+([A-Za-z0-9_.]+)\s+instead",
-        r"migrate\s+to\s+([A-Za-z0-9_.]+)",
-        r"switch\s+to\s+([A-Za-z0-9_.]+)",
-    ]
-    lowered = snippet.lower()
-    for pattern in patterns:
-        match = re.search(pattern, lowered)
-        if match:
-            return match.group(1).rstrip(".,:)[]")
-    return None
-
-
-def _extract_version_hint(snippet: str) -> str | None:
-    patterns = [
-        r"(?:introduced|added|deprecated|removed|renamed|available|released|since|in)\s+(?:version\s+)?v?(\d+(?:\.\d+){0,3}(?:[a-z0-9.-]+)?)",
-        r"v?(\d+(?:\.\d+){1,3})",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, snippet, flags=re.IGNORECASE)
-        if match:
-            return match.group(1).rstrip(".,;:)[]")
-    return None
-
-
-def _classify_snippet(source_kind: str, symbol: str, snippet: str) -> tuple[str | None, str | None, str | None, float]:
-    if source_kind not in EXPLICIT_EVIDENCE_SOURCES:
-        return None, None, None, 0.0
-
-    lowered = snippet.lower()
-    lifecycle: str | None = None
-    if "renamed" in lowered:
-        lifecycle = "renamed"
-    elif "removed" in lowered or "no longer" in lowered:
-        lifecycle = "removed"
-    elif "replaced" in lowered or ("use " in lowered and " instead" in lowered):
-        lifecycle = "replacement"
-    elif "deprecated" in lowered:
-        lifecycle = "deprecated"
-    elif any(token in lowered for token in ("introduced", "added")):
-        lifecycle = "introduced"
-
-    version_hint = _extract_version_hint(snippet)
-    replacement_symbol = _extract_replacement_symbol(snippet)
-
-    confidence = 0.0
-    if source_kind == "migration_guide" and lifecycle is not None:
-        confidence = 1.0
-    elif source_kind == "changelog" and lifecycle is not None:
-        confidence = 0.9
-    elif source_kind == "release_notes" and lifecycle is not None:
-        confidence = 0.8
-
-    return lifecycle, version_hint, replacement_symbol, confidence
-
-
-def _log_lifecycle_evidence(symbol: str, field: str, value: str, source_kind: str, url: str, matched_text: str) -> None:
-    logger.info(
-        "LIFECYCLE_EVIDENCE: symbol=%s field=%s value=%s source=%s url=%s matched_text=%s",
-        symbol,
-        field,
-        value,
-        source_kind,
-        url,
-        matched_text,
-    )
+def _evidence_relevance_score(source_kind: str) -> float:
+    if source_kind in {"migration_guide", "official_deprecation_notice"}:
+        return 0.95
+    if source_kind == "changelog":
+        return 0.9
+    if source_kind == "release_notes":
+        return 0.85
+    return 0.0
 
 
 class SymbolEvidenceResolver:
@@ -146,9 +81,6 @@ class SymbolEvidenceResolver:
 
     def _build_pages(self, source_bundle: dict[str, Any]) -> list[dict[str, str | None]]:
         pages: list[dict[str, str | None]] = []
-        source_contract = source_bundle["source_contract"]
-        pages.append({"type": "api_reference", "url": source_contract["official_docs"], "release_version": None})
-        pages.append({"type": "github_repo", "url": source_contract["github_repo"], "release_version": None})
 
         for entry in source_bundle.get("release_history", []):
             pages.append({"type": "release_notes", "url": entry["url"], "release_version": entry.get("version")})
@@ -227,64 +159,41 @@ class SymbolEvidenceResolver:
 
         results: list[dict[str, Any]] = []
         for symbol in symbols:
-            evidence: list[dict[str, str]] = []
-            introduced_version = None
-            deprecated_version = None
-            removed_version = None
-            replacement_symbol = None
+            evidence: list[dict[str, Any]] = []
 
             for page in page_texts:
                 page_type = str(page["type"])
                 snippets = self._find_snippets(str(page["text"]), symbol)
                 for snippet in snippets:
-                    lifecycle_hint, version_hint, replacement_hint, confidence = _classify_snippet(page_type, symbol, snippet)
-                    if lifecycle_hint is None or confidence <= 0:
+                    if page_type not in EXPLICIT_EVIDENCE_SOURCES:
                         continue
-
-                    if lifecycle_hint == "introduced" and introduced_version is None:
-                        introduced_version = version_hint
-                        if introduced_version is not None:
-                            _log_lifecycle_evidence(symbol, "introduced_version", introduced_version, page_type, str(page["url"]), snippet)
-                    if lifecycle_hint == "deprecated" and deprecated_version is None:
-                        deprecated_version = version_hint
-                        if deprecated_version is not None:
-                            _log_lifecycle_evidence(symbol, "deprecated_version", deprecated_version, page_type, str(page["url"]), snippet)
-                    if lifecycle_hint == "removed" and removed_version is None:
-                        removed_version = version_hint
-                        if removed_version is not None:
-                            _log_lifecycle_evidence(symbol, "removed_version", removed_version, page_type, str(page["url"]), snippet)
-                    if lifecycle_hint in {"renamed", "replacement"} and replacement_symbol is None:
-                        replacement_symbol = replacement_hint
-                        if replacement_symbol is not None:
-                            _log_lifecycle_evidence(symbol, "replacement_symbol", replacement_symbol, page_type, str(page["url"]), snippet)
-
-                    evidence.append({"type": page_type, "url": str(page["url"]), "matched_text": snippet})
-
-            confidence = 0.0
-            if evidence:
-                confidence = max(
-                    (
-                        1.0 if item["type"] in {"migration_guide", "official_deprecation_notice"} else 0.9 if item["type"] == "changelog" else 0.8 if item["type"] == "release_notes" else 0.0
+                    evidence.append(
+                        {
+                            "source_type": page_type,
+                            "url": str(page["url"]),
+                            "matched_text": snippet,
+                            "relevance_score": _evidence_relevance_score(page_type),
+                        }
                     )
-                    for item in evidence
-                )
 
-            if confidence <= 0:
-                introduced_version = None
-                deprecated_version = None
-                removed_version = None
-                replacement_symbol = None
+            deduped_evidence: list[dict[str, Any]] = []
+            seen: set[tuple[Any, ...]] = set()
+            for item in evidence:
+                key = (item.get("source_type"), item.get("url"), item.get("matched_text"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                deduped_evidence.append(item)
 
             results.append(
                 {
                     "symbol": symbol,
-                    "lifecycle": None,
-                    "introduced_version": introduced_version,
-                    "deprecated_version": deprecated_version,
-                    "removed_version": removed_version,
-                    "replacement_symbol": replacement_symbol,
-                    "confidence": confidence,
-                    "evidence": evidence,
+                    "introduced_version": None,
+                    "deprecated_version": None,
+                    "removed_version": None,
+                    "replacement_symbol": None,
+                    "confidence": 0,
+                    "evidence": deduped_evidence,
                 }
             )
 

@@ -57,8 +57,10 @@ def _collect_symbol_evidence(symbol_lifecycles: list[dict[str, Any]]) -> list[di
             evidence_items.append(
                 {
                     "symbol": str(lifecycle.get("symbol", "")),
-                    "type": str(evidence.get("type", "evidence")),
+                    "source_type": str(evidence.get("source_type", evidence.get("type", "evidence"))),
                     "url": str(url),
+                    "matched_text": str(evidence.get("matched_text", "")),
+                    "relevance_score": evidence.get("relevance_score", 0),
                 }
             )
     return _unique_items(evidence_items)
@@ -103,11 +105,20 @@ def format_bulk_response(result_items: list[dict[str, Any]]) -> dict[str, Any]:
 def _format_symbol_entry(lifecycle: dict[str, Any]) -> dict[str, Any]:
     return {
         "symbol": lifecycle.get("symbol"),
-        "introduced_version": lifecycle.get("introduced_version"),
-        "deprecated_version": lifecycle.get("deprecated_version"),
-        "removed_version": lifecycle.get("removed_version"),
-        "replacement_symbol": lifecycle.get("replacement_symbol"),
-        "confidence": lifecycle.get("confidence", 0),
+        "confidence": 0,
+        "evidence_count": len(lifecycle.get("evidence") or []),
+    }
+
+
+def _format_symbol_entry_debug(lifecycle: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "symbol": lifecycle.get("symbol"),
+        "introduced_version": None,
+        "deprecated_version": None,
+        "removed_version": None,
+        "replacement_symbol": None,
+        "confidence": 0,
+        "evidence": lifecycle.get("evidence", []),
     }
 
 
@@ -119,11 +130,10 @@ def format_symbol_response(payload: dict[str, Any], debug: bool = False) -> dict
     response = {
         "library": payload.get("library"),
         "latest_version": payload.get("latest_version"),
-        "symbols": [_format_symbol_entry(lifecycle) for lifecycle in symbol_lifecycles],
+        "symbols": [
+            _format_symbol_entry_debug(lifecycle) if debug else _format_symbol_entry(lifecycle)
+            for lifecycle in symbol_lifecycles
+        ],
     }
-
-    if debug:
-        response["sources"] = _collect_sources(payload)
-        response["evidence"] = _collect_symbol_evidence(symbol_lifecycles)
 
     return response
