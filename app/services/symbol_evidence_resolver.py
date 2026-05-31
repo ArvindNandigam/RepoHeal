@@ -17,13 +17,6 @@ SOURCE_PRIORITY = {
     "release_notes": 3,
     "versioned_docs": 4,
 }
-MIGRATION_EVENT_PATTERNS = {
-    "deprecated": re.compile(r"\bdeprecat(?:ed|e|ion)\b", flags=re.IGNORECASE),
-    "removed": re.compile(r"\bremoved\b|\bno longer supported\b|\bdeleted\b", flags=re.IGNORECASE),
-    "replaced": re.compile(r"\breplaced\b|\breplaced by\b|\buse instead\b|\bmigrated to\b|\brenamed to\b", flags=re.IGNORECASE),
-}
-
-
 class _TextExtractor(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -58,6 +51,7 @@ def _symbol_candidates(symbol: str) -> list[str]:
     parts = [part for part in normalized.split(".") if part]
     if len(parts) >= 2:
         candidates.append(".".join(parts[-2:]))
+        candidates.append(parts[-2])
 
     deduped: list[str] = []
     seen: set[str] = set()
@@ -77,6 +71,16 @@ def _symbol_match_terms(symbol: str) -> list[str]:
 def _snippet_mentions_symbol(snippet: str, symbol: str) -> bool:
     lowered = snippet.lower()
     return any(term in lowered for term in _symbol_match_terms(symbol))
+
+
+def _match_reason(snippet: str, symbol: str) -> str:
+    lowered = snippet.lower()
+    terms = _symbol_candidates(symbol)
+    if symbol.lower() in lowered:
+        return "exact_symbol"
+    if any(term.lower() in lowered for term in terms[1:]):
+        return "terminal_symbol"
+    return "symbol_not_present"
 
 
 def _snippet(text: str, start: int, length: int, window: int = 140) -> str:
@@ -126,6 +130,7 @@ def _extract_version(text: str, fallback: str | None = None) -> str | None:
     patterns = (
         r"(?:version|v)\s*(\d+(?:\.\d+){0,3}(?:[a-z0-9.-]+)?)",
         r"(?:introduced|added|deprecated|removed|released|renamed|available)\s+(?:in\s+)?(?:version\s+)?v?(\d+(?:\.\d+){0,3}(?:[a-z0-9.-]+)?)",
+            r"(?:in|to|for)\s+(?:version\s+)?v?(\d+(?:\.\d+){0,3}(?:[a-z0-9.-]+)?)",
     )
     for pattern in patterns:
         match = re.search(pattern, text, flags=re.IGNORECASE)
@@ -159,14 +164,6 @@ def _is_valid_version(value: str | None) -> bool:
 def _ordered_unique_versions(values: list[str | None]) -> list[str]:
     versions = {value for value in values if value and _is_valid_version(value)}
     return sorted(versions, key=_version_sort_key)
-
-
-def _detect_migration_event_types(text: str) -> list[str]:
-    event_types: list[str] = []
-    for event_type, pattern in MIGRATION_EVENT_PATTERNS.items():
-        if pattern.search(text):
-            event_types.append(event_type)
-    return event_types
 
 
 def _dedupe_records(items: list[dict[str, Any]], sort_key) -> list[dict[str, Any]]:
@@ -308,59 +305,6 @@ class SymbolEvidenceResolver:
             deduped.append(snippet)
         return deduped
 
-    def _build_migration_events(self, page: dict[str, str | None], snippet: str, source_type: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        version = _extract_version(snippet, fallback=page.get("release_version"))
-        document = self._page_title(page)
-        url = str(page["url"])
-        if not _is_valid_version(version):
-            return [], [
-                {
-                    "document": document,
-                    "url": url,
-                    "matched_text": snippet,
-                    "event_type_detected": None,
-                    "accepted": False,
-                    "rejection_reason": "invalid_version",
-                }
-            ]
-
-        events: list[dict[str, Any]] = []
-        matches: list[dict[str, Any]] = []
-        for event_type in _detect_migration_event_types(snippet):
-            events.append(
-                {
-                    "event_type": event_type,
-                    "version": version,
-                    "source_type": source_type,
-                    "title": document,
-                    "url": url,
-                    "matched_text": snippet,
-                }
-            )
-            matches.append(
-                {
-                    "document": document,
-                    "url": url,
-                    "matched_text": snippet,
-                    "event_type_detected": event_type,
-                    "accepted": True,
-                }
-            )
-
-        if not matches:
-            matches.append(
-                {
-                    "document": document,
-                    "url": url,
-                    "matched_text": snippet,
-                    "event_type_detected": None,
-                    "accepted": False,
-                    "rejection_reason": "no explicit event keyword",
-                }
-            )
-
-        return events, matches
-
     def _build_evidence_rejection(self, snippet: str, symbol: str) -> dict[str, Any] | None:
         if _snippet_mentions_symbol(snippet, symbol):
             return None
@@ -389,11 +333,11 @@ class SymbolEvidenceResolver:
                 "earliest_version_found": None,
                 "latest_version_found": None,
                 "evidence": [],
-                "migration_events": [],
+                "migration_documents": [],
                 "_debug": {
-                    "event_extraction_attempts": [],
-                    "event_extraction_matches": [],
                     "evidence_rejected": [],
+                    "migration_documents_searched": 0,
+                    "migration_documents_used": 0,
                 },
             }
             for symbol in symbols
@@ -408,16 +352,9 @@ class SymbolEvidenceResolver:
             for symbol in symbols:
                 snippets = self._find_snippets(text, symbol)
                 evidence = results_by_symbol[symbol]["evidence"]
-                migration_events = results_by_symbol[symbol]["migration_events"]
+                migration_documents = results_by_symbol[symbol]["migration_documents"]
                 debug_info = results_by_symbol[symbol]["_debug"]
-                attempt_matches_found = 0
-                debug_info["event_extraction_attempts"].append(
-                    {
-                        "document": self._page_title(page),
-                        "url": str(page["url"]),
-                        "matches_found": 0,
-                    }
-                )
+                is_migration_doc = page_type in {"migration_guide", "official_deprecation_notice", "versioned_docs"}
                 for snippet in snippets:
                     rejected = self._build_evidence_rejection(snippet, symbol)
                     if rejected is not None:
@@ -426,25 +363,30 @@ class SymbolEvidenceResolver:
 
                     version = _extract_version(snippet, fallback=page.get("release_version"))
                     if not _is_valid_version(version):
-                        events, match_records = self._build_migration_events(page, snippet, page_type)
-                        debug_info["event_extraction_matches"].extend(match_records)
-                        attempt_matches_found += len(match_records)
                         continue
+
+                    match_reason = _match_reason(snippet, symbol)
                     evidence.append(
                         {
                             "version": version,
                             "source_type": page_type,
                             "url": str(page["url"]),
                             "matched_text": snippet,
+                            "match_reason": match_reason,
                         }
                     )
-                    events, match_records = self._build_migration_events(page, snippet, page_type)
-                    migration_events.extend(events)
-                    debug_info["event_extraction_matches"].extend(match_records)
-                    attempt_matches_found += len(match_records)
-                debug_info["event_extraction_attempts"][-1]["matches_found"] = attempt_matches_found
-                if not snippets:
-                    continue
+                    if is_migration_doc:
+                        migration_documents.append(
+                            {
+                                "title": self._page_title(page),
+                                "url": str(page["url"]),
+                                "version": version,
+                                "matched_text": snippet,
+                                "source_type": page_type,
+                            }
+                        )
+                if is_migration_doc:
+                    debug_info["migration_documents_searched"] += 1
 
                 deduped_evidence: list[dict[str, Any]] = []
                 seen: set[tuple[Any, ...]] = set()
@@ -470,27 +412,6 @@ class SymbolEvidenceResolver:
                 results_by_symbol[symbol]["earliest_version_found"] = versions_observed[0] if versions_observed else None
                 results_by_symbol[symbol]["latest_version_found"] = versions_observed[-1] if versions_observed else None
 
-                deduped_events = _dedupe_records(
-                    results_by_symbol[symbol]["migration_events"],
-                    lambda entry: (
-                        SOURCE_PRIORITY.get(str(entry.get("source_type")), 99),
-                        _version_sort_key(str(entry.get("version") or "")),
-                        str(entry.get("event_type") or ""),
-                        str(entry.get("title") or ""),
-                        str(entry.get("url") or ""),
-                    ),
-                )
-                results_by_symbol[symbol]["migration_events"] = deduped_events[:20]
-                debug_info["event_extraction_matches"] = _dedupe_records(
-                    debug_info["event_extraction_matches"],
-                    lambda entry: (
-                        str(entry.get("document") or ""),
-                        str(entry.get("url") or ""),
-                        str(entry.get("matched_text") or ""),
-                        str(entry.get("event_type_detected") or ""),
-                        str(entry.get("accepted") or ""),
-                    ),
-                )[:50]
                 debug_info["evidence_rejected"] = _dedupe_records(
                     debug_info["evidence_rejected"],
                     lambda entry: (
@@ -510,7 +431,7 @@ class SymbolEvidenceResolver:
 
             _apply_page(page, text)
 
-        if release_pages and any(not results_by_symbol[symbol]["versions_observed"] for symbol in symbols):
+        if release_pages:
             max_workers = min(8, len(release_pages))
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = {executor.submit(self._fetch_page_text, str(page["url"])): page for page in release_pages}
@@ -523,14 +444,6 @@ class SymbolEvidenceResolver:
 
         for symbol in symbols:
             debug_info = results_by_symbol[symbol]["_debug"]
-            attempts = debug_info.get("event_extraction_attempts") or []
-            searched_urls = {str(item.get("url") or "") for item in attempts if item.get("url")}
-            accepted_urls = {
-                str(item.get("url") or "")
-                for item in debug_info.get("event_extraction_matches") or []
-                if item.get("accepted") and item.get("url")
-            }
-            debug_info["migration_documents_searched"] = len(searched_urls)
-            debug_info["migration_documents_used"] = len(accepted_urls)
+            debug_info["migration_documents_used"] = len(results_by_symbol[symbol]["migration_documents"])
 
         return results

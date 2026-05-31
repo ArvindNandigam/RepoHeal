@@ -109,58 +109,6 @@ def _collect_debug_documents(migration_guides: list[dict[str, Any]]) -> dict[str
     }
 
 
-def _collect_debug_event_data(symbol_lifecycles: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], int, int]:
-    attempts: list[dict[str, Any]] = []
-    matches: list[dict[str, Any]] = []
-    rejected: list[dict[str, Any]] = []
-    searched_urls: set[str] = set()
-    used_urls: set[str] = set()
-
-    for lifecycle in symbol_lifecycles:
-        debug_info = lifecycle.get("_debug") if isinstance(lifecycle.get("_debug"), dict) else {}
-        for attempt in debug_info.get("event_extraction_attempts") or []:
-            if isinstance(attempt, dict):
-                attempts.append(
-                    {
-                        "symbol": lifecycle.get("symbol"),
-                        "document": attempt.get("document"),
-                        "url": attempt.get("url"),
-                        "matches_found": attempt.get("matches_found", 0),
-                    }
-                )
-                if attempt.get("url"):
-                    searched_urls.add(str(attempt.get("url")))
-
-        for match in debug_info.get("event_extraction_matches") or []:
-            if not isinstance(match, dict):
-                continue
-            matches.append(
-                {
-                    "symbol": lifecycle.get("symbol"),
-                    "document": match.get("document"),
-                    "url": match.get("url"),
-                    "matched_text": match.get("matched_text"),
-                    "event_type_detected": match.get("event_type_detected"),
-                    "accepted": bool(match.get("accepted")),
-                    **({"rejection_reason": match.get("rejection_reason")} if not match.get("accepted") and match.get("rejection_reason") else {}),
-                }
-            )
-            if match.get("accepted") and match.get("url"):
-                used_urls.add(str(match.get("url")))
-
-        for item in debug_info.get("evidence_rejected") or []:
-            if not isinstance(item, dict):
-                continue
-            rejected.append(
-                {
-                    "matched_text": item.get("matched_text"),
-                    "rejection_reason": item.get("rejection_reason"),
-                }
-            )
-
-    return attempts, matches, rejected, len(searched_urls), len(used_urls)
-
-
 def _evidence_source_summary(evidence: list[dict[str, Any]]) -> dict[str, int]:
     summary = {
         "migration_guides": 0,
@@ -186,19 +134,6 @@ def _evidence_source_summary(evidence: list[dict[str, Any]]) -> dict[str, int]:
         if source_key:
             summary[source_key] += 1
     return summary
-
-
-def _format_migration_event(event: dict[str, Any], debug: bool = False) -> dict[str, Any]:
-    response = {
-        "event_type": event.get("event_type"),
-        "version": event.get("version"),
-        "source_type": event.get("source_type"),
-        "title": event.get("title"),
-        "url": event.get("url"),
-    }
-    if debug:
-        response["matched_text"] = event.get("matched_text")
-    return response
 
 
 def format_library_response(payload: dict[str, Any], debug: bool = False) -> dict[str, Any]:
@@ -246,44 +181,17 @@ def _format_symbol_entry(lifecycle: dict[str, Any]) -> dict[str, Any]:
         "earliest_version_found": lifecycle.get("earliest_version_found"),
         "latest_version_found": lifecycle.get("latest_version_found"),
         "evidence_sources": _evidence_source_summary(evidence),
-        "migration_events": [_format_migration_event(event, debug=False) for event in (lifecycle.get("migration_events") or [])],
+        "migration_document_count": len(lifecycle.get("migration_documents") or []),
     }
 
 
 def _format_symbol_entry_debug(lifecycle: dict[str, Any]) -> dict[str, Any]:
     evidence = lifecycle.get("evidence") if isinstance(lifecycle.get("evidence"), list) else []
-    debug_info = lifecycle.get("_debug") if isinstance(lifecycle.get("_debug"), dict) else {}
     return {
         "symbol": lifecycle.get("symbol"),
         "evidence": evidence,
         "evidence_sources": _evidence_source_summary(evidence),
-        "migration_events": [_format_migration_event(event, debug=True) for event in (lifecycle.get("migration_events") or [])],
-        "event_extraction_attempts": [
-            {
-                "document": attempt.get("document"),
-                "url": attempt.get("url"),
-                "matches_found": attempt.get("matches_found", 0),
-            }
-            for attempt in (debug_info.get("event_extraction_attempts") or [])
-        ],
-        "event_extraction_matches": [
-            {
-                "matched_text": match.get("matched_text"),
-                "event_type_detected": match.get("event_type_detected"),
-                "accepted": bool(match.get("accepted")),
-                **({"rejection_reason": match.get("rejection_reason")} if not match.get("accepted") and match.get("rejection_reason") else {}),
-            }
-            for match in (debug_info.get("event_extraction_matches") or [])
-        ],
-        "evidence_rejected": [
-            {
-                "matched_text": item.get("matched_text"),
-                "rejection_reason": item.get("rejection_reason"),
-            }
-            for item in (debug_info.get("evidence_rejected") or [])
-        ],
-        "migration_documents_searched": debug_info.get("migration_documents_searched", 0),
-        "migration_documents_used": debug_info.get("migration_documents_used", 0),
+        "migration_documents": lifecycle.get("migration_documents") or [],
     }
 
 
@@ -303,12 +211,20 @@ def format_symbol_response(payload: dict[str, Any], debug: bool = False, cache_h
 
     if debug:
         debug_documents = _collect_debug_documents(payload.get("migration_guides") or [])
-        attempts, matches, rejected, searched_count, used_count = _collect_debug_event_data(symbol_lifecycles)
-        debug_documents["migration_documents_searched"] = searched_count
-        debug_documents["migration_documents_used"] = used_count
-        debug_documents["event_extraction_attempts"] = attempts
-        debug_documents["event_extraction_matches"] = matches
-        debug_documents["evidence_rejected"] = rejected
+        debug_documents["migration_documents_searched"] = sum(
+            int(((lifecycle.get("_debug") or {}).get("migration_documents_searched")) or 0)
+            for lifecycle in symbol_lifecycles
+        )
+        debug_documents["migration_documents_used"] = sum(
+            int(((lifecycle.get("_debug") or {}).get("migration_documents_used")) or 0)
+            for lifecycle in symbol_lifecycles
+        )
+        debug_documents["evidence_rejected"] = [
+            item
+            for lifecycle in symbol_lifecycles
+            for item in ((lifecycle.get("_debug") or {}).get("evidence_rejected") or [])
+            if isinstance(item, dict)
+        ]
         debug_documents["cache_hit"] = bool(cache_hit)
         debug_documents["cache_collection"] = cache_collection
         response["debug"] = debug_documents
