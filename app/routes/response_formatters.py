@@ -109,9 +109,10 @@ def _collect_debug_documents(migration_guides: list[dict[str, Any]]) -> dict[str
     }
 
 
-def _collect_debug_event_data(symbol_lifecycles: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, int]:
+def _collect_debug_event_data(symbol_lifecycles: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], int, int]:
     attempts: list[dict[str, Any]] = []
     matches: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
     searched_urls: set[str] = set()
     used_urls: set[str] = set()
 
@@ -147,7 +148,17 @@ def _collect_debug_event_data(symbol_lifecycles: list[dict[str, Any]]) -> tuple[
             if match.get("accepted") and match.get("url"):
                 used_urls.add(str(match.get("url")))
 
-    return attempts, matches, len(searched_urls), len(used_urls)
+        for item in debug_info.get("evidence_rejected") or []:
+            if not isinstance(item, dict):
+                continue
+            rejected.append(
+                {
+                    "matched_text": item.get("matched_text"),
+                    "rejection_reason": item.get("rejection_reason"),
+                }
+            )
+
+    return attempts, matches, rejected, len(searched_urls), len(used_urls)
 
 
 def _evidence_source_summary(evidence: list[dict[str, Any]]) -> dict[str, int]:
@@ -264,6 +275,13 @@ def _format_symbol_entry_debug(lifecycle: dict[str, Any]) -> dict[str, Any]:
             }
             for match in (debug_info.get("event_extraction_matches") or [])
         ],
+        "evidence_rejected": [
+            {
+                "matched_text": item.get("matched_text"),
+                "rejection_reason": item.get("rejection_reason"),
+            }
+            for item in (debug_info.get("evidence_rejected") or [])
+        ],
         "migration_documents_searched": debug_info.get("migration_documents_searched", 0),
         "migration_documents_used": debug_info.get("migration_documents_used", 0),
     }
@@ -285,11 +303,12 @@ def format_symbol_response(payload: dict[str, Any], debug: bool = False, cache_h
 
     if debug:
         debug_documents = _collect_debug_documents(payload.get("migration_guides") or [])
-        attempts, matches, searched_count, used_count = _collect_debug_event_data(symbol_lifecycles)
+        attempts, matches, rejected, searched_count, used_count = _collect_debug_event_data(symbol_lifecycles)
         debug_documents["migration_documents_searched"] = searched_count
         debug_documents["migration_documents_used"] = used_count
         debug_documents["event_extraction_attempts"] = attempts
         debug_documents["event_extraction_matches"] = matches
+        debug_documents["evidence_rejected"] = rejected
         debug_documents["cache_hit"] = bool(cache_hit)
         debug_documents["cache_collection"] = cache_collection
         response["debug"] = debug_documents

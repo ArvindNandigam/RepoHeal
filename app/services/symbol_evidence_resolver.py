@@ -58,10 +58,6 @@ def _symbol_candidates(symbol: str) -> list[str]:
     parts = [part for part in normalized.split(".") if part]
     if len(parts) >= 2:
         candidates.append(".".join(parts[-2:]))
-    if parts:
-        candidates.append(parts[-1])
-    if len(parts) >= 3:
-        candidates.append(parts[-3])
 
     deduped: list[str] = []
     seen: set[str] = set()
@@ -74,10 +70,43 @@ def _symbol_candidates(symbol: str) -> list[str]:
     return deduped
 
 
+def _symbol_match_terms(symbol: str) -> list[str]:
+    return [term.lower() for term in _symbol_candidates(symbol)]
+
+
+def _snippet_mentions_symbol(snippet: str, symbol: str) -> bool:
+    lowered = snippet.lower()
+    return any(term in lowered for term in _symbol_match_terms(symbol))
+
+
 def _snippet(text: str, start: int, length: int, window: int = 140) -> str:
     snippet_start = max(0, start - window)
     snippet_end = min(len(text), start + length + window)
     return _normalize_whitespace(text[snippet_start:snippet_end])
+
+
+def _focus_snippet_to_sentence(snippet: str, symbol: str) -> str:
+    lowered = snippet.lower()
+    terms = _symbol_match_terms(symbol)
+    positions = [lowered.find(term) for term in terms if term in lowered]
+    if not positions:
+        return snippet
+
+    match_index = min(position for position in positions if position >= 0)
+    sentence_start = 0
+    for delimiter in (". ", "! ", "? ", "\n"):
+        position = snippet.rfind(delimiter, 0, match_index)
+        if position > sentence_start:
+            sentence_start = position + len(delimiter)
+
+    sentence_end = len(snippet)
+    for delimiter in (". ", "! ", "? ", "\n"):
+        position = snippet.find(delimiter, match_index)
+        if position != -1:
+            sentence_end = min(sentence_end, position + len(delimiter.strip()))
+
+    focused = snippet[sentence_start:sentence_end].strip()
+    return focused or snippet
 
 
 def _evidence_relevance_score(source_kind: str) -> float:
@@ -267,7 +296,7 @@ class SymbolEvidenceResolver:
                 index = lowered.find(candidate_lower, start)
                 if index < 0:
                     break
-                snippets.append(_snippet(text, index, len(candidate)))
+                snippets.append(_focus_snippet_to_sentence(_snippet(text, index, len(candidate)), symbol))
                 start = index + max(1, len(candidate_lower))
         deduped: list[str] = []
         seen: set[str] = set()
@@ -332,6 +361,14 @@ class SymbolEvidenceResolver:
 
         return events, matches
 
+    def _build_evidence_rejection(self, snippet: str, symbol: str) -> dict[str, Any] | None:
+        if _snippet_mentions_symbol(snippet, symbol):
+            return None
+        return {
+            "matched_text": snippet,
+            "rejection_reason": "symbol_not_present",
+        }
+
     def resolve(self, library: str, symbols: list[str]) -> list[dict[str, Any]]:
         source_contract, release_history, migration_guides, pypi_json = self.source_resolver.resolve_sources(library)
         bundle = {
@@ -356,6 +393,7 @@ class SymbolEvidenceResolver:
                 "_debug": {
                     "event_extraction_attempts": [],
                     "event_extraction_matches": [],
+                    "evidence_rejected": [],
                 },
             }
             for symbol in symbols
@@ -373,7 +411,19 @@ class SymbolEvidenceResolver:
                 migration_events = results_by_symbol[symbol]["migration_events"]
                 debug_info = results_by_symbol[symbol]["_debug"]
                 attempt_matches_found = 0
+                debug_info["event_extraction_attempts"].append(
+                    {
+                        "document": self._page_title(page),
+                        "url": str(page["url"]),
+                        "matches_found": 0,
+                    }
+                )
                 for snippet in snippets:
+                    rejected = self._build_evidence_rejection(snippet, symbol)
+                    if rejected is not None:
+                        debug_info["evidence_rejected"].append(rejected)
+                        continue
+
                     version = _extract_version(snippet, fallback=page.get("release_version"))
                     if not _is_valid_version(version):
                         events, match_records = self._build_migration_events(page, snippet, page_type)
@@ -392,14 +442,7 @@ class SymbolEvidenceResolver:
                     migration_events.extend(events)
                     debug_info["event_extraction_matches"].extend(match_records)
                     attempt_matches_found += len(match_records)
-
-                debug_info["event_extraction_attempts"].append(
-                    {
-                        "document": self._page_title(page),
-                        "url": str(page["url"]),
-                        "matches_found": attempt_matches_found,
-                    }
-                )
+                debug_info["event_extraction_attempts"][-1]["matches_found"] = attempt_matches_found
                 if not snippets:
                     continue
 
@@ -446,6 +489,13 @@ class SymbolEvidenceResolver:
                         str(entry.get("matched_text") or ""),
                         str(entry.get("event_type_detected") or ""),
                         str(entry.get("accepted") or ""),
+                    ),
+                )[:50]
+                debug_info["evidence_rejected"] = _dedupe_records(
+                    debug_info["evidence_rejected"],
+                    lambda entry: (
+                        str(entry.get("matched_text") or ""),
+                        str(entry.get("rejection_reason") or ""),
                     ),
                 )[:50]
 
