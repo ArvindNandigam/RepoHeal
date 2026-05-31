@@ -148,7 +148,7 @@ def _extract_release_history(releases: dict[str, list[dict[str, Any]]], base_url
         release_entries.append((version, published_at, f"{base_url}/releases/tag/v{version}"))
 
     release_entries.sort(key=lambda item: item[1] or "", reverse=True)
-    return [{"version": version, "url": url, "published_at": published_at} for version, published_at, url in release_entries[:10]]
+    return [{"version": version, "url": url, "published_at": published_at} for version, published_at, url in release_entries]
 
 
 def _fetch_url(client: httpx.Client, url: str) -> str:

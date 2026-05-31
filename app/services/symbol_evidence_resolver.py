@@ -4,14 +4,17 @@ import re
 from html.parser import HTMLParser
 from typing import Any
 
+from packaging.version import InvalidVersion, Version
+
 from app.validators.sources import is_approved_source_url
 
-EXPLICIT_EVIDENCE_SOURCES = {"migration_guide", "changelog", "release_notes", "official_deprecation_notice"}
+EXPLICIT_EVIDENCE_SOURCES = {"migration_guide", "changelog", "release_notes", "official_deprecation_notice", "versioned_docs"}
 SOURCE_PRIORITY = {
     "migration_guide": 0,
     "official_deprecation_notice": 1,
     "changelog": 2,
     "release_notes": 3,
+    "versioned_docs": 4,
 }
 
 
@@ -96,6 +99,51 @@ def _extract_version(text: str, fallback: str | None = None) -> str | None:
     return None
 
 
+def _version_sort_key(value: str) -> tuple[int, Any]:
+    try:
+        return (0, Version(value))
+    except InvalidVersion:
+        return (1, value)
+
+
+def _ordered_unique_versions(values: list[str | None]) -> list[str]:
+    versions = {value for value in values if value}
+    return sorted(versions, key=_version_sort_key)
+
+
+def _discover_versioned_docs(source_bundle: dict[str, Any]) -> list[dict[str, str | None]]:
+    source_contract = source_bundle.get("source_contract") or {}
+    official_docs = str(source_contract.get("official_docs") or "")
+    release_history = source_bundle.get("release_history") or []
+
+    if not official_docs:
+        return []
+
+    versioned_pages: list[dict[str, str | None]] = []
+    version_templates = []
+    if "/en/latest/" in official_docs:
+        version_templates.append(("/en/latest/", "/en/{version}/"))
+    if "/en/stable/" in official_docs:
+        version_templates.append(("/en/stable/", "/en/{version}/"))
+    if official_docs.rstrip("/").endswith("/latest"):
+        version_templates.append(("/latest", "/{version}"))
+    if official_docs.rstrip("/").endswith("/stable"):
+        version_templates.append(("/stable", "/{version}"))
+
+    if not version_templates:
+        return []
+
+    versions = _ordered_unique_versions([str(entry.get("version")) for entry in release_history if entry.get("version")])
+    for version in versions:
+        for old, new in version_templates:
+            candidate = official_docs.replace(old, new.format(version=version), 1)
+            if candidate != official_docs and is_approved_source_url(candidate):
+                versioned_pages.append({"type": "versioned_docs", "url": candidate, "release_version": version})
+                break
+
+    return versioned_pages
+
+
 class SymbolEvidenceResolver:
     def __init__(self, source_resolver: Any) -> None:
         self.source_resolver = source_resolver
@@ -116,6 +164,8 @@ class SymbolEvidenceResolver:
 
         for entry in source_bundle.get("release_history", []):
             pages.append({"type": "release_notes", "url": entry["url"], "release_version": entry.get("version")})
+
+        pages.extend(_discover_versioned_docs(source_bundle))
 
         seen: set[str] = set()
         deduped: list[dict[str, str | None]] = []
@@ -194,13 +244,19 @@ class SymbolEvidenceResolver:
                             "source_type": page_type,
                             "url": str(page["url"]),
                             "matched_text": snippet,
-                            "relevance_score": _evidence_relevance_score(page_type),
                         }
                     )
 
             deduped_evidence: list[dict[str, Any]] = []
             seen: set[tuple[Any, ...]] = set()
-            for item in sorted(evidence, key=lambda entry: (SOURCE_PRIORITY.get(str(entry.get("source_type")), 99), str(entry.get("version") or ""), str(entry.get("url") or ""))):
+            for item in sorted(
+                evidence,
+                key=lambda entry: (
+                    SOURCE_PRIORITY.get(str(entry.get("source_type")), 99),
+                    _version_sort_key(str(entry.get("version") or "")),
+                    str(entry.get("url") or ""),
+                ),
+            ):
                 key = (item.get("version"), item.get("url"), item.get("matched_text"))
                 if key in seen:
                     continue
@@ -209,13 +265,14 @@ class SymbolEvidenceResolver:
                 if len(deduped_evidence) >= 20:
                     break
 
+            versions_observed = _ordered_unique_versions([item.get("version") for item in deduped_evidence])
+
             results.append(
                 {
                     "symbol": symbol,
-                    "introduced_version": None,
-                    "deprecated_version": None,
-                    "removed_version": None,
-                    "replacement_symbol": None,
+                    "versions_observed": versions_observed,
+                    "earliest_version_found": versions_observed[0] if versions_observed else None,
+                    "latest_version_found": versions_observed[-1] if versions_observed else None,
                     "confidence": 0,
                     "evidence": deduped_evidence,
                 }
