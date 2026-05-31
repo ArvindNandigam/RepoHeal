@@ -57,6 +57,7 @@ def _collect_symbol_evidence(symbol_lifecycles: list[dict[str, Any]]) -> list[di
             evidence_items.append(
                 {
                     "symbol": str(lifecycle.get("symbol", "")),
+                    "version": evidence.get("version"),
                     "source_type": str(evidence.get("source_type", evidence.get("type", "evidence"))),
                     "url": str(url),
                     "matched_text": str(evidence.get("matched_text", "")),
@@ -107,17 +108,6 @@ def _format_symbol_entry(lifecycle: dict[str, Any]) -> dict[str, Any]:
         "symbol": lifecycle.get("symbol"),
         "confidence": 0,
         "evidence_count": len(lifecycle.get("evidence") or []),
-    }
-
-
-def _format_symbol_entry_debug(lifecycle: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "symbol": lifecycle.get("symbol"),
-        "introduced_version": None,
-        "deprecated_version": None,
-        "removed_version": None,
-        "replacement_symbol": None,
-        "confidence": 0,
         "evidence": lifecycle.get("evidence", []),
     }
 
@@ -130,10 +120,7 @@ def format_symbol_response(payload: dict[str, Any], debug: bool = False) -> dict
     response = {
         "library": payload.get("library"),
         "latest_version": payload.get("latest_version"),
-        "symbols": [
-            _format_symbol_entry_debug(lifecycle) if debug else _format_symbol_entry(lifecycle)
-            for lifecycle in symbol_lifecycles
-        ],
+        "symbols": [_format_symbol_entry(lifecycle) for lifecycle in symbol_lifecycles],
     }
 
     return response

@@ -7,6 +7,12 @@ from typing import Any
 from app.validators.sources import is_approved_source_url
 
 EXPLICIT_EVIDENCE_SOURCES = {"migration_guide", "changelog", "release_notes", "official_deprecation_notice"}
+SOURCE_PRIORITY = {
+    "migration_guide": 0,
+    "official_deprecation_notice": 1,
+    "changelog": 2,
+    "release_notes": 3,
+}
 
 
 class _TextExtractor(HTMLParser):
@@ -75,15 +81,27 @@ def _evidence_relevance_score(source_kind: str) -> float:
     return 0.0
 
 
+def _extract_version(text: str, fallback: str | None = None) -> str | None:
+    if fallback:
+        return fallback
+
+    patterns = (
+        r"(?:version|v)\s*(\d+(?:\.\d+){0,3}(?:[a-z0-9.-]+)?)",
+        r"(?:introduced|added|deprecated|removed|released|renamed|available)\s+(?:in\s+)?(?:version\s+)?v?(\d+(?:\.\d+){0,3}(?:[a-z0-9.-]+)?)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).rstrip(".,;:)[]")
+    return None
+
+
 class SymbolEvidenceResolver:
     def __init__(self, source_resolver: Any) -> None:
         self.source_resolver = source_resolver
 
     def _build_pages(self, source_bundle: dict[str, Any]) -> list[dict[str, str | None]]:
         pages: list[dict[str, str | None]] = []
-
-        for entry in source_bundle.get("release_history", []):
-            pages.append({"type": "release_notes", "url": entry["url"], "release_version": entry.get("version")})
 
         for guide in source_bundle.get("migration_guides", []):
             title = guide.get("title", "").lower()
@@ -93,8 +111,11 @@ class SymbolEvidenceResolver:
             elif "deprecat" in title:
                 guide_type = "official_deprecation_notice"
             elif any(token in title for token in ("api reference", "reference", "api docs")):
-                guide_type = "api_reference"
+                continue
             pages.append({"type": guide_type, "url": guide["url"], "release_version": None})
+
+        for entry in source_bundle.get("release_history", []):
+            pages.append({"type": "release_notes", "url": entry["url"], "release_version": entry.get("version")})
 
         seen: set[str] = set()
         deduped: list[dict[str, str | None]] = []
@@ -169,6 +190,7 @@ class SymbolEvidenceResolver:
                         continue
                     evidence.append(
                         {
+                            "version": _extract_version(snippet, fallback=page.get("release_version")),
                             "source_type": page_type,
                             "url": str(page["url"]),
                             "matched_text": snippet,
@@ -178,12 +200,14 @@ class SymbolEvidenceResolver:
 
             deduped_evidence: list[dict[str, Any]] = []
             seen: set[tuple[Any, ...]] = set()
-            for item in evidence:
-                key = (item.get("source_type"), item.get("url"), item.get("matched_text"))
+            for item in sorted(evidence, key=lambda entry: (SOURCE_PRIORITY.get(str(entry.get("source_type")), 99), str(entry.get("version") or ""), str(entry.get("url") or ""))):
+                key = (item.get("version"), item.get("url"), item.get("matched_text"))
                 if key in seen:
                     continue
                 seen.add(key)
                 deduped_evidence.append(item)
+                if len(deduped_evidence) >= 20:
+                    break
 
             results.append(
                 {

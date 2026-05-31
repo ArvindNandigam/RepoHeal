@@ -119,12 +119,8 @@ def test_service_resolve_symbol_uses_symbol_cache_when_present() -> None:
     repository = DummyRepository()
     repository.symbols[("openai", "openai.ChatCompletion.create")] = {
         "symbol": "openai.ChatCompletion.create",
-        "introduced_version": None,
-        "deprecated_version": None,
-        "removed_version": None,
-        "replacement_symbol": None,
         "confidence": 0,
-        "evidence": [{"source_type": "migration_guide", "url": "https://docs.openai.com/migration", "matched_text": "ChatCompletion.create was renamed to client.chat.completions.create.", "relevance_score": 0.95}],
+        "evidence": [{"version": "1.52.0", "source_type": "migration_guide", "url": "https://docs.openai.com/migration", "matched_text": "ChatCompletion.create was renamed to client.chat.completions.create.", "relevance_score": 0.95}],
     }
     service = LibraryIntelligenceService(repository, DummyOperationalRepository(), DummyResolver())
 
@@ -136,7 +132,7 @@ def test_service_resolve_symbol_uses_symbol_cache_when_present() -> None:
     assert service.last_cache_hit is True
 
 
-def test_symbol_evidence_resolver_collects_explicit_evidence_only() -> None:
+def test_symbol_evidence_resolver_collects_bounded_unique_evidence_only() -> None:
     resolver = SymbolEvidenceResolver(EvidenceResolverSource())
 
     result = resolver.resolve_from_source_bundle(
@@ -159,14 +155,44 @@ def test_symbol_evidence_resolver_collects_explicit_evidence_only() -> None:
     assert len(result) == 1
     symbol_evidence = result[0]
     assert symbol_evidence["symbol"] == "openai.ChatCompletion.create"
-    assert symbol_evidence["introduced_version"] is None
-    assert symbol_evidence["deprecated_version"] is None
-    assert symbol_evidence["removed_version"] is None
-    assert symbol_evidence["replacement_symbol"] is None
     assert symbol_evidence["confidence"] == 0
-    assert symbol_evidence["evidence"]
+    assert 0 < len(symbol_evidence["evidence"]) <= 20
     assert {item["source_type"] for item in symbol_evidence["evidence"]} <= {"migration_guide", "release_notes"}
-    assert all("url" in item and "matched_text" in item and "relevance_score" in item for item in symbol_evidence["evidence"])
+    assert all("version" in item and "url" in item and "matched_text" in item and "relevance_score" in item for item in symbol_evidence["evidence"])
+    assert any(item["version"] == "1.52.0" for item in symbol_evidence["evidence"])
+
+
+def test_symbol_evidence_resolver_dedupes_and_limits_records() -> None:
+    class NoisySource(EvidenceResolverSource):
+        def _request_with_retries(self, url: str):
+            class Response:
+                def __init__(self, text: str) -> None:
+                    self.text = text
+
+            if url == "https://docs.openai.com/migration":
+                return Response("<html><body>ChatCompletion.create was renamed to client.chat.completions.create. ChatCompletion.create was renamed to client.chat.completions.create.</body></html>")
+            if url == "https://github.com/openai/openai-python/releases/tag/v1.52.0":
+                return Response("<html><body>Removed ChatCompletion.create in 1.52.0. Use client.chat.completions.create instead. Removed ChatCompletion.create in 1.52.0. Use client.chat.completions.create instead.</body></html>")
+            return super()._request_with_retries(url)
+
+    resolver = SymbolEvidenceResolver(NoisySource())
+    source_bundle = {
+        "source_contract": {
+            "library": "openai",
+            "official_docs": "https://docs.openai.com/api",
+            "github_repo": "https://github.com/openai/openai-python",
+            "pypi_url": "https://pypi.org/pypi/openai/json",
+            "latest_version": "1.52.0",
+        },
+        "release_history": [{"version": "1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0"}],
+        "migration_guides": [{"title": "Migration Guide", "url": "https://docs.openai.com/migration"}],
+        "pypi_json": {},
+    }
+
+    result = resolver.resolve_from_source_bundle("openai", ["openai.ChatCompletion.create"], source_bundle)[0]
+
+    assert len(result["evidence"]) <= 20
+    assert len({(item["version"], item["url"], item["matched_text"]) for item in result["evidence"]}) == len(result["evidence"])
 
 
 def test_symbol_evidence_resolver_logs_explicit_evidence(caplog) -> None:
@@ -231,10 +257,6 @@ def test_symbol_evidence_resolver_returns_nulls_without_explicit_evidence() -> N
     )
 
     lifecycle = result[0]
-    assert lifecycle["introduced_version"] is None
-    assert lifecycle["deprecated_version"] is None
-    assert lifecycle["removed_version"] is None
-    assert lifecycle["replacement_symbol"] is None
     assert lifecycle["confidence"] == 0
     assert lifecycle["evidence"] == []
 
@@ -568,6 +590,7 @@ def test_symbol_route_accepts_symbols_list(monkeypatch) -> None:
     assert [item["symbol"] for item in payload["symbols"]] == ["openai.ChatCompletion.create", "openai.Embedding.create"]
     assert all(item["confidence"] == 0 for item in payload["symbols"])
     assert all(item["evidence_count"] == 0 for item in payload["symbols"])
+    assert all(item["evidence"] == [] for item in payload["symbols"])
 
 
 def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
@@ -588,12 +611,8 @@ def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
                 "symbol_lifecycles": [
                     {
                         "symbol": symbols[0],
-                        "introduced_version": None,
-                        "deprecated_version": None,
-                        "removed_version": None,
-                        "replacement_symbol": None,
                         "confidence": 0,
-                        "evidence": [{"source_type": "migration_guide", "url": "https://docs.openai.com/migration", "matched_text": "omitted", "relevance_score": 0.95}],
+                        "evidence": [{"version": "1.52.0", "source_type": "migration_guide", "url": "https://docs.openai.com/migration", "matched_text": "omitted", "relevance_score": 0.95}],
                     }
                 ],
                 "release_history": [{"version": "1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0"}],
@@ -618,6 +637,6 @@ def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
     payload = response.json()
     assert payload["symbols"][0]["evidence"]
     assert payload["symbols"][0]["confidence"] == 0
-    assert payload["symbols"][0]["introduced_version"] is None
-    assert all("url" in item and "matched_text" in item and "relevance_score" in item for item in payload["symbols"][0]["evidence"])
+    assert payload["symbols"][0]["evidence_count"] == len(payload["symbols"][0]["evidence"])
+    assert all("version" in item and "url" in item and "matched_text" in item and "relevance_score" in item for item in payload["symbols"][0]["evidence"])
 
