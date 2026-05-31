@@ -129,7 +129,6 @@ def test_service_resolve_symbol_uses_symbol_cache_when_present() -> None:
     result = service.resolve_symbol("openai", "openai.ChatCompletion.create")
 
     assert result["symbol"] == "openai.ChatCompletion.create"
-    assert result["confidence"] == 0
     assert result["evidence"]
     assert service.last_cache_hit is True
 
@@ -157,7 +156,6 @@ def test_symbol_evidence_resolver_collects_bounded_unique_evidence_only() -> Non
     assert len(result) == 1
     symbol_evidence = result[0]
     assert symbol_evidence["symbol"] == "openai.ChatCompletion.create"
-    assert symbol_evidence["confidence"] == 0
     assert 0 < len(symbol_evidence["evidence"]) <= 20
     assert {item["source_type"] for item in symbol_evidence["evidence"]} <= {"migration_guide", "release_notes"}
     assert all("version" in item and "url" in item and "matched_text" in item for item in symbol_evidence["evidence"])
@@ -320,11 +318,60 @@ def test_symbol_evidence_resolver_returns_nulls_without_explicit_evidence() -> N
     )
 
     lifecycle = result[0]
-    assert lifecycle["confidence"] == 0
     assert lifecycle["evidence"] == []
     assert lifecycle["versions_observed"] == []
     assert lifecycle["earliest_version_found"] is None
     assert lifecycle["latest_version_found"] is None
+
+
+def test_symbol_evidence_resolver_stops_after_high_priority_evidence() -> None:
+    class ShortCircuitSource:
+        def resolve_sources(self, library: str, trust_sources: bool = False):
+            source_contract = {
+                "library": library,
+                "official_docs": "https://docs.openai.com/api",
+                "github_repo": "https://github.com/openai/openai-python",
+                "pypi_url": "https://pypi.org/pypi/openai/json",
+                "latest_version": "1.52.0",
+            }
+            release_history = [
+                {"version": "1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0"},
+            ]
+            migration_guides = [{"title": "Migration Guide", "url": "https://docs.openai.com/migration"}]
+            return source_contract, release_history, migration_guides, {}
+
+        def _request_with_retries(self, url: str):
+            class Response:
+                def __init__(self, text: str) -> None:
+                    self.text = text
+
+            if url == "https://docs.openai.com/migration":
+                return Response("<html><body><p>ChatCompletion.create was renamed in v1.0.0.</p></body></html>")
+
+            raise AssertionError(f"release crawl should not be needed: {url}")
+
+    resolver = SymbolEvidenceResolver(ShortCircuitSource())
+
+    result = resolver.resolve_from_source_bundle(
+        "openai",
+        ["openai.ChatCompletion.create"],
+        {
+            "source_contract": {
+                "library": "openai",
+                "official_docs": "https://docs.openai.com/api",
+                "github_repo": "https://github.com/openai/openai-python",
+                "pypi_url": "https://pypi.org/pypi/openai/json",
+                "latest_version": "1.52.0",
+            },
+            "release_history": [{"version": "1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0"}],
+            "migration_guides": [{"title": "Migration Guide", "url": "https://docs.openai.com/migration"}],
+            "pypi_json": {},
+        },
+    )
+
+    lifecycle = result[0]
+    assert lifecycle["evidence"]
+    assert lifecycle["versions_observed"] == ["1.0.0"]
 
 
 def test_reset_mongo_dependencies_clears_cached_singletons(monkeypatch) -> None:
@@ -654,7 +701,6 @@ def test_symbol_route_accepts_symbols_list(monkeypatch) -> None:
     assert payload["library"] == "openai"
     assert payload["latest_version"] == "1.52.0"
     assert [item["symbol"] for item in payload["symbols"]] == ["openai.ChatCompletion.create", "openai.Embedding.create"]
-    assert all(item["confidence"] == 0 for item in payload["symbols"])
     assert all(item["evidence_count"] == 0 for item in payload["symbols"])
     assert all(item["versions_observed"] == ["1.52.0"] for item in payload["symbols"])
     assert all(item["earliest_version_found"] == "1.52.0" for item in payload["symbols"])
@@ -682,7 +728,6 @@ def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
                         "versions_observed": ["1.52.0"],
                         "earliest_version_found": "1.52.0",
                         "latest_version_found": "1.52.0",
-                        "confidence": 0,
                         "evidence": [{"version": "1.52.0", "source_type": "migration_guide", "url": "https://docs.openai.com/migration", "matched_text": "omitted"}],
                     }
                 ],
@@ -706,10 +751,11 @@ def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["symbols"][0]["evidence"]
-    assert payload["symbols"][0] == {
-        "symbol": "openai.ChatCompletion.create",
-        "evidence": [{"version": "1.52.0", "source_type": "migration_guide", "url": "https://docs.openai.com/migration", "matched_text": "omitted"}],
+    assert payload == {
+        "status": "ok",
+        "step": "completed",
+        "versions_found": 1,
+        "evidence_found": 1,
     }
 
 
@@ -742,7 +788,7 @@ def test_symbol_route_returns_structured_500_on_unexpected_error(monkeypatch) ->
         app.dependency_overrides.clear()
 
     assert response.status_code == 500
-    assert response.json() == {"status": "failed", "reason": "internal_error"}
+    assert response.json() == {"status": "failed", "error": "symbol-intelligence failed"}
 
 
 def test_debug_symbol_route_returns_traceback_on_failure(monkeypatch) -> None:
@@ -773,9 +819,12 @@ def test_debug_symbol_route_returns_traceback_on_failure(monkeypatch) -> None:
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 500
+    assert response.status_code == 200
     payload = response.json()
-    assert payload["status"] == "failed"
-    assert payload["error"]
-    assert "traceback" in payload
+    assert payload == {
+        "status": "ok",
+        "step": "error",
+        "versions_found": 0,
+        "evidence_found": 0,
+    }
 

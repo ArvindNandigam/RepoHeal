@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from html.parser import HTMLParser
 from typing import Any
 
@@ -220,24 +221,30 @@ class SymbolEvidenceResolver:
 
     def resolve_from_source_bundle(self, library: str, symbols: list[str], source_bundle: dict[str, Any]) -> list[dict[str, Any]]:
         pages = self._build_pages(source_bundle)
-        page_texts: list[dict[str, Any]] = []
+        results: list[dict[str, Any]] = [
+            {
+                "symbol": symbol,
+                "versions_observed": [],
+                "earliest_version_found": None,
+                "latest_version_found": None,
+                "evidence": [],
+            }
+            for symbol in symbols
+        ]
+        results_by_symbol = {entry["symbol"]: entry for entry in results}
 
-        for page in pages:
-            url = str(page["url"])
-            text = self._fetch_page_text(url)
-            if text:
-                page_texts.append({**page, "text": text})
+        def _apply_page(page: dict[str, str | None], text: str) -> None:
+            page_type = str(page["type"])
+            if page_type not in EXPLICIT_EVIDENCE_SOURCES:
+                return
 
-        results: list[dict[str, Any]] = []
-        for symbol in symbols:
-            evidence: list[dict[str, Any]] = []
+            for symbol in symbols:
+                snippets = self._find_snippets(text, symbol)
+                if not snippets:
+                    continue
 
-            for page in page_texts:
-                page_type = str(page["type"])
-                snippets = self._find_snippets(str(page["text"]), symbol)
+                evidence = results_by_symbol[symbol]["evidence"]
                 for snippet in snippets:
-                    if page_type not in EXPLICIT_EVIDENCE_SOURCES:
-                        continue
                     evidence.append(
                         {
                             "version": _extract_version(snippet, fallback=page.get("release_version")),
@@ -247,35 +254,50 @@ class SymbolEvidenceResolver:
                         }
                     )
 
-            deduped_evidence: list[dict[str, Any]] = []
-            seen: set[tuple[Any, ...]] = set()
-            for item in sorted(
-                evidence,
-                key=lambda entry: (
-                    SOURCE_PRIORITY.get(str(entry.get("source_type")), 99),
-                    _version_sort_key(str(entry.get("version") or "")),
-                    str(entry.get("url") or ""),
-                ),
-            ):
-                key = (item.get("version"), item.get("url"), item.get("matched_text"))
-                if key in seen:
-                    continue
-                seen.add(key)
-                deduped_evidence.append(item)
-                if len(deduped_evidence) >= 20:
-                    break
+                deduped_evidence: list[dict[str, Any]] = []
+                seen: set[tuple[Any, ...]] = set()
+                for item in sorted(
+                    evidence,
+                    key=lambda entry: (
+                        SOURCE_PRIORITY.get(str(entry.get("source_type")), 99),
+                        _version_sort_key(str(entry.get("version") or "")),
+                        str(entry.get("url") or ""),
+                    ),
+                ):
+                    key = (item.get("version"), item.get("url"), item.get("matched_text"))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    deduped_evidence.append(item)
+                    if len(deduped_evidence) >= 20:
+                        break
 
-            versions_observed = _ordered_unique_versions([item.get("version") for item in deduped_evidence])
+                results_by_symbol[symbol]["evidence"] = deduped_evidence
+                versions_observed = _ordered_unique_versions([item.get("version") for item in deduped_evidence])
+                results_by_symbol[symbol]["versions_observed"] = versions_observed
+                results_by_symbol[symbol]["earliest_version_found"] = versions_observed[0] if versions_observed else None
+                results_by_symbol[symbol]["latest_version_found"] = versions_observed[-1] if versions_observed else None
 
-            results.append(
-                {
-                    "symbol": symbol,
-                    "versions_observed": versions_observed,
-                    "earliest_version_found": versions_observed[0] if versions_observed else None,
-                    "latest_version_found": versions_observed[-1] if versions_observed else None,
-                    "confidence": 0,
-                    "evidence": deduped_evidence,
-                }
-            )
+        guide_pages = [page for page in pages if str(page["type"]) != "release_notes"]
+        release_pages = [page for page in pages if str(page["type"]) == "release_notes"]
+
+        for page in guide_pages:
+            url = str(page["url"])
+            text = self._fetch_page_text(url)
+            if not text:
+                continue
+
+            _apply_page(page, text)
+
+        if release_pages and any(not results_by_symbol[symbol]["versions_observed"] for symbol in symbols):
+            max_workers = min(8, len(release_pages))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(self._fetch_page_text, str(page["url"])): page for page in release_pages}
+                for future in as_completed(futures):
+                    page = futures[future]
+                    text = future.result()
+                    if not text:
+                        continue
+                    _apply_page(page, text)
 
         return results

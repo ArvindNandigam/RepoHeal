@@ -41,6 +41,14 @@ async def library_intelligence(
         return JSONResponse(status_code=404, content={"status": "failed", "reason": "library_not_found"})
     except SourceUnavailableError:
         return JSONResponse(status_code=503, content={"status": "failed", "reason": "source_unavailable"})
+    except Exception as exc:
+        operational_repository.log_error(
+            request_id=request.state.request_id,
+            endpoint=request.url.path,
+            error_type=exc.__class__.__name__,
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content={"status": "failed", "error": str(exc)})
 
     request.state.cache_hit = service.last_cache_hit
 

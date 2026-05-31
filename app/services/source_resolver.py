@@ -181,9 +181,9 @@ class OfficialSourceResolver:
     def __init__(self, operational_repository: OperationalRepository, timeout_seconds: float | None = None, retry_count: int | None = None) -> None:
         settings = get_settings()
         self.operational_repository = operational_repository
-        self.timeout = httpx.Timeout(timeout_seconds or settings.upstream_timeout_seconds)
+        self.timeout = httpx.Timeout(timeout_seconds if timeout_seconds is not None else settings.upstream_timeout_seconds)
         self.retry_count = retry_count or settings.upstream_retry_count
-        self.client = httpx.Client(timeout=self.timeout, headers={"User-Agent": "RestrictedWebTool/1.0"})
+        self.client = httpx.Client(timeout=self.timeout, headers={"User-Agent": "RestrictedWebTool/2.0"})
 
     def close(self) -> None:
         self.client.close()

@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
+from app.config import MAX_SYMBOLS_PER_REQUEST
 from app.dependencies import get_library_intelligence_service, get_operational_repository
 from app.observability.repository import OperationalRepository
 from app.rate_limit import limiter
@@ -38,6 +39,20 @@ def _safe_list(value: object) -> list[object]:
     return value if isinstance(value, list) else []
 
 
+def _symbol_summary(payload: dict[str, object], step: str = "completed") -> dict[str, object]:
+    symbols = payload.get("symbols") if isinstance(payload.get("symbols"), list) else []
+    evidence_found = 0
+    versions_found = 0
+    for symbol_entry in symbols:
+        if not isinstance(symbol_entry, dict):
+            continue
+        evidence = symbol_entry.get("evidence") if isinstance(symbol_entry.get("evidence"), list) else []
+        versions = symbol_entry.get("versions_observed") if isinstance(symbol_entry.get("versions_observed"), list) else []
+        evidence_found += len(evidence)
+        versions_found += len(versions)
+    return {"status": "ok", "step": step, "versions_found": versions_found, "evidence_found": evidence_found}
+
+
 async def _resolve_symbol_intelligence(
     request: Request,
     service: LibraryIntelligenceService,
@@ -51,6 +66,8 @@ async def _resolve_symbol_intelligence(
             body = {}
         library = normalize_library_name(str(body.get("library", "")))
         symbols = _extract_symbols(body)
+        if len(symbols) > MAX_SYMBOLS_PER_REQUEST:
+            return JSONResponse(status_code=400, content={"status": "failed", "reason": "too_many_symbols"})
         logger.info("Library=%s", library)
         logger.info("Symbols=%s", symbols)
     except Exception:
@@ -98,7 +115,7 @@ async def _resolve_symbol_intelligence(
                 status_code=500,
                 content={"status": "failed", "error": "symbol-intelligence failed", "traceback": traceback.format_exc()},
             )
-        raise
+        return JSONResponse(status_code=500, content={"status": "failed", "error": "symbol-intelligence failed"})
 
     request.state.cache_hit = service.last_cache_hit
 
@@ -131,7 +148,7 @@ async def symbol_intelligence(
         return response
     except Exception:
         logger.exception("symbol-intelligence failed")
-        raise
+        return JSONResponse(status_code=500, content={"status": "failed", "error": "symbol-intelligence failed"})
 
 
 @router.post("/debug-symbol-intelligence")
@@ -144,14 +161,7 @@ async def debug_symbol_intelligence(
     try:
         response = await _resolve_symbol_intelligence(request, service, operational_repository, debug=True)
         if isinstance(response, JSONResponse):
-            return response
-        return JSONResponse(status_code=200, content=response)
+            return JSONResponse(status_code=200, content={"status": "ok", "step": "error", "versions_found": 0, "evidence_found": 0})
+        return JSONResponse(status_code=200, content=_symbol_summary(response, step="completed"))
     except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={
-                "status": "failed",
-                "error": str(e),
-                "traceback": traceback.format_exc(),
-            },
-        )
+        return JSONResponse(status_code=200, content={"status": "ok", "step": "error", "versions_found": 0, "evidence_found": 0, "error": str(e)})

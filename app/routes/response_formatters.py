@@ -105,7 +105,6 @@ def format_bulk_response(result_items: list[dict[str, Any]]) -> dict[str, Any]:
 def _format_symbol_entry(lifecycle: dict[str, Any]) -> dict[str, Any]:
     return {
         "symbol": lifecycle.get("symbol"),
-        "confidence": 0,
         "evidence_count": len(lifecycle.get("evidence") or []),
         "versions_observed": lifecycle.get("versions_observed") or [],
         "earliest_version_found": lifecycle.get("earliest_version_found"),

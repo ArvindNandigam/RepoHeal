@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 
 
-SERVICE_VERSION = "1.1.0"
+SERVICE_VERSION = "2.0.0"
+MAX_SYMBOLS_PER_REQUEST = 50
 DEFAULT_ALLOWED_DOMAINS = (
     "pypi.org",
     "github.com",
@@ -28,7 +29,7 @@ class Settings:
     mongodb_database: str = "repoheal"
     cache_expiry_days: int = 7
     port: int = 8000
-    upstream_timeout_seconds: float = 8.0
+    upstream_timeout_seconds: float = 10.0
     upstream_retry_count: int = 3
     internal_api_key: str | None = None
     allowed_domains: tuple[str, ...] = DEFAULT_ALLOWED_DOMAINS
@@ -43,7 +44,7 @@ class Settings:
         mongodb_database = os.getenv("MONGODB_DATABASE", "repoheal").strip() or "repoheal"
         cache_expiry_days = int(os.getenv("CACHE_EXPIRY_DAYS", "7"))
         port = int(os.getenv("PORT", "8000"))
-        upstream_timeout_seconds = float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "8"))
+        upstream_timeout_seconds = float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "10"))
         upstream_retry_count = int(os.getenv("UPSTREAM_RETRY_COUNT", "3"))
         internal_api_key = os.getenv("INTERNAL_API_KEY", "").strip() or None
         allowed_domains_env = os.getenv("ALLOWED_DOMAINS", "").strip()
