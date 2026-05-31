@@ -28,6 +28,9 @@ class LibraryIntelligenceService:
 
     def resolve(self, library: str, symbols: list[str]) -> dict[str, Any]:
         response_payload = self.build_response_payload(library, symbols)
+        response_payload.setdefault("symbol_lifecycles", [])
+        response_payload.setdefault("release_history", [])
+        response_payload.setdefault("migration_guides", [])
         self.cache_repository.upsert_library_payload(library, symbols, response_payload)
         # If this library was curated we persisted permanent source payloads inside RegistryService.
         # Ensure a short-lived pypi_json entry is present as well for quick metadata lookups.
@@ -36,7 +39,7 @@ class LibraryIntelligenceService:
         except Exception:
             pass
 
-        for symbol_lifecycle in response_payload["symbol_lifecycles"]:
+        for symbol_lifecycle in response_payload.get("symbol_lifecycles") or []:
             try:
                 self.cache_repository.upsert_symbol_payload(library, symbol_lifecycle["symbol"], symbol_lifecycle)
             except Exception:
@@ -55,7 +58,7 @@ class LibraryIntelligenceService:
             return cached_symbol
 
         result = self.resolve(library, [symbol])
-        for lifecycle in result["symbol_lifecycles"]:
+        for lifecycle in result.get("symbol_lifecycles") or []:
             if lifecycle["symbol"] == symbol:
                 return lifecycle
         raise ValueError("symbol lifecycle not found")

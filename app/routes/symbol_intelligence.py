@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import traceback
 from collections.abc import Sequence
 
 from fastapi import APIRouter, Depends, Request
@@ -15,6 +17,7 @@ from app.routes.response_formatters import format_symbol_response, is_debug_enab
 
 
 router = APIRouter(tags=["symbol-intelligence"])
+logger = logging.getLogger(__name__)
 
 
 def _extract_symbols(body: dict) -> list[str]:
@@ -31,21 +34,33 @@ def _extract_symbols(body: dict) -> list[str]:
     return []
 
 
-@router.post("/symbol-intelligence")
-@limiter.limit("100/minute")
-async def symbol_intelligence(
+def _safe_list(value: object) -> list[object]:
+    return value if isinstance(value, list) else []
+
+
+async def _resolve_symbol_intelligence(
     request: Request,
-    service: LibraryIntelligenceService = Depends(get_library_intelligence_service),
-    operational_repository: OperationalRepository = Depends(get_operational_repository),
-) -> dict:
+    service: LibraryIntelligenceService,
+    operational_repository: OperationalRepository,
+    debug: bool,
+) -> JSONResponse | dict:
+    logger.info("Starting symbol intelligence")
     try:
         body = await request.json()
         if not isinstance(body, dict):
             body = {}
         library = normalize_library_name(str(body.get("library", "")))
         symbols = _extract_symbols(body)
+        logger.info("Library=%s", library)
+        logger.info("Symbols=%s", symbols)
     except Exception:
-        return JSONResponse(status_code=400, content={"status": "failed", "reason": "failed"})
+        logger.exception("symbol-intelligence failed")
+        if debug:
+            return JSONResponse(
+                status_code=500,
+                content={"status": "failed", "error": "failed to parse request", "traceback": traceback.format_exc()},
+            )
+        raise
 
     if not symbols:
         return JSONResponse(status_code=400, content={"status": "failed", "reason": "failed"})
@@ -55,11 +70,36 @@ async def symbol_intelligence(
     request.state.libraries = [library]
 
     try:
+        logger.info("Resolving library metadata")
         result = service.resolve(library, symbols)
+
+        logger.info("Fetching release history")
+        release_history = _safe_list(result.get("release_history"))
+        result["release_history"] = release_history
+
+        logger.info("Fetching migration guides")
+        migration_guides = _safe_list(result.get("migration_guides"))
+        result["migration_guides"] = migration_guides
+
+        logger.info("Collecting symbol evidence")
+        symbol_lifecycles = _safe_list(result.get("symbol_lifecycles"))
+        result["symbol_lifecycles"] = symbol_lifecycles
+
+        logger.info("Building response")
+        response = format_symbol_response(result, debug=debug)
     except LibraryNotFoundError:
         return JSONResponse(status_code=404, content={"status": "failed", "reason": "library_not_found"})
     except SourceUnavailableError:
         return JSONResponse(status_code=503, content={"status": "failed", "reason": "source_unavailable"})
+    except Exception:
+        logger.exception("symbol-intelligence failed")
+        if debug:
+            return JSONResponse(
+                status_code=500,
+                content={"status": "failed", "error": "symbol-intelligence failed", "traceback": traceback.format_exc()},
+            )
+        raise
+
     request.state.cache_hit = service.last_cache_hit
 
     if not service.last_cache_hit:
@@ -69,4 +109,49 @@ async def symbol_intelligence(
             library=library,
         )
 
-    return format_symbol_response(result, debug=is_debug_enabled(request.query_params))
+    return response
+
+
+@router.post("/symbol-intelligence")
+@limiter.limit("100/minute")
+async def symbol_intelligence(
+    request: Request,
+    service: LibraryIntelligenceService = Depends(get_library_intelligence_service),
+    operational_repository: OperationalRepository = Depends(get_operational_repository),
+) -> dict:
+    try:
+        response = await _resolve_symbol_intelligence(
+            request,
+            service,
+            operational_repository,
+            debug=is_debug_enabled(request.query_params),
+        )
+        if isinstance(response, JSONResponse):
+            return response
+        return response
+    except Exception:
+        logger.exception("symbol-intelligence failed")
+        raise
+
+
+@router.post("/debug-symbol-intelligence")
+@limiter.limit("100/minute")
+async def debug_symbol_intelligence(
+    request: Request,
+    service: LibraryIntelligenceService = Depends(get_library_intelligence_service),
+    operational_repository: OperationalRepository = Depends(get_operational_repository),
+) -> JSONResponse:
+    try:
+        response = await _resolve_symbol_intelligence(request, service, operational_repository, debug=True)
+        if isinstance(response, JSONResponse):
+            return response
+        return JSONResponse(status_code=200, content=response)
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "failed",
+                "error": str(e),
+                "traceback": traceback.format_exc(),
+            },
+        )

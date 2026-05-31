@@ -134,7 +134,7 @@ def _discover_versioned_docs(source_bundle: dict[str, Any]) -> list[dict[str, st
         return []
 
     versions = _ordered_unique_versions([str(entry.get("version")) for entry in release_history if entry.get("version")])
-    for version in versions:
+    for version in (versions or []):
         for old, new in version_templates:
             candidate = official_docs.replace(old, new.format(version=version), 1)
             if candidate != official_docs and is_approved_source_url(candidate):
@@ -151,7 +151,7 @@ class SymbolEvidenceResolver:
     def _build_pages(self, source_bundle: dict[str, Any]) -> list[dict[str, str | None]]:
         pages: list[dict[str, str | None]] = []
 
-        for guide in source_bundle.get("migration_guides", []):
+        for guide in source_bundle.get("migration_guides") or []:
             title = guide.get("title", "").lower()
             guide_type = "changelog" if "changelog" in title else "migration_guide"
             if "release notes" in title:
@@ -162,7 +162,7 @@ class SymbolEvidenceResolver:
                 continue
             pages.append({"type": guide_type, "url": guide["url"], "release_version": None})
 
-        for entry in source_bundle.get("release_history", []):
+        for entry in source_bundle.get("release_history") or []:
             pages.append({"type": "release_notes", "url": entry["url"], "release_version": entry.get("version")})
 
         pages.extend(_discover_versioned_docs(source_bundle))

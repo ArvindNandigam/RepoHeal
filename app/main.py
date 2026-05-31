@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from threading import Thread
 from time import perf_counter
@@ -20,6 +21,9 @@ from app.routes.health import router as health_router
 from app.routes.bulk_library_intelligence import router as bulk_library_router
 from app.routes.library_intelligence import router as library_router
 from app.routes.symbol_intelligence import router as symbol_router
+
+
+logger = logging.getLogger(__name__)
 
 
 def _failure_response(reason: str, status_code: int) -> JSONResponse:
@@ -110,7 +114,26 @@ def create_app() -> FastAPI:
             request.state.api_key_name = api_key_name
             request.state.api_key_hash = api_key_hash
 
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            logger.exception("Unhandled request exception", exc_info=(type(exc), exc, exc.__traceback__))
+            operational_repository.log_error(request_id, request.url.path, exc.__class__.__name__, str(exc))
+            response = _failure_response("internal_error", 500)
+            response.headers["X-Request-ID"] = request_id
+            response.headers["X-Service-Version"] = settings.service_version
+            operational_repository.log_request(
+                request_id=request_id,
+                endpoint=request.url.path,
+                library=getattr(request.state, "library", None),
+                symbols=getattr(request.state, "symbols", None),
+                cache_hit=bool(getattr(request.state, "cache_hit", False)),
+                response_time_ms=int((perf_counter() - start) * 1000),
+                status="failed",
+                libraries=getattr(request.state, "libraries", None),
+            )
+            operational_repository.update_daily_metrics(cache_hit=getattr(request.state, "cache_hit", False), error=True)
+            return response
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Service-Version"] = settings.service_version
 
@@ -142,7 +165,11 @@ def create_app() -> FastAPI:
         request_id = getattr(request.state, "request_id", str(uuid4()))
         operational_repository = get_operational_repository()
         operational_repository.log_error(request_id, request.url.path, exc.__class__.__name__, str(exc))
-        return _failure_response("contract_validation_failed", 400)
+        logger.error("Unhandled application exception", exc_info=(type(exc), exc, exc.__traceback__))
+        response = _failure_response("internal_error", 500)
+        response.headers["X-Request-ID"] = request_id
+        response.headers["X-Service-Version"] = settings.service_version
+        return response
 
     @app.exception_handler(RateLimitExceeded)
     def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:

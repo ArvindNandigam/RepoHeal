@@ -712,3 +712,70 @@ def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
         "evidence": [{"version": "1.52.0", "source_type": "migration_guide", "url": "https://docs.openai.com/migration", "matched_text": "omitted"}],
     }
 
+
+def test_symbol_route_returns_structured_500_on_unexpected_error(monkeypatch) -> None:
+    class FailingService:
+        last_cache_hit = False
+
+        def resolve(self, library: str, symbols: list[str]):
+            raise RuntimeError("boom")
+
+    class OperationalRepositoryStub:
+        def log_audit_event(self, *args, **kwargs) -> None:
+            return None
+
+        def log_error(self, *args, **kwargs) -> None:
+            return None
+
+    app.dependency_overrides.clear()
+    app.dependency_overrides[dependencies.get_library_intelligence_service] = lambda: FailingService()
+    app.dependency_overrides[dependencies.get_operational_repository] = lambda: OperationalRepositoryStub()
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/symbol-intelligence",
+            headers={"Authorization": "Bearer vT5X3du/efIgYBGtXSC1B++jlF/7vszfSl6EtcE/wzLIQgjLZ7qyvtamNE7ZhqxI"},
+            json={"library": "openai", "symbols": ["openai.ChatCompletion.create"]},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 500
+    assert response.json() == {"status": "failed", "reason": "internal_error"}
+
+
+def test_debug_symbol_route_returns_traceback_on_failure(monkeypatch) -> None:
+    class FailingService:
+        last_cache_hit = False
+
+        def resolve(self, library: str, symbols: list[str]):
+            raise RuntimeError("boom")
+
+    class OperationalRepositoryStub:
+        def log_audit_event(self, *args, **kwargs) -> None:
+            return None
+
+        def log_error(self, *args, **kwargs) -> None:
+            return None
+
+    app.dependency_overrides.clear()
+    app.dependency_overrides[dependencies.get_library_intelligence_service] = lambda: FailingService()
+    app.dependency_overrides[dependencies.get_operational_repository] = lambda: OperationalRepositoryStub()
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/debug-symbol-intelligence",
+            headers={"Authorization": "Bearer vT5X3du/efIgYBGtXSC1B++jlF/7vszfSl6EtcE/wzLIQgjLZ7qyvtamNE7ZhqxI"},
+            json={"library": "openai", "symbols": ["openai.ChatCompletion.create"]},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["status"] == "failed"
+    assert payload["error"]
+    assert "traceback" in payload
+
