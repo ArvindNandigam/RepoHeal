@@ -763,13 +763,31 @@ def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
         "deprecation_notices": 0,
         "versioned_docs": 0,
     }
-    assert payload["migration_documents_found"] == [
-        {
-            "title": "Migration Guide",
-            "url": "https://docs.openai.com/migration",
-            "source_type": "migration_guide",
-        }
-    ]
+    assert payload["debug"] == {
+        "migration_documents_discovered": [
+            {
+                "title": "Migration Guide",
+                "url": "https://docs.openai.com/migration",
+                "source_type": "migration_guide",
+            }
+        ],
+        "migration_documents_found": [
+            {
+                "title": "Migration Guide",
+                "url": "https://docs.openai.com/migration",
+                "source_type": "migration_guide",
+            }
+        ],
+        "migration_documents_searched": 0,
+        "migration_documents_used": 0,
+        "release_notes_discovered": [],
+        "changelogs_discovered": [],
+        "deprecation_docs_discovered": [],
+        "event_extraction_attempts": [],
+        "event_extraction_matches": [],
+        "cache_hit": False,
+        "cache_collection": "symbol_cache",
+    }
     assert payload["symbols"][0]["migration_events"] == []
     assert payload["symbols"][0]["evidence"] == [
         {
@@ -778,6 +796,120 @@ def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
             "url": "https://docs.openai.com/migration",
             "matched_text": "omitted",
         }
+    ]
+
+
+def test_symbol_route_debug_exposes_pipeline_observability(monkeypatch) -> None:
+    class OperationalRepositoryStub:
+        def log_audit_event(self, *args, **kwargs) -> None:
+            return None
+
+    class DebugService:
+        last_cache_hit = True
+
+        def resolve(self, library: str, symbols: list[str]):
+            return {
+                "library": library,
+                "latest_version": "1.52.0",
+                "official_docs": "https://docs.openai.com/",
+                "github_repo": "https://github.com/openai/openai-python",
+                "pypi_url": "https://pypi.org/pypi/openai/json",
+                "symbol_lifecycles": [
+                    {
+                        "symbol": symbols[0],
+                        "versions_observed": ["1.52.0"],
+                        "earliest_version_found": "1.52.0",
+                        "latest_version_found": "1.52.0",
+                        "evidence": [],
+                        "migration_events": [],
+                        "_debug": {
+                            "event_extraction_attempts": [
+                                {"document": "OpenAI Python v1 Migration Guide", "url": "https://docs.openai.com/migration", "matches_found": 2},
+                                {"document": "Release Notes 1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0", "matches_found": 0},
+                            ],
+                            "event_extraction_matches": [
+                                {
+                                    "document": "OpenAI Python v1 Migration Guide",
+                                    "url": "https://docs.openai.com/migration",
+                                    "matched_text": "ChatCompletion API removed in v1.0.0",
+                                    "event_type_detected": "removed",
+                                    "accepted": True,
+                                },
+                                {
+                                    "document": "OpenAI Python v1 Migration Guide",
+                                    "url": "https://docs.openai.com/migration",
+                                    "matched_text": "new client implementation",
+                                    "event_type_detected": None,
+                                    "accepted": False,
+                                    "rejection_reason": "no explicit event keyword",
+                                },
+                            ],
+                            "migration_documents_searched": 2,
+                            "migration_documents_used": 1,
+                        },
+                    }
+                ],
+                "release_history": [{"version": "1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0"}],
+                "migration_guides": [
+                    {"title": "OpenAI Python v1 Migration Guide", "url": "https://docs.openai.com/migration", "source_type": "migration_guide"},
+                    {"title": "Release Notes 1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0", "source_type": "release_notes"},
+                    {"title": "OpenAI Python Changelog", "url": "https://github.com/openai/openai-python/blob/main/CHANGELOG.md", "source_type": "changelog"},
+                ],
+            }
+
+    app.dependency_overrides.clear()
+    app.dependency_overrides[dependencies.get_library_intelligence_service] = lambda: DebugService()
+    app.dependency_overrides[dependencies.get_operational_repository] = lambda: OperationalRepositoryStub()
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/symbol-intelligence?debug=true",
+            headers={"Authorization": "Bearer vT5X3du/efIgYBGtXSC1B++jlF/7vszfSl6EtcE/wzLIQgjLZ7qyvtamNE7ZhqxI"},
+            json={"library": "openai", "symbols": ["openai.ChatCompletion.create"]},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["debug"]["cache_hit"] is True
+    assert payload["debug"]["cache_collection"] == "symbol_cache"
+    assert payload["debug"]["migration_documents_searched"] == 2
+    assert payload["debug"]["migration_documents_used"] == 1
+    assert payload["debug"]["event_extraction_attempts"] == [
+        {"symbol": "openai.ChatCompletion.create", "document": "OpenAI Python v1 Migration Guide", "url": "https://docs.openai.com/migration", "matches_found": 2},
+        {"symbol": "openai.ChatCompletion.create", "document": "Release Notes 1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0", "matches_found": 0},
+    ]
+    assert payload["debug"]["event_extraction_matches"] == [
+        {
+            "symbol": "openai.ChatCompletion.create",
+            "document": "OpenAI Python v1 Migration Guide",
+            "url": "https://docs.openai.com/migration",
+            "matched_text": "ChatCompletion API removed in v1.0.0",
+            "event_type_detected": "removed",
+            "accepted": True,
+        },
+        {
+            "symbol": "openai.ChatCompletion.create",
+            "document": "OpenAI Python v1 Migration Guide",
+            "url": "https://docs.openai.com/migration",
+            "matched_text": "new client implementation",
+            "event_type_detected": None,
+            "accepted": False,
+            "rejection_reason": "no explicit event keyword",
+        },
+    ]
+    assert payload["debug"]["migration_documents_discovered"] == [
+        {"title": "OpenAI Python v1 Migration Guide", "url": "https://docs.openai.com/migration", "source_type": "migration_guide"},
+        {"title": "Release Notes 1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0", "source_type": "release_notes"},
+        {"title": "OpenAI Python Changelog", "url": "https://github.com/openai/openai-python/blob/main/CHANGELOG.md", "source_type": "changelog"},
+    ]
+    assert payload["debug"]["release_notes_discovered"] == [
+        {"title": "Release Notes 1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0", "source_type": "release_notes"}
+    ]
+    assert payload["debug"]["changelogs_discovered"] == [
+        {"title": "OpenAI Python Changelog", "url": "https://github.com/openai/openai-python/blob/main/CHANGELOG.md", "source_type": "changelog"}
     ]
 
 

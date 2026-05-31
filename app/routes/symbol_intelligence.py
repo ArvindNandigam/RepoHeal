@@ -103,7 +103,7 @@ async def _resolve_symbol_intelligence(
         result["symbol_lifecycles"] = symbol_lifecycles
 
         logger.info("Building response")
-        response = format_symbol_response(result, debug=debug)
+        response = format_symbol_response(result, debug=debug, cache_hit=service.last_cache_hit)
     except LibraryNotFoundError:
         return JSONResponse(status_code=404, content={"status": "failed", "reason": "library_not_found"})
     except SourceUnavailableError:

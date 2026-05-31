@@ -224,7 +224,22 @@ class SymbolEvidenceResolver:
                 continue
             seen.add(url)
             deduped.append(page)
-        return deduped
+
+        priority = {
+            "migration_guide": 0,
+            "official_deprecation_notice": 1,
+            "release_notes": 2,
+            "changelog": 3,
+            "versioned_docs": 4,
+        }
+        return sorted(
+            deduped,
+            key=lambda page: (
+                priority.get(str(page.get("type") or ""), 99),
+                str(page.get("title") or ""),
+                str(page.get("url") or ""),
+            ),
+        )
 
     def _page_title(self, page: dict[str, str | None]) -> str:
         title = str(page.get("title") or "").strip()
@@ -264,24 +279,58 @@ class SymbolEvidenceResolver:
             deduped.append(snippet)
         return deduped
 
-    def _build_migration_events(self, page: dict[str, str | None], snippet: str, source_type: str) -> list[dict[str, Any]]:
+    def _build_migration_events(self, page: dict[str, str | None], snippet: str, source_type: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         version = _extract_version(snippet, fallback=page.get("release_version"))
+        document = self._page_title(page)
+        url = str(page["url"])
         if not _is_valid_version(version):
-            return []
+            return [], [
+                {
+                    "document": document,
+                    "url": url,
+                    "matched_text": snippet,
+                    "event_type_detected": None,
+                    "accepted": False,
+                    "rejection_reason": "invalid_version",
+                }
+            ]
 
         events: list[dict[str, Any]] = []
+        matches: list[dict[str, Any]] = []
         for event_type in _detect_migration_event_types(snippet):
             events.append(
                 {
                     "event_type": event_type,
                     "version": version,
                     "source_type": source_type,
-                    "title": self._page_title(page),
-                    "url": str(page["url"]),
+                    "title": document,
+                    "url": url,
                     "matched_text": snippet,
                 }
             )
-        return events
+            matches.append(
+                {
+                    "document": document,
+                    "url": url,
+                    "matched_text": snippet,
+                    "event_type_detected": event_type,
+                    "accepted": True,
+                }
+            )
+
+        if not matches:
+            matches.append(
+                {
+                    "document": document,
+                    "url": url,
+                    "matched_text": snippet,
+                    "event_type_detected": None,
+                    "accepted": False,
+                    "rejection_reason": "no explicit event keyword",
+                }
+            )
+
+        return events, matches
 
     def resolve(self, library: str, symbols: list[str]) -> list[dict[str, Any]]:
         source_contract, release_history, migration_guides, pypi_json = self.source_resolver.resolve_sources(library)
@@ -304,6 +353,10 @@ class SymbolEvidenceResolver:
                 "latest_version_found": None,
                 "evidence": [],
                 "migration_events": [],
+                "_debug": {
+                    "event_extraction_attempts": [],
+                    "event_extraction_matches": [],
+                },
             }
             for symbol in symbols
         ]
@@ -316,14 +369,16 @@ class SymbolEvidenceResolver:
 
             for symbol in symbols:
                 snippets = self._find_snippets(text, symbol)
-                if not snippets:
-                    continue
-
                 evidence = results_by_symbol[symbol]["evidence"]
                 migration_events = results_by_symbol[symbol]["migration_events"]
+                debug_info = results_by_symbol[symbol]["_debug"]
+                attempt_matches_found = 0
                 for snippet in snippets:
                     version = _extract_version(snippet, fallback=page.get("release_version"))
                     if not _is_valid_version(version):
+                        events, match_records = self._build_migration_events(page, snippet, page_type)
+                        debug_info["event_extraction_matches"].extend(match_records)
+                        attempt_matches_found += len(match_records)
                         continue
                     evidence.append(
                         {
@@ -333,7 +388,20 @@ class SymbolEvidenceResolver:
                             "matched_text": snippet,
                         }
                     )
-                    migration_events.extend(self._build_migration_events(page, snippet, page_type))
+                    events, match_records = self._build_migration_events(page, snippet, page_type)
+                    migration_events.extend(events)
+                    debug_info["event_extraction_matches"].extend(match_records)
+                    attempt_matches_found += len(match_records)
+
+                debug_info["event_extraction_attempts"].append(
+                    {
+                        "document": self._page_title(page),
+                        "url": str(page["url"]),
+                        "matches_found": attempt_matches_found,
+                    }
+                )
+                if not snippets:
+                    continue
 
                 deduped_evidence: list[dict[str, Any]] = []
                 seen: set[tuple[Any, ...]] = set()
@@ -370,6 +438,16 @@ class SymbolEvidenceResolver:
                     ),
                 )
                 results_by_symbol[symbol]["migration_events"] = deduped_events[:20]
+                debug_info["event_extraction_matches"] = _dedupe_records(
+                    debug_info["event_extraction_matches"],
+                    lambda entry: (
+                        str(entry.get("document") or ""),
+                        str(entry.get("url") or ""),
+                        str(entry.get("matched_text") or ""),
+                        str(entry.get("event_type_detected") or ""),
+                        str(entry.get("accepted") or ""),
+                    ),
+                )[:50]
 
         guide_pages = [page for page in pages if str(page["type"]) != "release_notes"]
         release_pages = [page for page in pages if str(page["type"]) == "release_notes"]
@@ -392,5 +470,17 @@ class SymbolEvidenceResolver:
                     if not text:
                         continue
                     _apply_page(page, text)
+
+        for symbol in symbols:
+            debug_info = results_by_symbol[symbol]["_debug"]
+            attempts = debug_info.get("event_extraction_attempts") or []
+            searched_urls = {str(item.get("url") or "") for item in attempts if item.get("url")}
+            accepted_urls = {
+                str(item.get("url") or "")
+                for item in debug_info.get("event_extraction_matches") or []
+                if item.get("accepted") and item.get("url")
+            }
+            debug_info["migration_documents_searched"] = len(searched_urls)
+            debug_info["migration_documents_used"] = len(accepted_urls)
 
         return results
