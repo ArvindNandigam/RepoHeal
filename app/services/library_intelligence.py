@@ -39,6 +39,11 @@ class LibraryIntelligenceService:
         except Exception:
             pass
 
+        try:
+            self.cache_repository.upsert_source_payload(library, "migration_guides", {"documents": response_payload.get("migration_guides", [])})
+        except Exception:
+            pass
+
         for symbol_lifecycle in response_payload.get("symbol_lifecycles") or []:
             try:
                 self.cache_repository.upsert_symbol_payload(library, symbol_lifecycle["symbol"], symbol_lifecycle)

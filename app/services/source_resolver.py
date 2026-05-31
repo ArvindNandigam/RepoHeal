@@ -114,24 +114,24 @@ def _extract_official_docs(project_urls: dict[str, str], home_page: str | None) 
     raise ValueError("Official documentation URL not found")
 
 
-def _extract_migration_guides(project_urls: dict[str, str]) -> list[dict[str, str]]:
-    guides: list[dict[str, str]] = []
+def _extract_migration_documents(project_urls: dict[str, str]) -> list[dict[str, str]]:
+    documents: list[dict[str, str]] = []
     for label, url in project_urls.items():
         label_clean = label.strip().lower()
-        if any(token in label_clean for token in ("migration", "upgrade", "changelog", "release notes")):
-            guides.append({"title": label.strip(), "url": url.rstrip("/")})
-    return guides
+        if any(token in label_clean for token in ("migration", "upgrade", "breaking changes", "breaking-changes", "v1 migration", "deprecation", "deprecated", "changelog")):
+            documents.append({"title": label.strip(), "url": url.rstrip("/"), "source_type": "migration_guide"})
+    return documents
 
 
-def _dedupe_migration_guides(guides: list[dict[str, str]]) -> list[dict[str, str]]:
+def _dedupe_migration_documents(documents: list[dict[str, str]]) -> list[dict[str, str]]:
     deduped: list[dict[str, str]] = []
     seen: set[str] = set()
-    for guide in guides:
-        key = guide["url"].rstrip("/")
+    for document in documents:
+        key = document["url"].rstrip("/")
         if key in seen:
             continue
         seen.add(key)
-        deduped.append(guide)
+        deduped.append(document)
     return deduped
 
 
@@ -157,10 +157,16 @@ def _fetch_url(client: httpx.Client, url: str) -> str:
     return response.text
 
 
-def _discover_guide_links(fetch_page, docs_url: str, extra_domains: list[str] | None = None) -> list[dict[str, str]]:
+def _discover_document_links(
+    fetch_page,
+    page_url: str,
+    *,
+    keywords: tuple[str, ...],
+    extra_domains: list[str] | None = None,
+) -> list[dict[str, str]]:
     discovered: list[dict[str, str]] = []
     try:
-        html = fetch_page(docs_url).text
+        html = fetch_page(page_url).text
     except Exception:
         return discovered
 
@@ -168,13 +174,58 @@ def _discover_guide_links(fetch_page, docs_url: str, extra_domains: list[str] | 
     parser.feed(html)
     for title, href in parser.links:
         title_clean = title.strip().lower()
-        if any(token in title_clean for token in ("migration", "upgrade", "changelog", "release notes", "deprecat")):
-            guide_url = urljoin(docs_url, href)
-            if not is_approved_source_url(guide_url, extra_domains=extra_domains):
-                continue
-            guide_title = title.strip() or href
-            discovered.append({"title": guide_title, "url": guide_url})
+        href_clean = href.strip().lower()
+        if not any(token in title_clean or token in href_clean for token in keywords):
+            continue
+
+        if _is_real_github_repo_url(page_url) and href.startswith("/"):
+            guide_url = f"{page_url.rstrip('/')}/{href.lstrip('/')}"
+        else:
+            guide_url = urljoin(page_url, href)
+        if not is_approved_source_url(guide_url, extra_domains=extra_domains):
+            continue
+
+        guide_title = title.strip() or href
+        discovered.append({"title": guide_title, "url": guide_url.rstrip("/"), "source_type": "migration_guide"})
     return discovered
+
+
+def _discover_migration_documents(fetch_page, docs_url: str, github_repo: str, extra_domains: list[str] | None = None) -> list[dict[str, str]]:
+    docs_keywords = (
+        "migration guide",
+        "migration",
+        "upgrade guide",
+        "upgrade",
+        "upgrading",
+        "breaking changes",
+        "breaking-changes",
+        "v1 migration",
+        "deprecation guide",
+        "upgrade notes",
+        "deprecated",
+        "deprecat",
+    )
+    github_keywords = (
+        "/discussions",
+        "/wiki",
+        "/docs",
+        "/changelog.md",
+        "migration",
+        "upgrade",
+        "breaking changes",
+        "breaking-changes",
+        "upgrading",
+        "deprecated",
+        "deprecat",
+    )
+
+    documents: list[dict[str, str]] = []
+    if docs_url:
+        documents.extend(_discover_document_links(fetch_page, docs_url, keywords=docs_keywords, extra_domains=extra_domains))
+    if github_repo:
+        documents.extend(_discover_document_links(fetch_page, github_repo, keywords=github_keywords, extra_domains=extra_domains))
+
+    return _dedupe_migration_documents(documents)
 
 
 class OfficialSourceResolver:
@@ -249,7 +300,7 @@ class OfficialSourceResolver:
             }
 
         release_history = _extract_release_history(pypi_json.get("releases", {}), github_repo)
-        migration_guides = _extract_migration_guides(project_urls)
+        migration_guides = _extract_migration_documents(project_urls)
 
         verified_hosts: list[str] = []
         try:
@@ -266,8 +317,8 @@ class OfficialSourceResolver:
         except Exception:
             verified_hosts = []
 
-        migration_guides.extend(_discover_guide_links(self._request_with_retries, official_docs, extra_domains=verified_hosts))
-        migration_guides = _dedupe_migration_guides(migration_guides)
+        migration_guides.extend(_discover_migration_documents(self._request_with_retries, official_docs, github_repo, extra_domains=verified_hosts))
+        migration_guides = _dedupe_migration_documents(migration_guides)
         if not trust_sources:
             validate_source_urls([guide["url"] for guide in migration_guides], extra_domains=verified_hosts)
 

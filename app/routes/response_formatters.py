@@ -66,6 +66,22 @@ def _collect_symbol_evidence(symbol_lifecycles: list[dict[str, Any]]) -> list[di
     return _unique_items(evidence_items)
 
 
+def _collect_migration_documents(migration_guides: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    documents: list[dict[str, Any]] = []
+    for guide in migration_guides:
+        url = guide.get("url")
+        if not url:
+            continue
+        documents.append(
+            {
+                "title": guide.get("title"),
+                "url": str(url),
+                "source_type": str(guide.get("source_type", "migration_guide")),
+            }
+        )
+    return _unique_items(documents)
+
+
 def _evidence_source_summary(evidence: list[dict[str, Any]]) -> dict[str, int]:
     summary = {
         "migration_guides": 0,
@@ -178,5 +194,8 @@ def format_symbol_response(payload: dict[str, Any], debug: bool = False) -> dict
             for lifecycle in symbol_lifecycles
         ],
     }
+
+    if debug:
+        response["migration_documents_found"] = _collect_migration_documents(payload.get("migration_guides") or [])
 
     return response

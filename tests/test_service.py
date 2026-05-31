@@ -763,6 +763,13 @@ def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
         "deprecation_notices": 0,
         "versioned_docs": 0,
     }
+    assert payload["migration_documents_found"] == [
+        {
+            "title": "Migration Guide",
+            "url": "https://docs.openai.com/migration",
+            "source_type": "migration_guide",
+        }
+    ]
     assert payload["symbols"][0]["migration_events"] == []
     assert payload["symbols"][0]["evidence"] == [
         {
@@ -772,6 +779,74 @@ def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
             "matched_text": "omitted",
         }
     ]
+
+
+def test_source_resolver_discovers_migration_documents_from_docs_and_repo() -> None:
+    class DiscoverySource(EvidenceResolverSource):
+        def _request_with_retries(self, url: str):
+            class Response:
+                def __init__(self, text: str = "", payload: dict | None = None) -> None:
+                    self.text = text
+                    self._payload = payload or {}
+
+                def json(self):
+                    return self._payload
+
+            if url == "https://pypi.org/pypi/openai/json":
+                return Response(
+                    payload={
+                        "info": {
+                            "project_urls": {
+                                "documentation": "https://docs.openai.com/api",
+                                "github": "https://github.com/openai/openai-python",
+                            },
+                            "home_page": "https://docs.openai.com/api",
+                            "version": "1.52.0",
+                        },
+                        "releases": {"1.52.0": [{"upload_time_iso_8601": "2026-05-31T00:00:00Z"}]},
+                    },
+                )
+            if url == "https://docs.openai.com/api":
+                return Response(
+                    text=(
+                        "<html><body>"
+                        '<a href="/migration-guide">Migration Guide</a>'
+                        '<a href="/upgrade-guide">Upgrade Guide</a>'
+                        '<a href="/breaking-changes">Breaking Changes</a>'
+                        '<a href="/deprecated">Deprecated</a>'
+                        "</body></html>"
+                    )
+                )
+            if url == "https://github.com/openai/openai-python":
+                return Response(
+                    text=(
+                        "<html><body>"
+                        '<a href="/discussions">Discussions</a>'
+                        '<a href="/wiki">Wiki</a>'
+                        '<a href="/docs/migration">Docs</a>'
+                        '<a href="/blob/main/CHANGELOG.md">CHANGELOG.md</a>'
+                        "</body></html>"
+                    )
+                )
+            raise AssertionError(f"unexpected url: {url}")
+
+    resolver = source_resolver.OfficialSourceResolver(DummyOperationalRepository())
+    resolver._request_with_retries = DiscoverySource()._request_with_retries  # type: ignore[method-assign]
+
+    source_contract, release_history, migration_guides, _ = resolver.resolve_sources("openai")
+
+    assert source_contract["library"] == "openai"
+    assert release_history and release_history[0]["version"] == "1.52.0"
+    assert migration_guides
+    assert all(guide["source_type"] == "migration_guide" for guide in migration_guides)
+    urls = {guide["url"] for guide in migration_guides}
+    assert any(url.endswith("/migration-guide") for url in urls)
+    assert any(url.endswith("/upgrade-guide") for url in urls)
+    assert any(url.endswith("/breaking-changes") for url in urls)
+    assert any("/discussions" in url for url in urls)
+    assert any("/wiki" in url for url in urls)
+    assert any("/docs/migration" in url for url in urls)
+    assert any("CHANGELOG.md" in url for url in urls)
 
 
 def test_symbol_evidence_resolver_emits_migration_events_without_replacements() -> None:
