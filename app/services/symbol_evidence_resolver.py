@@ -17,20 +17,11 @@ SOURCE_PRIORITY = {
     "release_notes": 3,
     "versioned_docs": 4,
 }
-REPLACEMENT_SOURCE_TYPES = {
-    "migration_guide",
-    "official_deprecation_notice",
-    "changelog",
-    "release_notes",
-    "versioned_docs",
+MIGRATION_EVENT_PATTERNS = {
+    "deprecated": re.compile(r"\bdeprecat(?:ed|e|ion)\b", flags=re.IGNORECASE),
+    "removed": re.compile(r"\bremoved\b|\bno longer supported\b|\bdeleted\b", flags=re.IGNORECASE),
+    "replaced": re.compile(r"\breplaced\b|\breplaced by\b|\buse instead\b|\bmigrated to\b|\brenamed to\b", flags=re.IGNORECASE),
 }
-_SYMBOL_TOKEN = r"[A-Za-z_][A-Za-z0-9_.]*"
-_REPLACEMENT_PATTERNS = (
-    re.compile(rf"(?P<old>{_SYMBOL_TOKEN})\s*->\s*(?P<new>{_SYMBOL_TOKEN})", flags=re.IGNORECASE),
-    re.compile(rf"(?:replaced by|renamed to|migrated to)\s+(?P<new>{_SYMBOL_TOKEN})", flags=re.IGNORECASE),
-    re.compile(rf"use\s+(?P<new>{_SYMBOL_TOKEN})\s+instead", flags=re.IGNORECASE),
-    re.compile(rf"use\s+(?P<new>{_SYMBOL_TOKEN})\b", flags=re.IGNORECASE),
-)
 
 
 class _TextExtractor(HTMLParser):
@@ -100,7 +91,7 @@ def _evidence_relevance_score(source_kind: str) -> float:
 
 
 def _extract_version(text: str, fallback: str | None = None) -> str | None:
-    if fallback:
+    if fallback and _is_valid_version(fallback):
         return fallback
 
     patterns = (
@@ -121,36 +112,43 @@ def _version_sort_key(value: str) -> tuple[int, Any]:
         return (1, value)
 
 
+def _is_valid_version(value: str | None) -> bool:
+    if not value:
+        return False
+
+    candidate = value.strip().rstrip(".,;:)[]")
+    if not candidate or "." not in candidate:
+        return False
+
+    try:
+        Version(candidate)
+    except InvalidVersion:
+        return False
+    return True
+
+
 def _ordered_unique_versions(values: list[str | None]) -> list[str]:
-    versions = {value for value in values if value}
+    versions = {value for value in values if value and _is_valid_version(value)}
     return sorted(versions, key=_version_sort_key)
 
 
-def _clean_replacement_symbol(value: str | None) -> str | None:
-    if not value:
-        return None
-    cleaned = value.strip().strip(".,;:()[]{}\"'")
-    return cleaned or None
+def _detect_migration_event_types(text: str) -> list[str]:
+    event_types: list[str] = []
+    for event_type, pattern in MIGRATION_EVENT_PATTERNS.items():
+        if pattern.search(text):
+            event_types.append(event_type)
+    return event_types
 
 
-def _extract_replacement_candidates(text: str, original_symbol: str) -> list[str]:
-    candidates: list[str] = []
-    original_lower = original_symbol.lower()
-    for pattern in _REPLACEMENT_PATTERNS:
-        for match in pattern.finditer(text):
-            replacement = _clean_replacement_symbol(match.groupdict().get("new") or match.groupdict().get("old"))
-            if not replacement or replacement.lower() == original_lower:
-                continue
-            candidates.append(replacement)
-
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for candidate in candidates:
-        key = candidate.lower()
+def _dedupe_records(items: list[dict[str, Any]], sort_key) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for item in sorted(items, key=sort_key):
+        key = tuple(item.get(field) for field in ("event_type", "version", "source_type", "title", "url", "matched_text"))
         if key in seen:
             continue
         seen.add(key)
-        deduped.append(candidate)
+        deduped.append(item)
     return deduped
 
 
@@ -203,10 +201,18 @@ class SymbolEvidenceResolver:
                 guide_type = "official_deprecation_notice"
             elif any(token in title for token in ("api reference", "reference", "api docs")):
                 continue
-            pages.append({"type": guide_type, "url": guide["url"], "release_version": None})
+            pages.append({"type": guide_type, "url": guide["url"], "release_version": None, "title": guide.get("title")})
 
         for entry in source_bundle.get("release_history") or []:
-            pages.append({"type": "release_notes", "url": entry["url"], "release_version": entry.get("version")})
+            release_version = entry.get("version")
+            pages.append(
+                {
+                    "type": "release_notes",
+                    "url": entry["url"],
+                    "release_version": release_version,
+                    "title": entry.get("title") or (f"Release notes {release_version}" if release_version else "Release notes"),
+                }
+            )
 
         pages.extend(_discover_versioned_docs(source_bundle))
 
@@ -219,6 +225,13 @@ class SymbolEvidenceResolver:
             seen.add(url)
             deduped.append(page)
         return deduped
+
+    def _page_title(self, page: dict[str, str | None]) -> str:
+        title = str(page.get("title") or "").strip()
+        if title:
+            return title
+        page_type = str(page.get("type") or "").replace("_", " ").strip()
+        return page_type.title() if page_type else "Source"
 
     def _fetch_page_text(self, url: str) -> str | None:
         if not is_approved_source_url(url):
@@ -251,6 +264,25 @@ class SymbolEvidenceResolver:
             deduped.append(snippet)
         return deduped
 
+    def _build_migration_events(self, page: dict[str, str | None], snippet: str, source_type: str) -> list[dict[str, Any]]:
+        version = _extract_version(snippet, fallback=page.get("release_version"))
+        if not _is_valid_version(version):
+            return []
+
+        events: list[dict[str, Any]] = []
+        for event_type in _detect_migration_event_types(snippet):
+            events.append(
+                {
+                    "event_type": event_type,
+                    "version": version,
+                    "source_type": source_type,
+                    "title": self._page_title(page),
+                    "url": str(page["url"]),
+                    "matched_text": snippet,
+                }
+            )
+        return events
+
     def resolve(self, library: str, symbols: list[str]) -> list[dict[str, Any]]:
         source_contract, release_history, migration_guides, pypi_json = self.source_resolver.resolve_sources(library)
         bundle = {
@@ -271,7 +303,7 @@ class SymbolEvidenceResolver:
                 "earliest_version_found": None,
                 "latest_version_found": None,
                 "evidence": [],
-                "replacement_candidates": [],
+                "migration_events": [],
             }
             for symbol in symbols
         ]
@@ -288,28 +320,20 @@ class SymbolEvidenceResolver:
                     continue
 
                 evidence = results_by_symbol[symbol]["evidence"]
+                migration_events = results_by_symbol[symbol]["migration_events"]
                 for snippet in snippets:
+                    version = _extract_version(snippet, fallback=page.get("release_version"))
+                    if not _is_valid_version(version):
+                        continue
                     evidence.append(
                         {
-                            "version": _extract_version(snippet, fallback=page.get("release_version")),
+                            "version": version,
                             "source_type": page_type,
                             "url": str(page["url"]),
                             "matched_text": snippet,
                         }
                     )
-
-                    if page_type in REPLACEMENT_SOURCE_TYPES:
-                        for replacement_symbol in _extract_replacement_candidates(snippet, symbol):
-                            results_by_symbol[symbol]["replacement_candidates"].append(
-                                {
-                                    "replacement_symbol": replacement_symbol,
-                                    "source_type": page_type,
-                                    "version": _extract_version(snippet, fallback=page.get("release_version")),
-                                    "url": str(page["url"]),
-                                    "matched_text": snippet,
-                                    "confidence": "explicit",
-                                }
-                            )
+                    migration_events.extend(self._build_migration_events(page, snippet, page_type))
 
                 deduped_evidence: list[dict[str, Any]] = []
                 seen: set[tuple[Any, ...]] = set()
@@ -335,36 +359,17 @@ class SymbolEvidenceResolver:
                 results_by_symbol[symbol]["earliest_version_found"] = versions_observed[0] if versions_observed else None
                 results_by_symbol[symbol]["latest_version_found"] = versions_observed[-1] if versions_observed else None
 
-                if latest_version and latest_version in versions_observed:
-                    results_by_symbol[symbol]["replacement_candidates"] = []
-                    continue
-
-                deduped_replacements: list[dict[str, Any]] = []
-                replacement_seen: set[tuple[Any, ...]] = set()
-                for item in sorted(
-                    results_by_symbol[symbol]["replacement_candidates"],
-                    key=lambda entry: (
+                deduped_events = _dedupe_records(
+                    results_by_symbol[symbol]["migration_events"],
+                    lambda entry: (
                         SOURCE_PRIORITY.get(str(entry.get("source_type")), 99),
                         _version_sort_key(str(entry.get("version") or "")),
-                        str(entry.get("replacement_symbol") or ""),
+                        str(entry.get("event_type") or ""),
+                        str(entry.get("title") or ""),
                         str(entry.get("url") or ""),
                     ),
-                ):
-                    key = (
-                        item.get("replacement_symbol"),
-                        item.get("source_type"),
-                        item.get("version"),
-                        item.get("url"),
-                        item.get("matched_text"),
-                    )
-                    if key in replacement_seen:
-                        continue
-                    replacement_seen.add(key)
-                    deduped_replacements.append(item)
-                    if len(deduped_replacements) >= 5:
-                        break
-
-                results_by_symbol[symbol]["replacement_candidates"] = deduped_replacements
+                )
+                results_by_symbol[symbol]["migration_events"] = deduped_events[:20]
 
         guide_pages = [page for page in pages if str(page["type"]) != "release_notes"]
         release_pages = [page for page in pages if str(page["type"]) == "release_notes"]

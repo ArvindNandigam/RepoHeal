@@ -93,16 +93,16 @@ def _evidence_source_summary(evidence: list[dict[str, Any]]) -> dict[str, int]:
     return summary
 
 
-def _format_replacement_candidate(candidate: dict[str, Any], debug: bool = False) -> dict[str, Any]:
+def _format_migration_event(event: dict[str, Any], debug: bool = False) -> dict[str, Any]:
     response = {
-        "replacement_symbol": candidate.get("replacement_symbol"),
-        "source_type": candidate.get("source_type"),
-        "version": candidate.get("version"),
-        "confidence": candidate.get("confidence", "explicit"),
+        "event_type": event.get("event_type"),
+        "version": event.get("version"),
+        "source_type": event.get("source_type"),
+        "title": event.get("title"),
+        "url": event.get("url"),
     }
     if debug:
-        response["url"] = candidate.get("url")
-        response["matched_text"] = candidate.get("matched_text")
+        response["matched_text"] = event.get("matched_text")
     return response
 
 
@@ -151,10 +151,7 @@ def _format_symbol_entry(lifecycle: dict[str, Any]) -> dict[str, Any]:
         "earliest_version_found": lifecycle.get("earliest_version_found"),
         "latest_version_found": lifecycle.get("latest_version_found"),
         "evidence_sources": _evidence_source_summary(evidence),
-        "replacement_candidates": [
-            _format_replacement_candidate(candidate, debug=False)
-            for candidate in (lifecycle.get("replacement_candidates") or [])[:5]
-        ],
+        "migration_events": [_format_migration_event(event, debug=False) for event in (lifecycle.get("migration_events") or [])],
     }
 
 
@@ -164,10 +161,7 @@ def _format_symbol_entry_debug(lifecycle: dict[str, Any]) -> dict[str, Any]:
         "symbol": lifecycle.get("symbol"),
         "evidence": evidence,
         "evidence_sources": _evidence_source_summary(evidence),
-        "replacement_candidates": [
-            _format_replacement_candidate(candidate, debug=True)
-            for candidate in (lifecycle.get("replacement_candidates") or [])[:5]
-        ],
+        "migration_events": [_format_migration_event(event, debug=True) for event in (lifecycle.get("migration_events") or [])],
     }
 
 

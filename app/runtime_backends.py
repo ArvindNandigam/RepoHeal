@@ -83,7 +83,7 @@ class InMemoryCacheRepository:
             "latest_version_found": payload.get("latest_version_found"),
             "evidence": payload.get("evidence", []),
             "evidence_sources": payload.get("evidence_sources", {}),
-            "replacement_candidates": payload.get("replacement_candidates", []),
+            "migration_events": payload.get("migration_events", []),
             "payload": payload,
             "last_updated": now,
             "expires_at": now + self.cache_expiry,

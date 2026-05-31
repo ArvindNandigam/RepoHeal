@@ -706,7 +706,7 @@ def test_symbol_route_accepts_symbols_list(monkeypatch) -> None:
     assert all(item["earliest_version_found"] == "1.52.0" for item in payload["symbols"])
     assert all(item["latest_version_found"] == "1.52.0" for item in payload["symbols"])
     assert all(item["evidence_sources"] == {"migration_guides": 0, "release_notes": 0, "changelogs": 0, "deprecation_notices": 0, "versioned_docs": 0} for item in payload["symbols"])
-    assert all(item["replacement_candidates"] == [] for item in payload["symbols"])
+    assert all(item["migration_events"] == [] for item in payload["symbols"])
 
 
 def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
@@ -763,7 +763,7 @@ def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
         "deprecation_notices": 0,
         "versioned_docs": 0,
     }
-    assert payload["symbols"][0]["replacement_candidates"] == []
+    assert payload["symbols"][0]["migration_events"] == []
     assert payload["symbols"][0]["evidence"] == [
         {
             "version": "1.52.0",
@@ -772,6 +772,44 @@ def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
             "matched_text": "omitted",
         }
     ]
+
+
+def test_symbol_evidence_resolver_emits_migration_events_without_replacements() -> None:
+    class EventSource(EvidenceResolverSource):
+        def _request_with_retries(self, url: str):
+            class Response:
+                def __init__(self, text: str) -> None:
+                    self.text = text
+
+            pages = {
+                "https://docs.openai.com/api": "<html><body><p>ChatCompletion.create was deprecated and renamed to client.chat.completions.create in 1.0.0.</p></body></html>",
+                "https://github.com/openai/openai-python/releases/tag/v1.0.0": "<html><body><p>ChatCompletion.create was removed in 1.0.0.</p></body></html>",
+                "https://docs.openai.com/migration": "<html><body><p>ChatCompletion.create was replaced by client.chat.completions.create in 1.0.0.</p></body></html>",
+            }
+            return Response(pages[url])
+
+    resolver = SymbolEvidenceResolver(EventSource())
+    result = resolver.resolve_from_source_bundle(
+        "openai",
+        ["openai.ChatCompletion.create"],
+        {
+            "source_contract": {
+                "library": "openai",
+                "official_docs": "https://docs.openai.com/api",
+                "github_repo": "https://github.com/openai/openai-python",
+                "pypi_url": "https://pypi.org/pypi/openai/json",
+                "latest_version": "1.0.0",
+            },
+            "release_history": [{"version": "1.0.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.0.0"}],
+            "migration_guides": [{"title": "Migration Guide", "url": "https://docs.openai.com/migration"}],
+            "pypi_json": {},
+        },
+    )[0]
+
+    assert result["migration_events"]
+    assert {event["event_type"] for event in result["migration_events"]} <= {"deprecated", "removed", "replaced"}
+    assert all(event["version"] == "1.0.0" for event in result["migration_events"])
+    assert all("matched_text" in event for event in result["migration_events"])
 
 
 def test_symbol_route_returns_structured_500_on_unexpected_error(monkeypatch) -> None:
