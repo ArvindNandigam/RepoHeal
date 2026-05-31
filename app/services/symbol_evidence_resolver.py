@@ -17,6 +17,20 @@ SOURCE_PRIORITY = {
     "release_notes": 3,
     "versioned_docs": 4,
 }
+REPLACEMENT_SOURCE_TYPES = {
+    "migration_guide",
+    "official_deprecation_notice",
+    "changelog",
+    "release_notes",
+    "versioned_docs",
+}
+_SYMBOL_TOKEN = r"[A-Za-z_][A-Za-z0-9_.]*"
+_REPLACEMENT_PATTERNS = (
+    re.compile(rf"(?P<old>{_SYMBOL_TOKEN})\s*->\s*(?P<new>{_SYMBOL_TOKEN})", flags=re.IGNORECASE),
+    re.compile(rf"(?:replaced by|renamed to|migrated to)\s+(?P<new>{_SYMBOL_TOKEN})", flags=re.IGNORECASE),
+    re.compile(rf"use\s+(?P<new>{_SYMBOL_TOKEN})\s+instead", flags=re.IGNORECASE),
+    re.compile(rf"use\s+(?P<new>{_SYMBOL_TOKEN})\b", flags=re.IGNORECASE),
+)
 
 
 class _TextExtractor(HTMLParser):
@@ -110,6 +124,34 @@ def _version_sort_key(value: str) -> tuple[int, Any]:
 def _ordered_unique_versions(values: list[str | None]) -> list[str]:
     versions = {value for value in values if value}
     return sorted(versions, key=_version_sort_key)
+
+
+def _clean_replacement_symbol(value: str | None) -> str | None:
+    if not value:
+        return None
+    cleaned = value.strip().strip(".,;:()[]{}\"'")
+    return cleaned or None
+
+
+def _extract_replacement_candidates(text: str, original_symbol: str) -> list[str]:
+    candidates: list[str] = []
+    original_lower = original_symbol.lower()
+    for pattern in _REPLACEMENT_PATTERNS:
+        for match in pattern.finditer(text):
+            replacement = _clean_replacement_symbol(match.groupdict().get("new") or match.groupdict().get("old"))
+            if not replacement or replacement.lower() == original_lower:
+                continue
+            candidates.append(replacement)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = candidate.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(candidate)
+    return deduped
 
 
 def _discover_versioned_docs(source_bundle: dict[str, Any]) -> list[dict[str, str | None]]:
@@ -221,6 +263,7 @@ class SymbolEvidenceResolver:
 
     def resolve_from_source_bundle(self, library: str, symbols: list[str], source_bundle: dict[str, Any]) -> list[dict[str, Any]]:
         pages = self._build_pages(source_bundle)
+        latest_version = str((source_bundle.get("source_contract") or {}).get("latest_version") or "")
         results: list[dict[str, Any]] = [
             {
                 "symbol": symbol,
@@ -228,6 +271,7 @@ class SymbolEvidenceResolver:
                 "earliest_version_found": None,
                 "latest_version_found": None,
                 "evidence": [],
+                "replacement_candidates": [],
             }
             for symbol in symbols
         ]
@@ -254,6 +298,19 @@ class SymbolEvidenceResolver:
                         }
                     )
 
+                    if page_type in REPLACEMENT_SOURCE_TYPES:
+                        for replacement_symbol in _extract_replacement_candidates(snippet, symbol):
+                            results_by_symbol[symbol]["replacement_candidates"].append(
+                                {
+                                    "replacement_symbol": replacement_symbol,
+                                    "source_type": page_type,
+                                    "version": _extract_version(snippet, fallback=page.get("release_version")),
+                                    "url": str(page["url"]),
+                                    "matched_text": snippet,
+                                    "confidence": "explicit",
+                                }
+                            )
+
                 deduped_evidence: list[dict[str, Any]] = []
                 seen: set[tuple[Any, ...]] = set()
                 for item in sorted(
@@ -277,6 +334,37 @@ class SymbolEvidenceResolver:
                 results_by_symbol[symbol]["versions_observed"] = versions_observed
                 results_by_symbol[symbol]["earliest_version_found"] = versions_observed[0] if versions_observed else None
                 results_by_symbol[symbol]["latest_version_found"] = versions_observed[-1] if versions_observed else None
+
+                if latest_version and latest_version in versions_observed:
+                    results_by_symbol[symbol]["replacement_candidates"] = []
+                    continue
+
+                deduped_replacements: list[dict[str, Any]] = []
+                replacement_seen: set[tuple[Any, ...]] = set()
+                for item in sorted(
+                    results_by_symbol[symbol]["replacement_candidates"],
+                    key=lambda entry: (
+                        SOURCE_PRIORITY.get(str(entry.get("source_type")), 99),
+                        _version_sort_key(str(entry.get("version") or "")),
+                        str(entry.get("replacement_symbol") or ""),
+                        str(entry.get("url") or ""),
+                    ),
+                ):
+                    key = (
+                        item.get("replacement_symbol"),
+                        item.get("source_type"),
+                        item.get("version"),
+                        item.get("url"),
+                        item.get("matched_text"),
+                    )
+                    if key in replacement_seen:
+                        continue
+                    replacement_seen.add(key)
+                    deduped_replacements.append(item)
+                    if len(deduped_replacements) >= 5:
+                        break
+
+                results_by_symbol[symbol]["replacement_candidates"] = deduped_replacements
 
         guide_pages = [page for page in pages if str(page["type"]) != "release_notes"]
         release_pages = [page for page in pages if str(page["type"]) == "release_notes"]

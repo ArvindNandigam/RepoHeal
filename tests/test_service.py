@@ -705,6 +705,8 @@ def test_symbol_route_accepts_symbols_list(monkeypatch) -> None:
     assert all(item["versions_observed"] == ["1.52.0"] for item in payload["symbols"])
     assert all(item["earliest_version_found"] == "1.52.0" for item in payload["symbols"])
     assert all(item["latest_version_found"] == "1.52.0" for item in payload["symbols"])
+    assert all(item["evidence_sources"] == {"migration_guides": 0, "release_notes": 0, "changelogs": 0, "deprecation_notices": 0, "versioned_docs": 0} for item in payload["symbols"])
+    assert all(item["replacement_candidates"] == [] for item in payload["symbols"])
 
 
 def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
@@ -751,12 +753,25 @@ def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload == {
-        "status": "ok",
-        "step": "completed",
-        "versions_found": 1,
-        "evidence_found": 1,
+    assert payload["library"] == "openai"
+    assert payload["latest_version"] == "1.52.0"
+    assert payload["symbols"][0]["symbol"] == "openai.ChatCompletion.create"
+    assert payload["symbols"][0]["evidence_sources"] == {
+        "migration_guides": 1,
+        "release_notes": 0,
+        "changelogs": 0,
+        "deprecation_notices": 0,
+        "versioned_docs": 0,
     }
+    assert payload["symbols"][0]["replacement_candidates"] == []
+    assert payload["symbols"][0]["evidence"] == [
+        {
+            "version": "1.52.0",
+            "source_type": "migration_guide",
+            "url": "https://docs.openai.com/migration",
+            "matched_text": "omitted",
+        }
+    ]
 
 
 def test_symbol_route_returns_structured_500_on_unexpected_error(monkeypatch) -> None:

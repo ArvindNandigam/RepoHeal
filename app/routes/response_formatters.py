@@ -66,6 +66,46 @@ def _collect_symbol_evidence(symbol_lifecycles: list[dict[str, Any]]) -> list[di
     return _unique_items(evidence_items)
 
 
+def _evidence_source_summary(evidence: list[dict[str, Any]]) -> dict[str, int]:
+    summary = {
+        "migration_guides": 0,
+        "release_notes": 0,
+        "changelogs": 0,
+        "deprecation_notices": 0,
+        "versioned_docs": 0,
+    }
+    source_map = {
+        "migration_guide": "migration_guides",
+        "release_notes": "release_notes",
+        "changelog": "changelogs",
+        "official_deprecation_notice": "deprecation_notices",
+        "versioned_docs": "versioned_docs",
+    }
+    seen: set[tuple[Any, ...]] = set()
+    for item in evidence:
+        key = (item.get("source_type"), item.get("version"), item.get("url"), item.get("matched_text"))
+        if key in seen:
+            continue
+        seen.add(key)
+        source_key = source_map.get(str(item.get("source_type")))
+        if source_key:
+            summary[source_key] += 1
+    return summary
+
+
+def _format_replacement_candidate(candidate: dict[str, Any], debug: bool = False) -> dict[str, Any]:
+    response = {
+        "replacement_symbol": candidate.get("replacement_symbol"),
+        "source_type": candidate.get("source_type"),
+        "version": candidate.get("version"),
+        "confidence": candidate.get("confidence", "explicit"),
+    }
+    if debug:
+        response["url"] = candidate.get("url")
+        response["matched_text"] = candidate.get("matched_text")
+    return response
+
+
 def format_library_response(payload: dict[str, Any], debug: bool = False) -> dict[str, Any]:
     response = {
         "library": payload["library"],
@@ -103,19 +143,31 @@ def format_bulk_response(result_items: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _format_symbol_entry(lifecycle: dict[str, Any]) -> dict[str, Any]:
+    evidence = lifecycle.get("evidence") if isinstance(lifecycle.get("evidence"), list) else []
     return {
         "symbol": lifecycle.get("symbol"),
-        "evidence_count": len(lifecycle.get("evidence") or []),
+        "evidence_count": len(evidence),
         "versions_observed": lifecycle.get("versions_observed") or [],
         "earliest_version_found": lifecycle.get("earliest_version_found"),
         "latest_version_found": lifecycle.get("latest_version_found"),
+        "evidence_sources": _evidence_source_summary(evidence),
+        "replacement_candidates": [
+            _format_replacement_candidate(candidate, debug=False)
+            for candidate in (lifecycle.get("replacement_candidates") or [])[:5]
+        ],
     }
 
 
 def _format_symbol_entry_debug(lifecycle: dict[str, Any]) -> dict[str, Any]:
+    evidence = lifecycle.get("evidence") if isinstance(lifecycle.get("evidence"), list) else []
     return {
         "symbol": lifecycle.get("symbol"),
-        "evidence": lifecycle.get("evidence", []),
+        "evidence": evidence,
+        "evidence_sources": _evidence_source_summary(evidence),
+        "replacement_candidates": [
+            _format_replacement_candidate(candidate, debug=True)
+            for candidate in (lifecycle.get("replacement_candidates") or [])[:5]
+        ],
     }
 
 
