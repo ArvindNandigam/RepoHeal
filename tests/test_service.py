@@ -315,11 +315,11 @@ def test_symbol_evidence_resolver_accepts_exact_symbol_tail_and_api_reference_on
 
     assert result["evidence"]
     assert all("ChatCompletionStreamState" not in item["matched_text"] for item in result["evidence"])
-    assert {item["match_reason"] for item in result["evidence"]} <= {"exact_symbol", "tail_match", "api_reference"}
+    assert {item["match_reason"] for item in result["evidence"]} <= {"exact_symbol", "tail_match"}
     assert result["evidence_quality"] == {
         "exact_symbol_matches": 1,
-        "tail_matches": 0,
-        "api_reference_matches": 1,
+        "tail_matches": 1,
+        "api_reference_matches": 0,
         "confidence": "high",
     }
 

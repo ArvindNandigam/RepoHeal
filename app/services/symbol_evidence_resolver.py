@@ -80,14 +80,10 @@ def _snippet_mentions_symbol(snippet: str, symbol: str) -> bool:
 
 
 def _match_reason(snippet: str, symbol: str) -> str:
-    lowered = snippet.lower()
     terms = _symbol_candidates(symbol)
     if _symbol_match_pattern(terms[0]).search(snippet):
         return "exact_symbol"
     if len(terms) > 1 and _symbol_match_pattern(terms[1]).search(snippet):
-        api_reference_terms = ("api reference", "endpoint", "method", "function", "class", "reference", "documentation", "docs")
-        if any(term in lowered for term in api_reference_terms):
-            return "api_reference"
         return "tail_match"
     return "symbol_not_present"
 
@@ -152,15 +148,12 @@ def _evidence_relevance_score(source_kind: str) -> float:
 def _evidence_quality(evidence: list[dict[str, Any]]) -> dict[str, Any]:
     exact_symbol_matches = 0
     tail_matches = 0
-    api_reference_matches = 0
     for item in evidence:
         match_reason = str(item.get("match_reason") or "")
         if match_reason == "exact_symbol":
             exact_symbol_matches += 1
         elif match_reason == "tail_match":
             tail_matches += 1
-        elif match_reason == "api_reference":
-            api_reference_matches += 1
 
     if exact_symbol_matches:
         confidence = "high"
@@ -172,7 +165,7 @@ def _evidence_quality(evidence: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "exact_symbol_matches": exact_symbol_matches,
         "tail_matches": tail_matches,
-        "api_reference_matches": api_reference_matches,
+        "api_reference_matches": 0,
         "confidence": confidence,
     }
 
