@@ -417,6 +417,7 @@ class OfficialSourceResolver:
 
     def resolve(self, library: str, symbols: list[str], trust_sources: bool = False) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, str]], dict[str, Any]]:
         source_contract, release_history, migration_guides, pypi_json = self.resolve_sources(library, trust_sources=trust_sources)
+        source_documents = self.discover_repository_source_documents(source_contract)
 
         from app.services.symbol_evidence_resolver import SymbolEvidenceResolver
 
@@ -425,6 +426,7 @@ class OfficialSourceResolver:
             "source_contract": source_contract,
             "release_history": release_history,
             "migration_guides": migration_guides,
+            "source_documents": source_documents,
             "pypi_json": pypi_json,
         }
         symbol_lifecycles = resolver.resolve_from_source_bundle(library, symbols, bundle)

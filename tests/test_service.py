@@ -34,6 +34,12 @@ class DummyRepository:
     def get_symbol_payload(self, library: str, symbol: str):
         return self.symbols.get((library, symbol))
 
+    def lookup_versioned_symbol_registry(self, library: str, symbol: str):
+        return None
+
+    def upsert_versioned_symbol_registry(self, library: str, version: str, symbols: list[str], indexed_at=None, source: str = "discovery") -> None:
+        return None
+
 
 class DummyResolver:
     def resolve(self, library: str, symbols: list[str]):
@@ -711,31 +717,21 @@ def test_symbol_route_accepts_symbols_list(monkeypatch) -> None:
     class MultiSymbolService:
         last_cache_hit = False
 
-        def resolve(self, library: str, symbols: list[str]):
+        def resolve_symbol_intelligence(self, library: str, symbols: list[str], debug: bool = False):
             return {
                 "library": library,
-                "latest_version": "1.52.0",
-                "official_docs": "https://docs.openai.com/",
-                "github_repo": "https://github.com/openai/openai-python",
-                "pypi_url": "https://pypi.org/pypi/openai/json",
-                "symbol_lifecycles": [
+                "source": "registry",
+                "symbols": [
                     {
                         "symbol": symbol,
-                        "versions_observed": ["1.52.0"],
-                        "earliest_version_found": "1.52.0",
-                        "latest_version_found": "1.52.0",
-                        "confidence": 0,
-                        "evidence": [],
-                        "evidence_quality": {"exact_symbol_matches": 0, "tail_matches": 0, "api_reference_matches": 0, "confidence": "low"},
+                        "present_versions": ["1.52.0"],
+                        "absent_versions": ["1.0.0"],
+                        "source": "registry",
                     }
                     for symbol in symbols
                 ],
-                "release_history": [],
-                "migration_guides": [{"title": "Migration Guide", "url": "https://docs.openai.com/migration", "source_type": "migration_guide"}],
+                "migration_documents": [],
             }
-
-        def resolve_symbol(self, library: str, symbol: str):
-            return {"symbol": symbol, "versions_observed": ["1.52.0"], "earliest_version_found": "1.52.0", "latest_version_found": "1.52.0", "confidence": 0, "evidence": []}
 
     app.dependency_overrides.clear()
     app.dependency_overrides[dependencies.get_library_intelligence_service] = lambda: MultiSymbolService()
@@ -754,15 +750,10 @@ def test_symbol_route_accepts_symbols_list(monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["library"] == "openai"
-    assert payload["latest_version"] == "1.52.0"
+    assert payload["source"] == "registry"
     assert [item["symbol"] for item in payload["symbols"]] == ["openai.ChatCompletion.create", "openai.Embedding.create"]
-    assert all(item["evidence_count"] == 0 for item in payload["symbols"])
-    assert all(item["observed_present"] == ["1.52.0"] for item in payload["symbols"])
-    assert all(item["observed_absent"] == [] for item in payload["symbols"])
-    assert all(item["migration_document_count"] == 0 for item in payload["symbols"])
-    assert all(item["evidence_preview"] == [] for item in payload["symbols"])
-    assert all(item["evidence_quality"] == {"exact_symbol_matches": 0, "tail_matches": 0, "api_reference_matches": 0, "confidence": "low"} for item in payload["symbols"])
-    assert payload["migration_documents"] == []
+    assert all(item["present_versions"] == ["1.52.0"] for item in payload["symbols"])
+    assert all(item["absent_versions"] == ["1.0.0"] for item in payload["symbols"])
 
 
 def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
@@ -773,33 +764,15 @@ def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
     class DebugService:
         last_cache_hit = False
 
-        def resolve(self, library: str, symbols: list[str]):
+        def resolve_symbol_intelligence(self, library: str, symbols: list[str], debug: bool = False):
             return {
                 "library": library,
-                "latest_version": "1.52.0",
-                "official_docs": "https://docs.openai.com/",
-                "github_repo": "https://github.com/openai/openai-python",
-                "pypi_url": "https://pypi.org/pypi/openai/json",
-                "symbol_lifecycles": [
-                    {
-                        "symbol": symbols[0],
-                        "versions_observed": ["1.52.0"],
-                        "earliest_version_found": "1.52.0",
-                        "latest_version_found": "1.52.0",
-                        "migration_documents": [
-                            {
-                                "title": "Migration Guide",
-                                "url": "https://docs.openai.com/migration",
-                                "version": "1.52.0",
-                                "matched_text": "omitted",
-                                "source_type": "migration_guide",
-                            }
-                        ],
-                        "evidence": [{"version": "1.52.0", "source_type": "migration_guide", "url": "https://docs.openai.com/migration", "matched_text": "omitted"}],
-                    }
-                ],
-                "release_history": [{"version": "1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0"}],
-                "migration_guides": [{"title": "Migration Guide", "url": "https://docs.openai.com/migration"}],
+                "symbol": symbols[0],
+                "present_versions": ["1.52.0"],
+                "absent_versions": ["1.0.0"],
+                "evidence": [{"version": "1.52.0", "source_type": "migration_guide", "url": "https://docs.openai.com/migration", "evidence_snippet": "omitted", "line_context_before": "before", "line_context_after": "after"}],
+                "urls": ["https://docs.openai.com/migration"],
+                "source": "registry",
             }
 
     app.dependency_overrides.clear()
@@ -818,25 +791,19 @@ def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["library"] == "openai"
-    assert payload["latest_version"] == "1.52.0"
     assert payload["symbol"] == "openai.ChatCompletion.create"
-    assert payload["migration_documents"] == [
-        {
-            "title": "Migration Guide",
-            "url": "https://docs.openai.com/migration",
-            "version": "1.52.0",
-            "source_type": "migration_guide",
-        }
-    ]
-    assert payload["evidence_rejected"] == []
-    assert payload["evidence_quality"] == {"exact_symbol_matches": 0, "tail_matches": 0, "api_reference_matches": 0, "confidence": "low"}
+    assert payload["source"] == "registry"
+    assert payload["present_versions"] == ["1.52.0"]
+    assert payload["absent_versions"] == ["1.0.0"]
+    assert payload["urls"] == ["https://docs.openai.com/migration"]
     assert payload["evidence"] == [
         {
             "version": "1.52.0",
             "source_type": "migration_guide",
             "url": "https://docs.openai.com/migration",
-            "matched_text": "omitted",
+            "evidence_snippet": "omitted",
+            "line_context_before": "before",
+            "line_context_after": "after",
         }
     ]
 
@@ -849,44 +816,24 @@ def test_symbol_route_debug_exposes_pipeline_observability(monkeypatch) -> None:
     class DebugService:
         last_cache_hit = True
 
-        def resolve(self, library: str, symbols: list[str]):
+        def resolve_symbol_intelligence(self, library: str, symbols: list[str], debug: bool = False):
             return {
                 "library": library,
-                "latest_version": "1.52.0",
-                "official_docs": "https://docs.openai.com/",
-                "github_repo": "https://github.com/openai/openai-python",
-                "pypi_url": "https://pypi.org/pypi/openai/json",
-                "symbol_lifecycles": [
+                "symbol": symbols[0],
+                "present_versions": ["1.52.0"],
+                "absent_versions": ["1.0.0"],
+                "evidence": [
                     {
-                        "symbol": symbols[0],
-                        "versions_observed": ["1.52.0"],
-                        "earliest_version_found": "1.52.0",
-                        "latest_version_found": "1.52.0",
-                        "evidence": [],
-                        "migration_documents": [
-                            {
-                                "title": "OpenAI Python v1 Migration Guide",
-                                "url": "https://docs.openai.com/migration",
-                                "version": "1.52.0",
-                                "matched_text": "ChatCompletion API removed in v1.0.0",
-                                "source_type": "migration_guide",
-                            }
-                        ],
-                        "_debug": {
-                            "migration_documents_searched": 2,
-                            "migration_documents_used": 1,
-                            "evidence_rejected": [
-                                {"matched_text": "new client implementation", "rejection_reason": "symbol_not_present"},
-                            ],
-                        },
+                        "version": "1.52.0",
+                        "source_type": "migration_guide",
+                        "url": "https://docs.openai.com/migration",
+                        "evidence_snippet": "ChatCompletion API removed in v1.0.0",
+                        "line_context_before": "before",
+                        "line_context_after": "after",
                     }
                 ],
-                "release_history": [{"version": "1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0"}],
-                "migration_guides": [
-                    {"title": "OpenAI Python v1 Migration Guide", "url": "https://docs.openai.com/migration", "source_type": "migration_guide"},
-                    {"title": "Release Notes 1.52.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0", "source_type": "release_notes"},
-                    {"title": "OpenAI Python Changelog", "url": "https://github.com/openai/openai-python/blob/main/CHANGELOG.md", "source_type": "changelog"},
-                ],
+                "urls": ["https://docs.openai.com/migration"],
+                "source": "registry",
             }
 
     app.dependency_overrides.clear()
@@ -906,18 +853,20 @@ def test_symbol_route_debug_exposes_pipeline_observability(monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["symbol"] == "openai.ChatCompletion.create"
-    assert payload["migration_documents"] == [
+    assert payload["source"] == "registry"
+    assert payload["present_versions"] == ["1.52.0"]
+    assert payload["absent_versions"] == ["1.0.0"]
+    assert payload["urls"] == ["https://docs.openai.com/migration"]
+    assert payload["evidence"] == [
         {
-            "title": "OpenAI Python v1 Migration Guide",
-            "url": "https://docs.openai.com/migration",
             "version": "1.52.0",
             "source_type": "migration_guide",
-        },
+            "url": "https://docs.openai.com/migration",
+            "evidence_snippet": "ChatCompletion API removed in v1.0.0",
+            "line_context_before": "before",
+            "line_context_after": "after",
+        }
     ]
-    assert payload["evidence_rejected"] == [
-        {"matched_text": "new client implementation", "rejection_reason": "symbol_not_present"}
-    ]
-    assert payload["evidence_quality"] == {"exact_symbol_matches": 0, "tail_matches": 0, "api_reference_matches": 0, "confidence": "low"}
 
 
 def test_source_resolver_discovers_migration_documents_from_docs_and_repo() -> None:

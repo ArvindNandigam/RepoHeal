@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from app.runtime_backends import InMemoryCacheRepository
 from app.services.registry_service import RegistryService
+from app.services.library_intelligence import LibraryIntelligenceService
+
+
+class FailingResolver:
+    def resolve(self, library: str, symbols: list[str], trust_sources: bool = False):
+        raise AssertionError("discovery should not be called for registry hits")
 
 
 class FakeResolver:
@@ -45,3 +51,19 @@ def test_registry_service_curated_lookup():
     assert result["library"] == "fastapi"
     assert "official_docs" in result and result["official_docs"]
     assert "symbol_lifecycles" in result
+
+
+def test_symbol_intelligence_uses_versioned_registry_first():
+    cache = InMemoryCacheRepository(cache_expiry_days=7)
+    cache.upsert_versioned_symbol_registry("openai", "0.28.1", ["openai.ChatCompletion.create"])
+    cache.upsert_versioned_symbol_registry("openai", "1.0.0", [])
+    cache.upsert_versioned_symbol_registry("openai", "2.38.0", [])
+
+    service = LibraryIntelligenceService(cache, object(), FailingResolver())
+
+    response = service.resolve_symbol_intelligence("openai", ["openai.ChatCompletion.create"], debug=False)
+
+    assert response["source"] == "registry"
+    assert response["symbol"] == "openai.ChatCompletion.create"
+    assert response["present_versions"] == ["0.28.1"]
+    assert response["absent_versions"] == ["1.0.0", "2.38.0"]

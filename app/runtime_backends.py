@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from packaging.version import InvalidVersion, Version
+
 from app.security import hash_api_key, is_bearer_token_valid
 from app.cache.repository import CACHE_PAYLOAD_SCHEMA_VERSION
 
@@ -13,6 +15,8 @@ class InMemoryCacheRepository:
         self.library_cache: dict[str, dict[str, Any]] = {}
         self.symbol_cache: dict[tuple[str, str], dict[str, Any]] = {}
         self.source_cache: dict[tuple[str, str], dict[str, Any]] = {}
+        self.library_registry: dict[str, dict[str, Any]] = {}
+        self.versioned_symbol_registry: dict[tuple[str, str], dict[str, Any]] = {}
 
     def ensure_collections(self) -> None:
         return None
@@ -27,6 +31,43 @@ class InMemoryCacheRepository:
     def _cache_key(self, library: str, symbols: list[str]) -> str:
         symbol_key = ",".join(sorted(symbols))
         return f"{library}|{symbol_key}"
+
+    def _version_sort_key(self, value: str) -> tuple[int, Any]:
+        try:
+            return (0, Version(value))
+        except InvalidVersion:
+            return (1, value)
+
+    def get_versioned_symbol_registry_entries(self, library: str) -> list[dict[str, Any]]:
+        return [entry for (entry_library, _version), entry in self.versioned_symbol_registry.items() if entry_library == library]
+
+    def lookup_versioned_symbol_registry(self, library: str, symbol: str) -> dict[str, Any] | None:
+        entries = self.get_versioned_symbol_registry_entries(library)
+        if not entries:
+            return None
+
+        versions = sorted({str(entry.get("version")) for entry in entries if str(entry.get("version") or "").strip()}, key=self._version_sort_key)
+        present_versions = sorted({str(entry.get("version")) for entry in entries if symbol in (entry.get("symbols") or []) and str(entry.get("version") or "").strip()}, key=self._version_sort_key)
+        absent_versions = [version for version in versions if version not in present_versions]
+
+        return {
+            "library": library,
+            "symbol": symbol,
+            "present_versions": present_versions,
+            "absent_versions": absent_versions,
+            "latest_version": versions[-1] if versions else None,
+            "source": "registry",
+        }
+
+    def upsert_versioned_symbol_registry(self, library: str, version: str, symbols: list[str], indexed_at: datetime | None = None, source: str = "discovery") -> None:
+        now = indexed_at or datetime.now(timezone.utc)
+        self.versioned_symbol_registry[(library, version)] = {
+            "library": library,
+            "version": version,
+            "symbols": sorted({symbol for symbol in symbols if symbol}),
+            "indexed_at": now,
+            "source": source,
+        }
 
     def get_library_payload(self, library: str, symbols: list[str]) -> dict[str, Any] | None:
         record = self.library_cache.get(self._cache_key(library, symbols))
@@ -99,6 +140,16 @@ class InMemoryCacheRepository:
             return None
         payload = record.get("payload")
         return payload if isinstance(payload, dict) else None
+
+    def get_library_record(self, library: str) -> dict[str, Any] | None:
+        record = self.library_registry.get(library)
+        return dict(record) if record else None
+
+    def upsert_library_record(self, library: str, record: dict[str, Any]) -> None:
+        record_copy = dict(record)
+        record_copy["library"] = library
+        record_copy.setdefault("last_verified", datetime.now(timezone.utc).isoformat())
+        self.library_registry[library] = record_copy
 
 
 class InMemoryOperationalRepository:

@@ -4,6 +4,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from packaging.version import InvalidVersion, Version
+
 
 @lru_cache(maxsize=1)
 def _load_curated_registry() -> dict[str, dict[str, str]]:
@@ -130,3 +132,114 @@ class RegistryService:
             pass
 
         return result
+
+    def _version_sort_key(self, value: str) -> tuple[int, Any]:
+        try:
+            return (0, Version(value))
+        except InvalidVersion:
+            return (1, value)
+
+    def _latest_version(self, versions: list[str]) -> str | None:
+        if not versions:
+            return None
+        return sorted(versions, key=self._version_sort_key)[-1]
+
+    def _registry_hit_response(self, library: str, symbol_results: list[dict[str, Any]], debug: bool = False, source: str = "registry") -> dict[str, Any]:
+        if len(symbol_results) == 1:
+            item = dict(symbol_results[0])
+            if debug:
+                payload = self.cache_repository.get_symbol_payload(library, item["symbol"])
+                evidence = (payload or {}).get("evidence") or []
+                item["evidence"] = evidence
+                item["urls"] = sorted({str(entry.get("url")) for entry in evidence if entry.get("url")})
+            item["source"] = source
+            return item
+
+        response = {
+            "library": library,
+            "source": source,
+            "symbols": [],
+        }
+        for item in symbol_results:
+            symbol_item = dict(item)
+            if debug:
+                payload = self.cache_repository.get_symbol_payload(library, symbol_item["symbol"])
+                evidence = (payload or {}).get("evidence") or []
+                symbol_item["evidence"] = evidence
+                symbol_item["urls"] = sorted({str(entry.get("url")) for entry in evidence if entry.get("url")})
+            symbol_item["source"] = source
+            response["symbols"].append(symbol_item)
+        return response
+
+    def _index_versioned_registry(self, library: str, release_history: list[dict[str, Any]], symbol_lifecycles: list[dict[str, Any]]) -> None:
+        version_symbols: dict[str, set[str]] = {}
+        for lifecycle in symbol_lifecycles:
+            symbol = str(lifecycle.get("symbol") or "").strip()
+            if not symbol:
+                continue
+            present_versions = lifecycle.get("observed_present") or lifecycle.get("versions_observed") or []
+            for version in present_versions:
+                version_symbols.setdefault(str(version), set()).add(symbol)
+
+        release_versions = [str(entry.get("version")) for entry in release_history if str(entry.get("version") or "").strip()]
+        indexed_versions = release_versions or list(version_symbols.keys())
+        for version in indexed_versions:
+            self.cache_repository.upsert_versioned_symbol_registry(library, version, sorted(version_symbols.get(version, set())), source="discovery")
+
+    def resolve_symbol_intelligence(self, library: str, symbols: list[str], debug: bool = False) -> dict[str, Any]:
+        unique_symbols = []
+        seen: set[str] = set()
+        for symbol in symbols:
+            cleaned = symbol.strip()
+            if not cleaned or cleaned in seen:
+                continue
+            seen.add(cleaned)
+            unique_symbols.append(cleaned)
+
+        registry_results: list[dict[str, Any]] = []
+        registry_hits = True
+        for symbol in unique_symbols:
+            result = None
+            try:
+                result = self.cache_repository.lookup_versioned_symbol_registry(library, symbol)
+            except Exception:
+                result = None
+            if result is None:
+                registry_hits = False
+                break
+            registry_results.append(result)
+
+        if registry_hits and registry_results:
+            self.last_cache_hit = True
+            return self._registry_hit_response(library, registry_results, debug=debug, source="registry")
+
+        self.last_cache_hit = False
+        source_contract, symbol_lifecycles, release_history, migration_guides, pypi_json = self.source_resolver.resolve(library, unique_symbols, trust_sources=True)
+        self._index_versioned_registry(library, release_history, symbol_lifecycles)
+
+        for symbol_lifecycle in symbol_lifecycles:
+            try:
+                self.cache_repository.upsert_symbol_payload(library, symbol_lifecycle["symbol"], symbol_lifecycle)
+            except Exception:
+                pass
+
+        discovered_results: list[dict[str, Any]] = []
+        for symbol in unique_symbols:
+            snapshot = None
+            try:
+                snapshot = self.cache_repository.lookup_versioned_symbol_registry(library, symbol)
+            except Exception:
+                snapshot = None
+            if snapshot is None:
+                snapshot = {
+                    "library": library,
+                    "symbol": symbol,
+                    "present_versions": [],
+                    "absent_versions": [str(entry.get("version")) for entry in release_history if str(entry.get("version") or "").strip()],
+                    "source": "discovery",
+                }
+            else:
+                snapshot["source"] = "discovery"
+            discovered_results.append(snapshot)
+
+        return self._registry_hit_response(library, discovered_results, debug=debug, source="discovery")

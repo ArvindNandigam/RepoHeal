@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from packaging.version import InvalidVersion, Version
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.database import Database
@@ -34,12 +35,16 @@ class MongoCacheRepository:
         return self.database["source_cache"]
 
     @property
+    def versioned_symbol_registry(self) -> Collection:
+        return self.database["versioned_symbol_registry"]
+
+    @property
     def jobs(self) -> Collection:
         return self.database["jobs"]
 
     def ensure_collections(self) -> None:
         existing = set(self.database.list_collection_names())
-        for name in ("library_cache", "symbol_cache", "source_cache", "jobs"):
+        for name in ("library_cache", "symbol_cache", "source_cache", "versioned_symbol_registry", "jobs"):
             if name not in existing:
                 self.database.create_collection(name)
         if "library_registry" not in existing:
@@ -52,6 +57,8 @@ class MongoCacheRepository:
         self.symbol_cache.create_index("expires_at", expireAfterSeconds=0)
         self.source_cache.create_index([("library", 1), ("source_type", 1)], unique=True)
         self.source_cache.create_index("expires_at", expireAfterSeconds=0)
+        self.versioned_symbol_registry.create_index([("library", 1), ("version", 1)], unique=True)
+        self.versioned_symbol_registry.create_index("library")
         self.library_registry.create_index("library", unique=True)
         self.jobs.create_index("created_at")
 
@@ -65,6 +72,50 @@ class MongoCacheRepository:
     def _cache_key(self, library: str, symbols: list[str]) -> str:
         symbol_key = ",".join(sorted(symbols))
         return f"{library}|{symbol_key}"
+
+    def _version_sort_key(self, value: str) -> tuple[int, Any]:
+        try:
+            return (0, Version(value))
+        except InvalidVersion:
+            return (1, value)
+
+    def get_versioned_symbol_registry_entries(self, library: str) -> list[dict[str, Any]]:
+        return list(self.versioned_symbol_registry.find({"library": library}))
+
+    def lookup_versioned_symbol_registry(self, library: str, symbol: str) -> dict[str, Any] | None:
+        entries = self.get_versioned_symbol_registry_entries(library)
+        if not entries:
+            return None
+
+        versions = sorted({str(entry.get("version")) for entry in entries if str(entry.get("version") or "").strip()}, key=self._version_sort_key)
+        present_versions = [str(entry.get("version")) for entry in entries if symbol in (entry.get("symbols") or []) and str(entry.get("version") or "").strip()]
+        present_versions = sorted({version for version in present_versions if version}, key=self._version_sort_key)
+        absent_versions = [version for version in versions if version not in present_versions]
+
+        return {
+            "library": library,
+            "symbol": symbol,
+            "present_versions": present_versions,
+            "absent_versions": absent_versions,
+            "latest_version": versions[-1] if versions else None,
+            "source": "registry",
+        }
+
+    def upsert_versioned_symbol_registry(self, library: str, version: str, symbols: list[str], indexed_at: datetime | None = None, source: str = "discovery") -> None:
+        now = indexed_at or datetime.now(timezone.utc)
+        self.versioned_symbol_registry.update_one(
+            {"library": library, "version": version},
+            {
+                "$set": {
+                    "library": library,
+                    "version": version,
+                    "symbols": sorted({symbol for symbol in symbols if symbol}),
+                    "indexed_at": now,
+                    "source": source,
+                }
+            },
+            upsert=True,
+        )
 
     def get_library_payload(self, library: str, symbols: list[str]) -> dict[str, Any] | None:
         record = self.library_cache.find_one({"cache_key": self._cache_key(library, symbols)})

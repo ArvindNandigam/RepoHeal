@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 from uuid import uuid4
 
 from app.config import Settings
@@ -31,5 +33,24 @@ def initialize_runtime(operational_repository: OperationalRepository, cache_repo
             library=None,
             details={"service_version": settings.service_version},
         )
+        curated_path = Path(__file__).resolve().parent / "registry" / "curated_registry.json"
+        try:
+            with open(curated_path, "r", encoding="utf-8") as handle:
+                curated_registry = json.load(handle)
+        except Exception:
+            curated_registry = {}
+
+        upsert_library_record = getattr(cache_repository, "upsert_library_record", None)
+        if callable(upsert_library_record):
+            for library, entry in curated_registry.items():
+                upsert_library_record(
+                    library,
+                    {
+                        "official_docs": entry.get("official_docs"),
+                        "github_repo": entry.get("github"),
+                        "verified": True,
+                        "verification_source": "curated",
+                    },
+                )
     except Exception as exc:
         logger.exception("startup initialization failed: %s", exc)

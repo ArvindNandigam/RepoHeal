@@ -67,3 +67,7 @@ class LibraryIntelligenceService:
             if lifecycle["symbol"] == symbol:
                 return lifecycle
         raise ValueError("symbol lifecycle not found")
+
+    def resolve_symbol_intelligence(self, library: str, symbols: list[str], debug: bool = False) -> dict[str, Any]:
+        registry = RegistryService(self.cache_repository, self.source_resolver)
+        return registry.resolve_symbol_intelligence(library, symbols, debug=debug)

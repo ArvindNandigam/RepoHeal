@@ -14,7 +14,7 @@ from app.rate_limit import limiter
 from app.services.library_intelligence import LibraryIntelligenceService
 from app.services.source_resolver import LibraryNotFoundError, SourceUnavailableError
 from app.validators.library import normalize_library_name
-from app.routes.response_formatters import format_symbol_response, is_debug_enabled
+from app.routes.response_formatters import is_debug_enabled
 
 
 router = APIRouter(tags=["symbol-intelligence"])
@@ -51,10 +51,10 @@ def _symbol_summary(payload: dict[str, object], step: str = "completed") -> dict
     for symbol_entry in symbols:
         if not isinstance(symbol_entry, dict):
             continue
-        evidence = symbol_entry.get("evidence") if isinstance(symbol_entry.get("evidence"), list) else []
-        versions = symbol_entry.get("observed_present") if isinstance(symbol_entry.get("observed_present"), list) else []
-        evidence_found += len(evidence)
+        versions = symbol_entry.get("present_versions") if isinstance(symbol_entry.get("present_versions"), list) else []
         versions_found += len(versions)
+        evidence = symbol_entry.get("evidence") if isinstance(symbol_entry.get("evidence"), list) else []
+        evidence_found += len(evidence)
     return {"status": "ok", "step": step, "versions_found": versions_found, "evidence_found": evidence_found}
 
 
@@ -92,23 +92,8 @@ async def _resolve_symbol_intelligence(
     request.state.libraries = [library]
 
     try:
-        logger.info("Resolving library metadata")
-        result = service.resolve(library, symbols)
-
-        logger.info("Fetching release history")
-        release_history = _safe_list(result.get("release_history"))
-        result["release_history"] = release_history
-
-        logger.info("Fetching migration guides")
-        migration_guides = _safe_list(result.get("migration_guides"))
-        result["migration_guides"] = migration_guides
-
-        logger.info("Collecting symbol evidence")
-        symbol_lifecycles = _safe_list(result.get("symbol_lifecycles"))
-        result["symbol_lifecycles"] = symbol_lifecycles
-
-        logger.info("Building response")
-        response = format_symbol_response(result, debug=debug, cache_hit=service.last_cache_hit)
+        logger.info("Resolving symbol intelligence")
+        response = service.resolve_symbol_intelligence(library, symbols, debug=debug)
     except LibraryNotFoundError:
         return JSONResponse(status_code=404, content={"status": "failed", "reason": "library_not_found"})
     except SourceUnavailableError:
