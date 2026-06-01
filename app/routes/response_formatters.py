@@ -82,6 +82,23 @@ def _collect_migration_documents(migration_guides: list[dict[str, Any]]) -> list
     return _unique_items(documents)
 
 
+def _collect_symbol_migration_documents(symbol_lifecycles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    documents: list[dict[str, Any]] = []
+    for lifecycle in symbol_lifecycles:
+        for document in lifecycle.get("migration_documents") or []:
+            url = document.get("url")
+            if not url:
+                continue
+            documents.append(
+                {
+                    "title": document.get("title"),
+                    "url": str(url),
+                    "source_type": str(document.get("source_type", "migration_guide")),
+                }
+            )
+    return _unique_items(documents)
+
+
 def _document_matches_bucket(document: dict[str, Any], bucket: str) -> bool:
     source_type = str(document.get("source_type") or "").lower()
     title = str(document.get("title") or "").lower()
@@ -174,14 +191,23 @@ def format_bulk_response(result_items: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _format_symbol_entry(lifecycle: dict[str, Any]) -> dict[str, Any]:
     evidence = lifecycle.get("evidence") if isinstance(lifecycle.get("evidence"), list) else []
+    evidence_preview = [
+        {
+            "version": evidence_item.get("version"),
+            "source_type": str(evidence_item.get("source_type", evidence_item.get("type", "evidence"))),
+            "url": str(evidence_item.get("url", "")),
+            "matched_text": str(evidence_item.get("matched_text", "")),
+            "match_reason": str(evidence_item.get("match_reason", "")),
+        }
+        for evidence_item in evidence[:5]
+        if evidence_item.get("url")
+    ]
     return {
         "symbol": lifecycle.get("symbol"),
         "evidence_count": len(evidence),
         "versions_observed": lifecycle.get("versions_observed") or [],
-        "earliest_version_found": lifecycle.get("earliest_version_found"),
-        "latest_version_found": lifecycle.get("latest_version_found"),
-        "evidence_sources": _evidence_source_summary(evidence),
         "migration_document_count": len(lifecycle.get("migration_documents") or []),
+        "evidence_preview": evidence_preview,
     }
 
 
@@ -190,8 +216,8 @@ def _format_symbol_entry_debug(lifecycle: dict[str, Any]) -> dict[str, Any]:
     return {
         "symbol": lifecycle.get("symbol"),
         "evidence": evidence,
-        "evidence_sources": _evidence_source_summary(evidence),
         "migration_documents": lifecycle.get("migration_documents") or [],
+        "evidence_rejected": (lifecycle.get("_debug") or {}).get("evidence_rejected") or [],
     }
 
 
@@ -200,33 +226,20 @@ def format_symbol_response(payload: dict[str, Any], debug: bool = False, cache_h
     if not isinstance(symbol_lifecycles, list):
         symbol_lifecycles = [payload]
 
+    if debug and len(symbol_lifecycles) == 1:
+        symbol_entry = _format_symbol_entry_debug(symbol_lifecycles[0])
+        return {
+            "library": payload.get("library"),
+            "latest_version": payload.get("latest_version"),
+            **symbol_entry,
+            "migration_documents": _collect_symbol_migration_documents(symbol_lifecycles),
+        }
+
     response = {
         "library": payload.get("library"),
         "latest_version": payload.get("latest_version"),
-        "symbols": [
-            _format_symbol_entry_debug(lifecycle) if debug else _format_symbol_entry(lifecycle)
-            for lifecycle in symbol_lifecycles
-        ],
+        "symbols": [_format_symbol_entry_debug(lifecycle) if debug else _format_symbol_entry(lifecycle) for lifecycle in symbol_lifecycles],
+        "migration_documents": _collect_symbol_migration_documents(symbol_lifecycles),
     }
-
-    if debug:
-        debug_documents = _collect_debug_documents(payload.get("migration_guides") or [])
-        debug_documents["migration_documents_searched"] = sum(
-            int(((lifecycle.get("_debug") or {}).get("migration_documents_searched")) or 0)
-            for lifecycle in symbol_lifecycles
-        )
-        debug_documents["migration_documents_used"] = sum(
-            int(((lifecycle.get("_debug") or {}).get("migration_documents_used")) or 0)
-            for lifecycle in symbol_lifecycles
-        )
-        debug_documents["evidence_rejected"] = [
-            item
-            for lifecycle in symbol_lifecycles
-            for item in ((lifecycle.get("_debug") or {}).get("evidence_rejected") or [])
-            if isinstance(item, dict)
-        ]
-        debug_documents["cache_hit"] = bool(cache_hit)
-        debug_documents["cache_collection"] = cache_collection
-        response["debug"] = debug_documents
 
     return response

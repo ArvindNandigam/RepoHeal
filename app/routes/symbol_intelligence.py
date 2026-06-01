@@ -40,7 +40,12 @@ def _safe_list(value: object) -> list[object]:
 
 
 def _symbol_summary(payload: dict[str, object], step: str = "completed") -> dict[str, object]:
-    symbols = payload.get("symbols") if isinstance(payload.get("symbols"), list) else []
+    if isinstance(payload.get("symbols"), list):
+        symbols = payload.get("symbols") if isinstance(payload.get("symbols"), list) else []
+    elif isinstance(payload.get("symbol"), str):
+        symbols = [payload]
+    else:
+        symbols = []
     evidence_found = 0
     versions_found = 0
     for symbol_entry in symbols:
