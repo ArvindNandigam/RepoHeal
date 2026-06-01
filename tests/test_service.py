@@ -280,6 +280,48 @@ def test_symbol_evidence_resolver_logs_explicit_evidence(caplog) -> None:
     assert not any("LIFECYCLE_EVIDENCE:" in record.message for record in caplog.records)
 
 
+def test_symbol_evidence_resolver_accepts_exact_symbol_tail_and_api_reference_only() -> None:
+    class MatchingSource(EvidenceResolverSource):
+        def _request_with_retries(self, url: str):
+            class Response:
+                def __init__(self, text: str) -> None:
+                    self.text = text
+
+            pages = {
+                "https://docs.openai.com/api": "<html><body><p>The ChatCompletion.create endpoint in v1.0.0 is documented here.</p><p>ChatCompletionStreamState is internal.</p></body></html>",
+                "https://github.com/openai/openai-python/releases/tag/v1.0.0": "<html><body><p>openai.ChatCompletion.create is available in 1.0.0.</p></body></html>",
+            }
+            return Response(pages[url])
+
+    resolver = SymbolEvidenceResolver(MatchingSource())
+    result = resolver.resolve_from_source_bundle(
+        "openai",
+        ["openai.ChatCompletion.create"],
+        {
+            "source_contract": {
+                "library": "openai",
+                "official_docs": "https://docs.openai.com/api",
+                "github_repo": "https://github.com/openai/openai-python",
+                "pypi_url": "https://pypi.org/pypi/openai/json",
+                "latest_version": "1.0.0",
+            },
+            "release_history": [{"version": "1.0.0", "url": "https://github.com/openai/openai-python/releases/tag/v1.0.0"}],
+            "migration_guides": [{"title": "Migration Guide", "url": "https://docs.openai.com/api", "source_type": "migration_guide"}],
+            "pypi_json": {},
+        },
+    )[0]
+
+    assert result["evidence"]
+    assert all("ChatCompletionStreamState" not in item["matched_text"] for item in result["evidence"])
+    assert {item["match_reason"] for item in result["evidence"]} <= {"exact_symbol", "tail_match", "api_reference"}
+    assert result["evidence_quality"] == {
+        "exact_symbol_matches": 1,
+        "tail_matches": 0,
+        "api_reference_matches": 1,
+        "confidence": "high",
+    }
+
+
 def test_symbol_evidence_resolver_returns_nulls_without_explicit_evidence() -> None:
     class NoEvidenceSource:
         def resolve_sources(self, library: str, trust_sources: bool = False):
@@ -294,7 +336,7 @@ def test_symbol_evidence_resolver_returns_nulls_without_explicit_evidence() -> N
 
         def _request_with_retries(self, url: str):
             class Response:
-                text = "<html><body><p>openai.ChatCompletion.create is referenced here only.</p></body></html>"
+                text = "<html><body><p>ChatCompletionStreamState is referenced here only.</p></body></html>"
 
             return Response()
 
@@ -322,6 +364,7 @@ def test_symbol_evidence_resolver_returns_nulls_without_explicit_evidence() -> N
     assert lifecycle["versions_observed"] == []
     assert lifecycle["earliest_version_found"] is None
     assert lifecycle["latest_version_found"] is None
+    assert lifecycle["evidence_quality"] == {"exact_symbol_matches": 0, "tail_matches": 0, "api_reference_matches": 0, "confidence": "low"}
 
 
 def test_symbol_evidence_resolver_stops_after_high_priority_evidence() -> None:
@@ -672,11 +715,19 @@ def test_symbol_route_accepts_symbols_list(monkeypatch) -> None:
                 "github_repo": "https://github.com/openai/openai-python",
                 "pypi_url": "https://pypi.org/pypi/openai/json",
                 "symbol_lifecycles": [
-                    {"symbol": symbol, "versions_observed": ["1.52.0"], "earliest_version_found": "1.52.0", "latest_version_found": "1.52.0", "confidence": 0, "evidence": []}
+                    {
+                        "symbol": symbol,
+                        "versions_observed": ["1.52.0"],
+                        "earliest_version_found": "1.52.0",
+                        "latest_version_found": "1.52.0",
+                        "confidence": 0,
+                        "evidence": [],
+                        "evidence_quality": {"exact_symbol_matches": 0, "tail_matches": 0, "api_reference_matches": 0, "confidence": "low"},
+                    }
                     for symbol in symbols
                 ],
                 "release_history": [],
-                "migration_guides": [],
+                "migration_guides": [{"title": "Migration Guide", "url": "https://docs.openai.com/migration", "source_type": "migration_guide"}],
             }
 
         def resolve_symbol(self, library: str, symbol: str):
@@ -705,7 +756,10 @@ def test_symbol_route_accepts_symbols_list(monkeypatch) -> None:
     assert all(item["versions_observed"] == ["1.52.0"] for item in payload["symbols"])
     assert all(item["migration_document_count"] == 0 for item in payload["symbols"])
     assert all(item["evidence_preview"] == [] for item in payload["symbols"])
-    assert payload["migration_documents"] == []
+    assert all(item["evidence_quality"] == {"exact_symbol_matches": 0, "tail_matches": 0, "api_reference_matches": 0, "confidence": "low"} for item in payload["symbols"])
+    assert payload["migration_documents"] == [
+        {"title": "Migration Guide", "url": "https://docs.openai.com/migration", "source_type": "migration_guide"}
+    ]
 
 
 def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
@@ -772,6 +826,7 @@ def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
         }
     ]
     assert payload["evidence_rejected"] == []
+    assert payload["evidence_quality"] == {"exact_symbol_matches": 0, "tail_matches": 0, "api_reference_matches": 0, "confidence": "low"}
     assert payload["evidence"] == [
         {
             "version": "1.52.0",
@@ -852,11 +907,22 @@ def test_symbol_route_debug_exposes_pipeline_observability(monkeypatch) -> None:
             "title": "OpenAI Python v1 Migration Guide",
             "url": "https://docs.openai.com/migration",
             "source_type": "migration_guide",
-        }
+        },
+        {
+            "title": "Release Notes 1.52.0",
+            "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0",
+            "source_type": "release_notes",
+        },
+        {
+            "title": "OpenAI Python Changelog",
+            "url": "https://github.com/openai/openai-python/blob/main/CHANGELOG.md",
+            "source_type": "changelog",
+        },
     ]
     assert payload["evidence_rejected"] == [
         {"matched_text": "new client implementation", "rejection_reason": "symbol_not_present"}
     ]
+    assert payload["evidence_quality"] == {"exact_symbol_matches": 0, "tail_matches": 0, "api_reference_matches": 0, "confidence": "low"}
 
 
 def test_source_resolver_discovers_migration_documents_from_docs_and_repo() -> None:

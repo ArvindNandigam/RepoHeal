@@ -208,6 +208,12 @@ def _format_symbol_entry(lifecycle: dict[str, Any]) -> dict[str, Any]:
         "versions_observed": lifecycle.get("versions_observed") or [],
         "migration_document_count": len(lifecycle.get("migration_documents") or []),
         "evidence_preview": evidence_preview,
+        "evidence_quality": lifecycle.get("evidence_quality") or {
+            "exact_symbol_matches": 0,
+            "tail_matches": 0,
+            "api_reference_matches": 0,
+            "confidence": "low",
+        },
     }
 
 
@@ -218,6 +224,12 @@ def _format_symbol_entry_debug(lifecycle: dict[str, Any]) -> dict[str, Any]:
         "evidence": evidence,
         "migration_documents": lifecycle.get("migration_documents") or [],
         "evidence_rejected": (lifecycle.get("_debug") or {}).get("evidence_rejected") or [],
+        "evidence_quality": lifecycle.get("evidence_quality") or {
+            "exact_symbol_matches": 0,
+            "tail_matches": 0,
+            "api_reference_matches": 0,
+            "confidence": "low",
+        },
     }
 
 
@@ -226,20 +238,22 @@ def format_symbol_response(payload: dict[str, Any], debug: bool = False, cache_h
     if not isinstance(symbol_lifecycles, list):
         symbol_lifecycles = [payload]
 
+    migration_documents = _collect_migration_documents(payload.get("migration_guides") or [])
+
     if debug and len(symbol_lifecycles) == 1:
         symbol_entry = _format_symbol_entry_debug(symbol_lifecycles[0])
         return {
             "library": payload.get("library"),
             "latest_version": payload.get("latest_version"),
             **symbol_entry,
-            "migration_documents": _collect_symbol_migration_documents(symbol_lifecycles),
+            "migration_documents": migration_documents,
         }
 
     response = {
         "library": payload.get("library"),
         "latest_version": payload.get("latest_version"),
         "symbols": [_format_symbol_entry_debug(lifecycle) if debug else _format_symbol_entry(lifecycle) for lifecycle in symbol_lifecycles],
-        "migration_documents": _collect_symbol_migration_documents(symbol_lifecycles),
+        "migration_documents": migration_documents,
     }
 
     return response

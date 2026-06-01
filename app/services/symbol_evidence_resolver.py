@@ -17,6 +17,8 @@ SOURCE_PRIORITY = {
     "release_notes": 3,
     "versioned_docs": 4,
 }
+
+
 class _TextExtractor(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -51,7 +53,6 @@ def _symbol_candidates(symbol: str) -> list[str]:
     parts = [part for part in normalized.split(".") if part]
     if len(parts) >= 2:
         candidates.append(".".join(parts[-2:]))
-        candidates.append(parts[-2])
 
     deduped: list[str] = []
     seen: set[str] = set()
@@ -68,6 +69,10 @@ def _symbol_match_terms(symbol: str) -> list[str]:
     return [term.lower() for term in _symbol_candidates(symbol)]
 
 
+def _symbol_match_pattern(term: str) -> re.Pattern[str]:
+    return re.compile(rf"(?<![A-Za-z0-9_]){re.escape(term)}(?![A-Za-z0-9_])", flags=re.IGNORECASE)
+
+
 def _snippet_mentions_symbol(snippet: str, symbol: str) -> bool:
     lowered = snippet.lower()
     return any(term in lowered for term in _symbol_match_terms(symbol))
@@ -76,10 +81,13 @@ def _snippet_mentions_symbol(snippet: str, symbol: str) -> bool:
 def _match_reason(snippet: str, symbol: str) -> str:
     lowered = snippet.lower()
     terms = _symbol_candidates(symbol)
-    if symbol.lower() in lowered:
+    if _symbol_match_pattern(terms[0]).search(snippet):
         return "exact_symbol"
-    if any(term.lower() in lowered for term in terms[1:]):
-        return "terminal_symbol"
+    if len(terms) > 1 and _symbol_match_pattern(terms[1]).search(snippet):
+        api_reference_terms = ("api reference", "endpoint", "method", "function", "class", "reference", "documentation", "docs")
+        if any(term in lowered for term in api_reference_terms):
+            return "api_reference"
+        return "tail_match"
     return "symbol_not_present"
 
 
@@ -113,6 +121,12 @@ def _focus_snippet_to_sentence(snippet: str, symbol: str) -> str:
     return focused or snippet
 
 
+def _match_type(snippet: str, symbol: str) -> str | None:
+    if _match_reason(snippet, symbol) == "symbol_not_present":
+        return None
+    return _match_reason(snippet, symbol)
+
+
 def _evidence_relevance_score(source_kind: str) -> float:
     if source_kind in {"migration_guide", "official_deprecation_notice"}:
         return 0.95
@@ -121,6 +135,34 @@ def _evidence_relevance_score(source_kind: str) -> float:
     if source_kind == "release_notes":
         return 0.85
     return 0.0
+
+
+def _evidence_quality(evidence: list[dict[str, Any]]) -> dict[str, Any]:
+    exact_symbol_matches = 0
+    tail_matches = 0
+    api_reference_matches = 0
+    for item in evidence:
+        match_reason = str(item.get("match_reason") or "")
+        if match_reason == "exact_symbol":
+            exact_symbol_matches += 1
+        elif match_reason == "tail_match":
+            tail_matches += 1
+        elif match_reason == "api_reference":
+            api_reference_matches += 1
+
+    if exact_symbol_matches:
+        confidence = "high"
+    elif tail_matches:
+        confidence = "medium"
+    else:
+        confidence = "low"
+
+    return {
+        "exact_symbol_matches": exact_symbol_matches,
+        "tail_matches": tail_matches,
+        "api_reference_matches": api_reference_matches,
+        "confidence": confidence,
+    }
 
 
 def _extract_version(text: str, fallback: str | None = None) -> str | None:
@@ -287,14 +329,14 @@ class SymbolEvidenceResolver:
         snippets: list[str] = []
         lowered = text.lower()
         for candidate in _symbol_candidates(symbol):
-            candidate_lower = candidate.lower()
+            pattern = _symbol_match_pattern(candidate)
             start = 0
             while True:
-                index = lowered.find(candidate_lower, start)
-                if index < 0:
+                match = pattern.search(text, start)
+                if not match:
                     break
-                snippets.append(_focus_snippet_to_sentence(_snippet(text, index, len(candidate)), symbol))
-                start = index + max(1, len(candidate_lower))
+                snippets.append(_focus_snippet_to_sentence(_snippet(text, match.start(), len(match.group(0))), symbol))
+                start = match.end()
         deduped: list[str] = []
         seen: set[str] = set()
         for snippet in snippets:
@@ -334,6 +376,12 @@ class SymbolEvidenceResolver:
                 "latest_version_found": None,
                 "evidence": [],
                 "migration_documents": [],
+                "evidence_quality": {
+                    "exact_symbol_matches": 0,
+                    "tail_matches": 0,
+                    "api_reference_matches": 0,
+                    "confidence": "low",
+                },
                 "_debug": {
                     "evidence_rejected": [],
                     "migration_documents_searched": 0,
@@ -411,6 +459,7 @@ class SymbolEvidenceResolver:
                 results_by_symbol[symbol]["versions_observed"] = versions_observed
                 results_by_symbol[symbol]["earliest_version_found"] = versions_observed[0] if versions_observed else None
                 results_by_symbol[symbol]["latest_version_found"] = versions_observed[-1] if versions_observed else None
+                results_by_symbol[symbol]["evidence_quality"] = _evidence_quality(deduped_evidence)
 
                 debug_info["evidence_rejected"] = _dedupe_records(
                     debug_info["evidence_rejected"],
