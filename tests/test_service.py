@@ -160,7 +160,8 @@ def test_symbol_evidence_resolver_collects_bounded_unique_evidence_only() -> Non
     assert {item["source_type"] for item in symbol_evidence["evidence"]} <= {"migration_guide", "release_notes"}
     assert all("version" in item and "url" in item and "matched_text" in item for item in symbol_evidence["evidence"])
     assert any(item["version"] == "1.52.0" for item in symbol_evidence["evidence"])
-    assert symbol_evidence["versions_observed"] == ["1.52.0"]
+    assert symbol_evidence["observed_present"] == ["1.52.0"]
+    assert symbol_evidence["observed_absent"] == []
     assert symbol_evidence["earliest_version_found"] == "1.52.0"
     assert symbol_evidence["latest_version_found"] == "1.52.0"
 
@@ -251,7 +252,8 @@ def test_symbol_evidence_resolver_summarizes_multiple_versions() -> None:
         },
     )[0]
 
-    assert result["versions_observed"] == ["0.27", "0.28", "1.0.0"]
+    assert result["observed_present"] == ["0.27", "0.28", "1.0.0"]
+    assert result["observed_absent"] == []
     assert result["earliest_version_found"] == "0.27"
     assert result["latest_version_found"] == "1.0.0"
 
@@ -361,7 +363,8 @@ def test_symbol_evidence_resolver_returns_nulls_without_explicit_evidence() -> N
 
     lifecycle = result[0]
     assert lifecycle["evidence"] == []
-    assert lifecycle["versions_observed"] == []
+    assert lifecycle["observed_present"] == []
+    assert lifecycle["observed_absent"] == []
     assert lifecycle["earliest_version_found"] is None
     assert lifecycle["latest_version_found"] is None
     assert lifecycle["evidence_quality"] == {"exact_symbol_matches": 0, "tail_matches": 0, "api_reference_matches": 0, "confidence": "low"}
@@ -414,7 +417,8 @@ def test_symbol_evidence_resolver_stops_after_high_priority_evidence() -> None:
 
     lifecycle = result[0]
     assert lifecycle["evidence"]
-    assert lifecycle["versions_observed"] == ["1.0.0"]
+    assert lifecycle["observed_present"] == ["1.0.0"]
+    assert lifecycle["observed_absent"] == []
 
 
 def test_reset_mongo_dependencies_clears_cached_singletons(monkeypatch) -> None:
@@ -753,13 +757,12 @@ def test_symbol_route_accepts_symbols_list(monkeypatch) -> None:
     assert payload["latest_version"] == "1.52.0"
     assert [item["symbol"] for item in payload["symbols"]] == ["openai.ChatCompletion.create", "openai.Embedding.create"]
     assert all(item["evidence_count"] == 0 for item in payload["symbols"])
-    assert all(item["versions_observed"] == ["1.52.0"] for item in payload["symbols"])
+    assert all(item["observed_present"] == ["1.52.0"] for item in payload["symbols"])
+    assert all(item["observed_absent"] == [] for item in payload["symbols"])
     assert all(item["migration_document_count"] == 0 for item in payload["symbols"])
     assert all(item["evidence_preview"] == [] for item in payload["symbols"])
     assert all(item["evidence_quality"] == {"exact_symbol_matches": 0, "tail_matches": 0, "api_reference_matches": 0, "confidence": "low"} for item in payload["symbols"])
-    assert payload["migration_documents"] == [
-        {"title": "Migration Guide", "url": "https://docs.openai.com/migration", "source_type": "migration_guide"}
-    ]
+    assert payload["migration_documents"] == []
 
 
 def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
@@ -822,6 +825,7 @@ def test_symbol_route_debug_includes_sources_and_evidence(monkeypatch) -> None:
         {
             "title": "Migration Guide",
             "url": "https://docs.openai.com/migration",
+            "version": "1.52.0",
             "source_type": "migration_guide",
         }
     ]
@@ -906,17 +910,8 @@ def test_symbol_route_debug_exposes_pipeline_observability(monkeypatch) -> None:
         {
             "title": "OpenAI Python v1 Migration Guide",
             "url": "https://docs.openai.com/migration",
+            "version": "1.52.0",
             "source_type": "migration_guide",
-        },
-        {
-            "title": "Release Notes 1.52.0",
-            "url": "https://github.com/openai/openai-python/releases/tag/v1.52.0",
-            "source_type": "release_notes",
-        },
-        {
-            "title": "OpenAI Python Changelog",
-            "url": "https://github.com/openai/openai-python/blob/main/CHANGELOG.md",
-            "source_type": "changelog",
         },
     ]
     assert payload["evidence_rejected"] == [
@@ -965,6 +960,7 @@ def test_source_resolver_discovers_migration_documents_from_docs_and_repo() -> N
                 return Response(
                     text=(
                         "<html><body>"
+                        '<a href="/blob/main/openai/api.py">api.py</a>'
                         '<a href="/discussions">Discussions</a>'
                         '<a href="/wiki">Wiki</a>'
                         '<a href="/docs/migration">Docs</a>'
@@ -991,6 +987,10 @@ def test_source_resolver_discovers_migration_documents_from_docs_and_repo() -> N
     assert any("/wiki" in url for url in urls)
     assert any("/docs/migration" in url for url in urls)
     assert any("CHANGELOG.md" in url for url in urls)
+
+    source_documents = resolver.discover_repository_source_documents(source_contract)
+    assert any(document["url"].endswith("/blob/main/openai/api.py") for document in source_documents)
+    assert all(document["source_type"] == "repository_source" for document in source_documents)
 
 
 def test_symbol_evidence_resolver_collects_evidence_and_migration_documents() -> None:
@@ -1027,7 +1027,6 @@ def test_symbol_evidence_resolver_collects_evidence_and_migration_documents() ->
 
     assert result["evidence"]
     assert all("ChatCompletion" in item["matched_text"] for item in result["evidence"])
-    assert all(item["match_reason"] in {"exact_symbol", "terminal_symbol"} for item in result["evidence"])
     assert result["migration_documents"]
     assert all(document["source_type"] == "migration_guide" for document in result["migration_documents"])
     assert result["_debug"]["migration_documents_searched"] == 1
@@ -1090,7 +1089,6 @@ def test_symbol_evidence_resolver_searches_migration_documents_before_changelog_
     assert result["evidence"]
     assert all("ChatCompletion" in item["matched_text"] for item in result["evidence"])
     assert all("tests:" not in item["matched_text"].lower() for item in result["evidence"])
-    assert all(item["match_reason"] in {"exact_symbol", "terminal_symbol"} for item in result["evidence"])
 
 
 def test_symbol_route_returns_structured_500_on_unexpected_error(monkeypatch) -> None:

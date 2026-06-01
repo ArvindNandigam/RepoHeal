@@ -228,6 +228,32 @@ def _discover_migration_documents(fetch_page, docs_url: str, github_repo: str, e
     return _dedupe_migration_documents(documents)
 
 
+def _discover_repository_source_documents(fetch_page, github_repo: str, extra_domains: list[str] | None = None) -> list[dict[str, str]]:
+    source_keywords = (
+        "/blob/",
+        "/tree/",
+        "readme",
+        "example",
+        "examples",
+        "docs",
+        "src",
+        ".py",
+        ".js",
+        ".ts",
+        ".java",
+        ".go",
+        ".md",
+    )
+
+    documents: list[dict[str, str]] = []
+    if github_repo:
+        for document in _discover_document_links(fetch_page, github_repo, keywords=source_keywords, extra_domains=extra_domains):
+            document["source_type"] = "repository_source"
+            documents.append(document)
+
+    return _dedupe_migration_documents(documents)
+
+
 class OfficialSourceResolver:
     def __init__(self, operational_repository: OperationalRepository, timeout_seconds: float | None = None, retry_count: int | None = None) -> None:
         settings = get_settings()
@@ -323,6 +349,28 @@ class OfficialSourceResolver:
             validate_source_urls([guide["url"] for guide in migration_guides], extra_domains=verified_hosts)
 
         return source_contract, release_history, migration_guides, pypi_json
+
+    def discover_repository_source_documents(self, source_contract: dict[str, Any]) -> list[dict[str, str]]:
+        github_repo = str(source_contract.get("github_repo") or "")
+        official_docs = str(source_contract.get("official_docs") or "")
+        verified_hosts: list[str] = []
+
+        try:
+            from urllib.parse import urlparse as _urlparse
+
+            if official_docs:
+                parsed = _urlparse(official_docs)
+                if parsed.hostname:
+                    verified_hosts.append(parsed.hostname)
+            if github_repo:
+                parsed = _urlparse(github_repo)
+                if parsed.hostname:
+                    verified_hosts.append(parsed.hostname)
+        except Exception:
+            verified_hosts = []
+
+        documents = _discover_repository_source_documents(self._request_with_retries, github_repo, extra_domains=verified_hosts)
+        return _dedupe_migration_documents(documents)
 
     def _request_with_retries(self, url: str) -> httpx.Response:
         is_github_url = "github.com" in url.lower()

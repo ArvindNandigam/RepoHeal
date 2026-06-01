@@ -52,7 +52,7 @@ def _symbol_summary(payload: dict[str, object], step: str = "completed") -> dict
         if not isinstance(symbol_entry, dict):
             continue
         evidence = symbol_entry.get("evidence") if isinstance(symbol_entry.get("evidence"), list) else []
-        versions = symbol_entry.get("versions_observed") if isinstance(symbol_entry.get("versions_observed"), list) else []
+        versions = symbol_entry.get("observed_present") if isinstance(symbol_entry.get("observed_present"), list) else []
         evidence_found += len(evidence)
         versions_found += len(versions)
     return {"status": "ok", "step": step, "versions_found": versions_found, "evidence_found": evidence_found}

@@ -9,13 +9,14 @@ from packaging.version import InvalidVersion, Version
 
 from app.validators.sources import is_approved_source_url
 
-EXPLICIT_EVIDENCE_SOURCES = {"migration_guide", "changelog", "release_notes", "official_deprecation_notice", "versioned_docs"}
+EXPLICIT_EVIDENCE_SOURCES = {"migration_guide", "changelog", "release_notes", "official_deprecation_notice", "versioned_docs", "repository_source"}
 SOURCE_PRIORITY = {
     "migration_guide": 0,
     "official_deprecation_notice": 1,
-    "changelog": 2,
-    "release_notes": 3,
-    "versioned_docs": 4,
+    "versioned_docs": 2,
+    "repository_source": 3,
+    "release_notes": 4,
+    "changelog": 5,
 }
 
 
@@ -127,9 +128,20 @@ def _match_type(snippet: str, symbol: str) -> str | None:
     return _match_reason(snippet, symbol)
 
 
+def _context_window(text: str, index: int, length: int, radius: int = 240) -> tuple[str, str, str]:
+    start = max(0, index - radius)
+    end = min(len(text), index + length + radius)
+    evidence_snippet = _normalize_whitespace(text[start:end])
+    line_context_before = _normalize_whitespace(text[max(0, index - radius):index])
+    line_context_after = _normalize_whitespace(text[index + length:end])
+    return evidence_snippet, line_context_before, line_context_after
+
+
 def _evidence_relevance_score(source_kind: str) -> float:
     if source_kind in {"migration_guide", "official_deprecation_notice"}:
         return 0.95
+    if source_kind == "repository_source":
+        return 0.93
     if source_kind == "changelog":
         return 0.9
     if source_kind == "release_notes":
@@ -282,6 +294,19 @@ class SymbolEvidenceResolver:
                 }
             )
 
+        for source_document in source_bundle.get("source_documents") or []:
+            url = source_document.get("url")
+            if not url:
+                continue
+            pages.append(
+                {
+                    "type": str(source_document.get("source_type") or "repository_source"),
+                    "url": str(url),
+                    "release_version": source_document.get("version"),
+                    "title": source_document.get("title"),
+                }
+            )
+
         pages.extend(_discover_versioned_docs(source_bundle))
 
         seen: set[str] = set()
@@ -296,9 +321,10 @@ class SymbolEvidenceResolver:
         priority = {
             "migration_guide": 0,
             "official_deprecation_notice": 1,
-            "release_notes": 2,
-            "changelog": 3,
-            "versioned_docs": 4,
+            "versioned_docs": 2,
+            "repository_source": 3,
+            "release_notes": 4,
+            "changelog": 5,
         }
         return sorted(
             deduped,
@@ -347,6 +373,37 @@ class SymbolEvidenceResolver:
             deduped.append(snippet)
         return deduped
 
+    def _find_snippet_matches(self, text: str, symbol: str) -> list[dict[str, str]]:
+        matches: list[dict[str, str]] = []
+        for candidate in _symbol_candidates(symbol):
+            pattern = _symbol_match_pattern(candidate)
+            start = 0
+            while True:
+                match = pattern.search(text, start)
+                if not match:
+                    break
+                snippet = _focus_snippet_to_sentence(_snippet(text, match.start(), len(match.group(0))), symbol)
+                evidence_snippet, line_context_before, line_context_after = _context_window(text, match.start(), len(match.group(0)))
+                matches.append(
+                    {
+                        "snippet": snippet,
+                        "evidence_snippet": evidence_snippet,
+                        "line_context_before": line_context_before,
+                        "line_context_after": line_context_after,
+                    }
+                )
+                start = match.end()
+
+        deduped: list[dict[str, str]] = []
+        seen: set[tuple[str, str, str, str]] = set()
+        for item in matches:
+            key = (item["snippet"].lower(), item["evidence_snippet"].lower(), item["line_context_before"].lower(), item["line_context_after"].lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(item)
+        return deduped
+
     def _build_evidence_rejection(self, snippet: str, symbol: str) -> dict[str, Any] | None:
         if _snippet_mentions_symbol(snippet, symbol):
             return None
@@ -357,10 +414,18 @@ class SymbolEvidenceResolver:
 
     def resolve(self, library: str, symbols: list[str]) -> list[dict[str, Any]]:
         source_contract, release_history, migration_guides, pypi_json = self.source_resolver.resolve_sources(library)
+        source_documents = []
+        discover_source_documents = getattr(self.source_resolver, "discover_repository_source_documents", None)
+        if callable(discover_source_documents):
+            try:
+                source_documents = discover_source_documents(source_contract)
+            except Exception:
+                source_documents = []
         bundle = {
             "source_contract": source_contract,
             "release_history": release_history,
             "migration_guides": migration_guides,
+            "source_documents": source_documents,
             "pypi_json": pypi_json,
         }
         return self.resolve_from_source_bundle(library, symbols, bundle)
@@ -368,10 +433,13 @@ class SymbolEvidenceResolver:
     def resolve_from_source_bundle(self, library: str, symbols: list[str], source_bundle: dict[str, Any]) -> list[dict[str, Any]]:
         pages = self._build_pages(source_bundle)
         latest_version = str((source_bundle.get("source_contract") or {}).get("latest_version") or "")
+        release_versions = _ordered_unique_versions([str(entry.get("version")) for entry in source_bundle.get("release_history") or [] if entry.get("version")])
         results: list[dict[str, Any]] = [
             {
                 "symbol": symbol,
                 "versions_observed": [],
+            "observed_present": [],
+            "observed_absent": [],
                 "earliest_version_found": None,
                 "latest_version_found": None,
                 "evidence": [],
@@ -398,12 +466,13 @@ class SymbolEvidenceResolver:
                 return
 
             for symbol in symbols:
-                snippets = self._find_snippets(text, symbol)
+                snippets = self._find_snippet_matches(text, symbol)
                 evidence = results_by_symbol[symbol]["evidence"]
                 migration_documents = results_by_symbol[symbol]["migration_documents"]
                 debug_info = results_by_symbol[symbol]["_debug"]
                 is_migration_doc = page_type in {"migration_guide", "official_deprecation_notice", "versioned_docs"}
-                for snippet in snippets:
+                for snippet_bundle in snippets:
+                    snippet = snippet_bundle["snippet"]
                     rejected = self._build_evidence_rejection(snippet, symbol)
                     if rejected is not None:
                         debug_info["evidence_rejected"].append(rejected)
@@ -421,6 +490,10 @@ class SymbolEvidenceResolver:
                             "url": str(page["url"]),
                             "matched_text": snippet,
                             "match_reason": match_reason,
+                            "match_type": match_reason,
+                            "evidence_snippet": snippet_bundle["evidence_snippet"],
+                            "line_context_before": snippet_bundle["line_context_before"],
+                            "line_context_after": snippet_bundle["line_context_after"],
                         }
                     )
                     if is_migration_doc:
@@ -431,6 +504,10 @@ class SymbolEvidenceResolver:
                                 "version": version,
                                 "matched_text": snippet,
                                 "source_type": page_type,
+                                "match_type": match_reason,
+                                "evidence_snippet": snippet_bundle["evidence_snippet"],
+                                "line_context_before": snippet_bundle["line_context_before"],
+                                "line_context_after": snippet_bundle["line_context_after"],
                             }
                         )
                 if is_migration_doc:
@@ -457,6 +534,8 @@ class SymbolEvidenceResolver:
                 results_by_symbol[symbol]["evidence"] = deduped_evidence
                 versions_observed = _ordered_unique_versions([item.get("version") for item in deduped_evidence])
                 results_by_symbol[symbol]["versions_observed"] = versions_observed
+                results_by_symbol[symbol]["observed_present"] = versions_observed
+                results_by_symbol[symbol]["observed_absent"] = [version for version in release_versions if version not in versions_observed]
                 results_by_symbol[symbol]["earliest_version_found"] = versions_observed[0] if versions_observed else None
                 results_by_symbol[symbol]["latest_version_found"] = versions_observed[-1] if versions_observed else None
                 results_by_symbol[symbol]["evidence_quality"] = _evidence_quality(deduped_evidence)

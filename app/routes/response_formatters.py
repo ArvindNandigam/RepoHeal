@@ -93,6 +93,7 @@ def _collect_symbol_migration_documents(symbol_lifecycles: list[dict[str, Any]])
                 {
                     "title": document.get("title"),
                     "url": str(url),
+                    "version": document.get("version"),
                     "source_type": str(document.get("source_type", "migration_guide")),
                 }
             )
@@ -204,8 +205,9 @@ def _format_symbol_entry(lifecycle: dict[str, Any]) -> dict[str, Any]:
     ]
     return {
         "symbol": lifecycle.get("symbol"),
+        "observed_present": lifecycle.get("observed_present") or lifecycle.get("versions_observed") or [],
+        "observed_absent": lifecycle.get("observed_absent") or [],
         "evidence_count": len(evidence),
-        "versions_observed": lifecycle.get("versions_observed") or [],
         "migration_document_count": len(lifecycle.get("migration_documents") or []),
         "evidence_preview": evidence_preview,
         "evidence_quality": lifecycle.get("evidence_quality") or {
@@ -221,6 +223,8 @@ def _format_symbol_entry_debug(lifecycle: dict[str, Any]) -> dict[str, Any]:
     evidence = lifecycle.get("evidence") if isinstance(lifecycle.get("evidence"), list) else []
     return {
         "symbol": lifecycle.get("symbol"),
+        "observed_present": lifecycle.get("observed_present") or lifecycle.get("versions_observed") or [],
+        "observed_absent": lifecycle.get("observed_absent") or [],
         "evidence": evidence,
         "migration_documents": lifecycle.get("migration_documents") or [],
         "evidence_rejected": (lifecycle.get("_debug") or {}).get("evidence_rejected") or [],
@@ -238,7 +242,7 @@ def format_symbol_response(payload: dict[str, Any], debug: bool = False, cache_h
     if not isinstance(symbol_lifecycles, list):
         symbol_lifecycles = [payload]
 
-    migration_documents = _collect_migration_documents(payload.get("migration_guides") or [])
+    migration_documents = _collect_symbol_migration_documents(symbol_lifecycles)
 
     if debug and len(symbol_lifecycles) == 1:
         symbol_entry = _format_symbol_entry_debug(symbol_lifecycles[0])
