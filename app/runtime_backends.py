@@ -2,154 +2,106 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
-
-from packaging.version import InvalidVersion, Version
+from bson.objectid import ObjectId
 
 from app.security import hash_api_key, is_bearer_token_valid
-from app.cache.repository import CACHE_PAYLOAD_SCHEMA_VERSION
 
 
-class InMemoryCacheRepository:
-    def __init__(self, cache_expiry_days: int) -> None:
-        self.cache_expiry = timedelta(days=cache_expiry_days)
-        self.library_cache: dict[str, dict[str, Any]] = {}
-        self.symbol_cache: dict[tuple[str, str], dict[str, Any]] = {}
-        self.source_cache: dict[tuple[str, str], dict[str, Any]] = {}
-        self.library_registry: dict[str, dict[str, Any]] = {}
-        self.versioned_symbol_registry: dict[tuple[str, str], dict[str, Any]] = {}
+class InMemoryKnowledgeRepository:
+    def __init__(self) -> None:
+        self._symbols: dict[str, dict[str, Any]] = {}
+        self._relationships: dict[ObjectId, dict[str, Any]] = {}
+        self._evidence: list[dict[str, Any]] = []
+        self._libraries: dict[str, dict[str, Any]] = {}
 
-    def ensure_collections(self) -> None:
+    def ensure_indexes(self) -> None:
         return None
 
-    def _is_fresh(self, last_updated: datetime | None) -> bool:
-        if last_updated is None:
-            return False
-        if last_updated.tzinfo is None:
-            last_updated = last_updated.replace(tzinfo=timezone.utc)
-        return datetime.now(timezone.utc) - last_updated <= self.cache_expiry
+    def lookup_symbol(self, symbol_id: str) -> dict[str, Any] | None:
+        return self._symbols.get(symbol_id)
 
-    def _cache_key(self, library: str, symbols: list[str]) -> str:
-        symbol_key = ",".join(sorted(symbols))
-        return f"{library}|{symbol_key}"
+    def lookup_relationships(self, symbol_id: str) -> list[dict[str, Any]]:
+        return [r for r in self._relationships.values() if r["from"] == symbol_id]
 
-    def _version_sort_key(self, value: str) -> tuple[int, Any]:
-        try:
-            return (0, Version(value))
-        except InvalidVersion:
-            return (1, value)
-
-    def get_versioned_symbol_registry_entries(self, library: str) -> list[dict[str, Any]]:
-        return [entry for (entry_library, _version), entry in self.versioned_symbol_registry.items() if entry_library == library]
-
-    def lookup_versioned_symbol_registry(self, library: str, symbol: str) -> dict[str, Any] | None:
-        entries = self.get_versioned_symbol_registry_entries(library)
-        if not entries:
-            return None
-
-        versions = sorted({str(entry.get("version")) for entry in entries if str(entry.get("version") or "").strip()}, key=self._version_sort_key)
-        present_versions = sorted({str(entry.get("version")) for entry in entries if symbol in (entry.get("symbols") or []) and str(entry.get("version") or "").strip()}, key=self._version_sort_key)
-        absent_versions = [version for version in versions if version not in present_versions]
-
-        return {
-            "library": library,
-            "symbol": symbol,
-            "present_versions": present_versions,
-            "absent_versions": absent_versions,
-            "latest_version": versions[-1] if versions else None,
-            "source": "registry",
-        }
-
-    def upsert_versioned_symbol_registry(self, library: str, version: str, symbols: list[str], indexed_at: datetime | None = None, source: str = "discovery") -> None:
-        now = indexed_at or datetime.now(timezone.utc)
-        self.versioned_symbol_registry[(library, version)] = {
-            "library": library,
-            "version": version,
-            "symbols": sorted({symbol for symbol in symbols if symbol}),
-            "indexed_at": now,
-            "source": source,
-        }
-
-    def get_library_payload(self, library: str, symbols: list[str]) -> dict[str, Any] | None:
-        record = self.library_cache.get(self._cache_key(library, symbols))
-        if not record:
-            return None
-        if record.get("payload_schema_version") != CACHE_PAYLOAD_SCHEMA_VERSION:
-            return None
-        if not self._is_fresh(record.get("last_updated")):
-            return None
-        payload = record.get("payload")
-        return payload if isinstance(payload, dict) else None
-
-    def upsert_library_payload(self, library: str, symbols: list[str], payload: dict[str, Any]) -> None:
+    def insert_symbol(self, symbol_id: str, library: str) -> None:
         now = datetime.now(timezone.utc)
-        self.library_cache[self._cache_key(library, symbols)] = {
-            "library": library,
-            "cache_key": self._cache_key(library, symbols),
-            "symbols": sorted(symbols),
-            "latest_version": payload["latest_version"],
-            "payload_schema_version": CACHE_PAYLOAD_SCHEMA_VERSION,
-            "payload": payload,
-            "last_updated": now,
-            "expires_at": now + self.cache_expiry,
-        }
+        if symbol_id not in self._symbols:
+            self._symbols[symbol_id] = {
+                "_id": symbol_id,
+                "library": library,
+                "created_at": now,
+            }
 
-    def upsert_source_payload(self, library: str, source_type: str, payload: dict[str, Any]) -> None:
+    def insert_relationship(self, from_sym: str, relation: str, to_sym: str, confidence: float, library: str) -> ObjectId:
         now = datetime.now(timezone.utc)
-        self.source_cache[(library, source_type)] = {
+        # find existing
+        for rel_id, rel in self._relationships.items():
+            if rel["from"] == from_sym and rel["relation"] == relation and rel["to"] == to_sym:
+                rel["updated_at"] = now
+                return rel_id
+        
+        new_id = ObjectId()
+        self._relationships[new_id] = {
+            "_id": new_id,
+            "from": from_sym,
+            "relation": relation,
+            "to": to_sym,
+            "confidence": confidence,
+            "status": "candidate",
             "library": library,
+            "created_at": now,
+            "updated_at": now,
+        }
+        return new_id
+
+    def promote_to_verified(self, relationship_id: ObjectId) -> None:
+        if relationship_id in self._relationships:
+            self._relationships[relationship_id]["status"] = "verified"
+            self._relationships[relationship_id]["updated_at"] = datetime.now(timezone.utc)
+
+    def insert_evidence(self, relationship_id: ObjectId, url: str, source_type: str, snippet: str) -> None:
+        # Check duplicate
+        for ev in self._evidence:
+            if ev["relationship_id"] == relationship_id and ev["url"] == url and ev["snippet"] == snippet:
+                return
+                
+        now = datetime.now(timezone.utc)
+        self._evidence.append({
+            "relationship_id": relationship_id,
+            "url": url,
             "source_type": source_type,
-            "payload": payload,
-            "last_updated": now,
-            "expires_at": now + self.cache_expiry,
-        }
+            "snippet": snippet,
+            "retrieved_at": now,
+        })
 
-    def upsert_permanent_source_payload(self, library: str, source_type: str, payload: dict[str, Any]) -> None:
+    def lookup_evidence(self, relationship_id: ObjectId) -> list[dict[str, Any]]:
+        return [ev for ev in self._evidence if ev["relationship_id"] == relationship_id]
+
+    def lookup_library(self, library: str) -> dict[str, Any] | None:
+        return self._libraries.get(library)
+
+    def upsert_library(
+        self,
+        library: str,
+        latest_version: str | None = None,
+        official_docs: str | None = None,
+        github_repo: str | None = None,
+        pypi_url: str | None = None,
+    ) -> None:
         now = datetime.now(timezone.utc)
-        self.source_cache[(library, source_type)] = {
-            "library": library,
-            "source_type": source_type,
-            "payload": payload,
-            "last_updated": now,
-            "permanent": True,
-        }
-
-    def upsert_symbol_payload(self, library: str, symbol: str, payload: dict[str, Any]) -> None:
-        now = datetime.now(timezone.utc)
-        self.symbol_cache[(library, symbol)] = {
-            "library": library,
-            "symbol": symbol,
-            "payload_schema_version": CACHE_PAYLOAD_SCHEMA_VERSION,
-            "versions_observed": payload.get("versions_observed", []),
-            "earliest_version_found": payload.get("earliest_version_found"),
-            "latest_version_found": payload.get("latest_version_found"),
-            "evidence": payload.get("evidence", []),
-            "evidence_sources": payload.get("evidence_sources", {}),
-            "migration_documents": payload.get("migration_documents", []),
-            "payload": payload,
-            "last_updated": now,
-            "expires_at": now + self.cache_expiry,
-        }
-
-    def get_symbol_payload(self, library: str, symbol: str) -> dict[str, Any] | None:
-        record = self.symbol_cache.get((library, symbol))
-        if not record:
-            return None
-        if record.get("payload_schema_version") != CACHE_PAYLOAD_SCHEMA_VERSION:
-            return None
-        if not self._is_fresh(record.get("last_updated")):
-            return None
-        payload = record.get("payload")
-        return payload if isinstance(payload, dict) else None
-
-    def get_library_record(self, library: str) -> dict[str, Any] | None:
-        record = self.library_registry.get(library)
-        return dict(record) if record else None
-
-    def upsert_library_record(self, library: str, record: dict[str, Any]) -> None:
-        record_copy = dict(record)
-        record_copy["library"] = library
-        record_copy.setdefault("last_verified", datetime.now(timezone.utc).isoformat())
-        self.library_registry[library] = record_copy
+        if library not in self._libraries:
+            self._libraries[library] = {
+                "library": library,
+                "created_at": now,
+                "updated_at": now,
+            }
+        else:
+            self._libraries[library]["updated_at"] = now
+            
+        if latest_version is not None: self._libraries[library]["latest_version"] = latest_version
+        if official_docs is not None: self._libraries[library]["official_docs"] = official_docs
+        if github_repo is not None: self._libraries[library]["github_repo"] = github_repo
+        if pypi_url is not None: self._libraries[library]["pypi_url"] = pypi_url
 
 
 class InMemoryOperationalRepository:

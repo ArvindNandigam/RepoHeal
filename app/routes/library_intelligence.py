@@ -1,63 +1,38 @@
 from __future__ import annotations
 
+import logging
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
-from app.dependencies import get_library_intelligence_service, get_operational_repository
-from app.rate_limit import limiter
-from app.services.library_intelligence import LibraryIntelligenceService
+from app.dependencies import get_migration_engine, get_operational_repository
 from app.observability.repository import OperationalRepository
-from app.services.source_resolver import LibraryNotFoundError, SourceUnavailableError
-from app.validators.library import normalize_library_name, normalize_symbol_list
+from app.rate_limit import limiter
+from app.services.migration_engine import MigrationEngine
+from app.validators.library import normalize_library_name
 from app.routes.response_formatters import format_library_response, is_debug_enabled
 
-
 router = APIRouter(tags=["library-intelligence"])
+logger = logging.getLogger(__name__)
 
 
-@router.post("/library-intelligence")
+@router.get("/library-intelligence/{library}")
 @limiter.limit("100/minute")
 async def library_intelligence(
+    library: str,
     request: Request,
-    service: LibraryIntelligenceService = Depends(get_library_intelligence_service),
+    service: MigrationEngine = Depends(get_migration_engine),
     operational_repository: OperationalRepository = Depends(get_operational_repository),
 ) -> dict:
+    normalized_library = normalize_library_name(library)
+    request.state.library = normalized_library
+    request.state.symbols = None
+    request.state.libraries = [normalized_library]
+    
     try:
-        body = await request.json()
-        if not isinstance(body, dict):
-            body = {}
-        library = normalize_library_name(str(body.get("library", "")))
-        symbols = normalize_symbol_list(body.get("symbols") or [])
-    except Exception:
-        return JSONResponse(status_code=400, content={"status": "failed", "reason": "failed"})
-
-    request.state.library = library
-    request.state.symbols = symbols
-    request.state.libraries = [library]
-
-    try:
-        response_payload = service.resolve(library, symbols)
-    except LibraryNotFoundError:
-        return JSONResponse(status_code=404, content={"status": "failed", "reason": "library_not_found"})
-    except SourceUnavailableError:
-        return JSONResponse(status_code=503, content={"status": "failed", "reason": "source_unavailable"})
+        # We can just call resolve with an empty symbols list to get the library metadata
+        response = service.resolve(normalized_library, [], debug=is_debug_enabled(request.query_params))
+        return format_library_response(response, debug=is_debug_enabled(request.query_params))
     except Exception as exc:
-        operational_repository.log_error(
-            request_id=request.state.request_id,
-            endpoint=request.url.path,
-            error_type=exc.__class__.__name__,
-            error_message=str(exc),
-        )
-        return JSONResponse(status_code=500, content={"status": "failed", "error": str(exc)})
-
-    request.state.cache_hit = service.last_cache_hit
-
-    if not service.last_cache_hit:
-        operational_repository.log_audit_event(
-            event="cache_refresh",
-            request_id=request.state.request_id,
-            library=library,
-        )
-
-    return format_library_response(response_payload, debug=is_debug_enabled(request.query_params))
+        logger.exception("library-intelligence failed")
+        return JSONResponse(status_code=500, content={"status": "failed", "error": "library-intelligence failed"})
 

@@ -5,13 +5,11 @@ from functools import lru_cache
 import certifi
 from pymongo import MongoClient
 
-from app.cache.repository import MongoCacheRepository
+from app.knowledge.repository import KnowledgeRepository
 from app.config import get_settings
 from app.observability.repository import OperationalRepository
-from app.runtime_backends import InMemoryCacheRepository, InMemoryOperationalRepository
-from app.services.library_intelligence import LibraryIntelligenceService
-from app.services.source_resolver import OfficialSourceResolver
-
+from app.runtime_backends import InMemoryKnowledgeRepository, InMemoryOperationalRepository
+from app.services.migration_engine import MigrationEngine
 
 @lru_cache(maxsize=1)
 def get_mongo_client() -> MongoClient:
@@ -26,12 +24,9 @@ def get_mongo_client() -> MongoClient:
         retryReads=True,
     )
 
-
 def reset_mongo_dependencies() -> None:
     get_mongo_client.cache_clear()
     get_runtime_repositories.cache_clear()
-    get_source_resolver.cache_clear()
-
 
 @lru_cache(maxsize=1)
 def get_runtime_repositories() -> tuple[object, object]:
@@ -39,27 +34,19 @@ def get_runtime_repositories() -> tuple[object, object]:
     try:
         mongo_client = get_mongo_client()
         operational_repository = OperationalRepository(mongo_client, settings.mongodb_database)
-        cache_repository = MongoCacheRepository(mongo_client, settings.mongodb_database, settings.cache_expiry_days)
-        cache_repository.ensure_collections()
+        knowledge_repository = KnowledgeRepository(mongo_client, settings.mongodb_database)
+        knowledge_repository.ensure_indexes()
         operational_repository.ensure_collections()
         operational_repository.mark_service_status("__backend_probe__", "ok")
-        return cache_repository, operational_repository
+        return knowledge_repository, operational_repository
     except Exception:
-        return InMemoryCacheRepository(settings.cache_expiry_days), InMemoryOperationalRepository(settings.internal_api_key)
+        return InMemoryKnowledgeRepository(), InMemoryOperationalRepository(settings.internal_api_key)
 
-
-def get_cache_repository() -> MongoCacheRepository:
+def get_knowledge_repository() -> KnowledgeRepository:
     return get_runtime_repositories()[0]
-
 
 def get_operational_repository() -> OperationalRepository:
     return get_runtime_repositories()[1]
 
-
-@lru_cache(maxsize=1)
-def get_source_resolver() -> OfficialSourceResolver:
-    return OfficialSourceResolver(get_operational_repository())
-
-
-def get_library_intelligence_service() -> LibraryIntelligenceService:
-    return LibraryIntelligenceService(get_cache_repository(), get_operational_repository(), get_source_resolver())
+def get_migration_engine() -> MigrationEngine:
+    return MigrationEngine(get_knowledge_repository())

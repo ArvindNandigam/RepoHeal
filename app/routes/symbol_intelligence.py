@@ -8,13 +8,12 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from app.config import MAX_SYMBOLS_PER_REQUEST
-from app.dependencies import get_library_intelligence_service, get_operational_repository
+from app.dependencies import get_migration_engine, get_operational_repository
 from app.observability.repository import OperationalRepository
 from app.rate_limit import limiter
-from app.services.library_intelligence import LibraryIntelligenceService
-from app.services.source_resolver import LibraryNotFoundError, SourceUnavailableError
+from app.services.migration_engine import MigrationEngine
 from app.validators.library import normalize_library_name
-from app.routes.response_formatters import is_debug_enabled
+from app.routes.response_formatters import is_debug_enabled, format_symbol_response
 
 
 router = APIRouter(tags=["symbol-intelligence"])
@@ -35,32 +34,9 @@ def _extract_symbols(body: dict) -> list[str]:
     return []
 
 
-def _safe_list(value: object) -> list[object]:
-    return value if isinstance(value, list) else []
-
-
-def _symbol_summary(payload: dict[str, object], step: str = "completed") -> dict[str, object]:
-    if isinstance(payload.get("symbols"), list):
-        symbols = payload.get("symbols") if isinstance(payload.get("symbols"), list) else []
-    elif isinstance(payload.get("symbol"), str):
-        symbols = [payload]
-    else:
-        symbols = []
-    evidence_found = 0
-    versions_found = 0
-    for symbol_entry in symbols:
-        if not isinstance(symbol_entry, dict):
-            continue
-        versions = symbol_entry.get("present_versions") if isinstance(symbol_entry.get("present_versions"), list) else []
-        versions_found += len(versions)
-        evidence = symbol_entry.get("evidence") if isinstance(symbol_entry.get("evidence"), list) else []
-        evidence_found += len(evidence)
-    return {"status": "ok", "step": step, "versions_found": versions_found, "evidence_found": evidence_found}
-
-
 async def _resolve_symbol_intelligence(
     request: Request,
-    service: LibraryIntelligenceService,
+    service: MigrationEngine,
     operational_repository: OperationalRepository,
     debug: bool,
 ) -> JSONResponse | dict:
@@ -92,13 +68,9 @@ async def _resolve_symbol_intelligence(
     request.state.libraries = [library]
 
     try:
-        logger.info("Resolving symbol intelligence")
-        response = service.resolve_symbol_intelligence(library, symbols, debug=debug)
-    except LibraryNotFoundError:
-        return JSONResponse(status_code=404, content={"status": "failed", "reason": "library_not_found"})
-    except SourceUnavailableError:
-        return JSONResponse(status_code=503, content={"status": "failed", "reason": "source_unavailable"})
-    except Exception:
+        logger.info("Resolving symbol intelligence via MigrationEngine")
+        response = service.resolve(library, symbols, debug=debug)
+    except Exception as exc:
         logger.exception("symbol-intelligence failed")
         if debug:
             return JSONResponse(
@@ -107,23 +79,16 @@ async def _resolve_symbol_intelligence(
             )
         return JSONResponse(status_code=500, content={"status": "failed", "error": "symbol-intelligence failed"})
 
-    request.state.cache_hit = service.last_cache_hit
+    request.state.cache_hit = False
 
-    if not service.last_cache_hit:
-        operational_repository.log_audit_event(
-            event="cache_refresh",
-            request_id=request.state.request_id,
-            library=library,
-        )
-
-    return response
+    return format_symbol_response(response, debug=debug)
 
 
 @router.post("/symbol-intelligence")
 @limiter.limit("100/minute")
 async def symbol_intelligence(
     request: Request,
-    service: LibraryIntelligenceService = Depends(get_library_intelligence_service),
+    service: MigrationEngine = Depends(get_migration_engine),
     operational_repository: OperationalRepository = Depends(get_operational_repository),
 ) -> dict:
     try:
@@ -145,13 +110,13 @@ async def symbol_intelligence(
 @limiter.limit("100/minute")
 async def debug_symbol_intelligence(
     request: Request,
-    service: LibraryIntelligenceService = Depends(get_library_intelligence_service),
+    service: MigrationEngine = Depends(get_migration_engine),
     operational_repository: OperationalRepository = Depends(get_operational_repository),
 ) -> JSONResponse:
     try:
         response = await _resolve_symbol_intelligence(request, service, operational_repository, debug=True)
         if isinstance(response, JSONResponse):
-            return JSONResponse(status_code=200, content={"status": "ok", "step": "error", "versions_found": 0, "evidence_found": 0})
-        return JSONResponse(status_code=200, content=_symbol_summary(response, step="completed"))
+            return response
+        return JSONResponse(status_code=200, content=response)
     except Exception as e:
-        return JSONResponse(status_code=200, content={"status": "ok", "step": "error", "versions_found": 0, "evidence_found": 0, "error": str(e)})
+        return JSONResponse(status_code=200, content={"status": "ok", "step": "error", "error": str(e)})

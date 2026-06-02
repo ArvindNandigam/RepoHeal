@@ -13,7 +13,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import get_settings
-from app.dependencies import get_cache_repository, get_operational_repository
+from app.dependencies import get_knowledge_repository, get_operational_repository
 from app.observability.repository import OperationalRepository
 from app.rate_limit import limiter
 from app.startup import initialize_runtime
@@ -190,7 +190,7 @@ def create_app() -> FastAPI:
     def startup_event() -> None:
         background_thread = Thread(
             target=initialize_runtime,
-            args=(get_operational_repository(), get_cache_repository(), settings),
+            args=(get_operational_repository(), get_knowledge_repository(), settings),
             daemon=True,
         )
         background_thread.start()

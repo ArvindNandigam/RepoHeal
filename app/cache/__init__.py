@@ -1,1 +1,0 @@
-"""Mongo-backed cache helpers."""
