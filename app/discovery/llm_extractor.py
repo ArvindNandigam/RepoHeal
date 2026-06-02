@@ -44,15 +44,15 @@ def extract_relationships(symbol: str, library: str, snippets: list[str], source
         logger.warning("GROQ_API_KEY not set. Cannot run LLM extraction.")
         return []
 
-    client = Groq(api_key=api_key)
-    
-    # Combine snippets safely
-    combined_snippets = "\n\n---\n\n".join(snippets[:10]) # Limit to 10 snippets to fit in context window comfortably
-    
-    context_str = json.dumps([{"title": c.get("title"), "url": c.get("url")} for c in source_context], indent=2)
-    user_prompt = f"Target symbol: {symbol}\nLibrary: {library}\n\nRanked Sources:\n{context_str}\n\nSnippets:\n{combined_snippets}"
-    
     try:
+        client = Groq(api_key=api_key)
+        
+        # Combine snippets safely
+        combined_snippets = "\n\n---\n\n".join(snippets[:10])
+        
+        context_str = json.dumps([{"title": c.get("title"), "url": c.get("url")} for c in source_context], indent=2)
+        user_prompt = f"Target symbol: {symbol}\nLibrary: {library}\n\nRanked Sources:\n{context_str}\n\nSnippets:\n{combined_snippets}"
+        
         completion = client.chat.completions.create(
             model=settings.groq_model,
             messages=[

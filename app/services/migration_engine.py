@@ -58,8 +58,7 @@ class MigrationEngine:
                 })
                 continue
                 
-            # Miss: we don't know the symbol
-            self.knowledge_repository.insert_symbol(symbol, library)
+            # Miss: we don't know the symbol — run discovery first, insert after
                 
             debug_trace = {
                 "flow": "discovery",
@@ -139,12 +138,15 @@ class MigrationEngine:
                         
                         new_relationships.append(rel)
                         
+            # Discovery completed without crashing — NOW insert the symbol as known
+            self.knowledge_repository.insert_symbol(symbol, library)
+            
             # Refresh known relationships after discovery
             final_relationships = self.knowledge_repository.lookup_relationships(symbol)
             
             results.append({
                 "symbol": symbol,
-                "known": bool(final_relationships), # it's known if we found relationships or if it existed before
+                "known": bool(final_relationships),
                 "relationships": final_relationships,
                 "_debug": debug_trace
             })
