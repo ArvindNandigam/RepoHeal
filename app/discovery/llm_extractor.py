@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from groq import Groq
 
 from app.config import get_settings
@@ -10,10 +9,15 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """
-You are a migration extraction AI. 
-Extract facts only. Do not infer. Do not recommend. Do not hallucinate. Return JSON only.
-You must find relationships where the old symbol has been removed, deprecated, or replaced by a new symbol.
-If there is no clear replacement or migration, return an empty relationships list.
+You are an evidence extraction engine.
+Your task is to identify migration relationships.
+Use ONLY the provided evidence.
+Do NOT infer.
+Do NOT guess.
+Do NOT hallucinate.
+Do NOT use prior knowledge.
+Return JSON only.
+If there is no clear replacement or migration in the evidence, return an empty relationships list.
 
 JSON format:
 {
@@ -27,10 +31,10 @@ JSON format:
   ]
 }
 
-Valid relations: "replaced_by", "renamed_to", "use_instead", "superseded_by".
+Valid relations: "replaced_by", "renamed_to", "moved_to", "deprecated_in", "removed_in", "superseded_by".
 """
 
-def extract_relationships(symbol: str, snippets: list[str]) -> list[dict]:
+def extract_relationships(symbol: str, library: str, snippets: list[str], source_context: list[dict]) -> list[dict]:
     if not snippets:
         return []
         
@@ -45,7 +49,8 @@ def extract_relationships(symbol: str, snippets: list[str]) -> list[dict]:
     # Combine snippets safely
     combined_snippets = "\n\n---\n\n".join(snippets[:10]) # Limit to 10 snippets to fit in context window comfortably
     
-    user_prompt = f"Target symbol: {symbol}\n\nSnippets:\n{combined_snippets}"
+    context_str = json.dumps([{"title": c.get("title"), "url": c.get("url")} for c in source_context], indent=2)
+    user_prompt = f"Target symbol: {symbol}\nLibrary: {library}\n\nRanked Sources:\n{context_str}\n\nSnippets:\n{combined_snippets}"
     
     try:
         completion = client.chat.completions.create(

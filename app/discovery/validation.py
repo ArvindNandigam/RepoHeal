@@ -5,8 +5,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 RELATIONSHIP_PHRASES = {
-    "removed", "deprecated", "replaced", "use instead",
-    "renamed", "migrated", "superseded",
+    "removed", "deprecated", "replaced", "replaced by", "use instead",
+    "renamed", "renamed to", "migrated", "migrated to", "superseded", "superseded by",
+    "moved to",
 }
 
 def validate_relationship(relationship: dict, source_text: str) -> bool:

@@ -5,8 +5,6 @@ import httpx
 from html.parser import HTMLParser
 import re
 
-from app.validators.sources import is_approved_source_url
-
 logger = logging.getLogger(__name__)
 
 class _TextExtractor(HTMLParser):

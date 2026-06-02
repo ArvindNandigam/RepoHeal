@@ -48,11 +48,22 @@ class InMemoryKnowledgeRepository:
             "to": to_sym,
             "confidence": confidence,
             "status": "candidate",
+            "supporting_sources": 1,
             "library": library,
             "created_at": now,
             "updated_at": now,
         }
         return new_id
+
+    def increment_supporting_sources(self, relationship_id: ObjectId) -> dict[str, Any] | None:
+        now = datetime.now(timezone.utc)
+        if relationship_id in self._relationships:
+            self._relationships[relationship_id]["supporting_sources"] = self._relationships[relationship_id].get("supporting_sources", 1) + 1
+            self._relationships[relationship_id]["updated_at"] = now
+            if self._relationships[relationship_id]["supporting_sources"] >= 2 and self._relationships[relationship_id]["status"] == "candidate":
+                self.promote_to_verified(relationship_id)
+            return self._relationships[relationship_id]
+        return None
 
     def promote_to_verified(self, relationship_id: ObjectId) -> None:
         if relationship_id in self._relationships:

@@ -80,6 +80,7 @@ class KnowledgeRepository:
                     "to": to_sym,
                     "confidence": confidence,
                     "status": "candidate",
+                    "supporting_sources": 1,
                     "library": library,
                     "created_at": now,
                 },
@@ -91,6 +92,22 @@ class KnowledgeRepository:
             return_document=True,
         )
         return result["_id"]
+
+    def increment_supporting_sources(self, relationship_id: ObjectId) -> dict[str, Any] | None:
+        now = datetime.now(timezone.utc)
+        result = self.relationships.find_one_and_update(
+            {"_id": relationship_id},
+            {
+                "$inc": {"supporting_sources": 1},
+                "$set": {"updated_at": now}
+            },
+            return_document=True,
+        )
+        if result and result.get("supporting_sources", 1) >= 2 and result.get("status") == "candidate":
+            self.promote_to_verified(relationship_id)
+            result["status"] = "verified"
+            result["updated_at"] = datetime.now(timezone.utc)
+        return dict(result) if result else None
 
     def promote_to_verified(self, relationship_id: ObjectId) -> None:
         self.relationships.update_one(

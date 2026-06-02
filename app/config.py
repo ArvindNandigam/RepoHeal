@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 
 
-SERVICE_VERSION = "3.0.0"
+SERVICE_VERSION = "4.0.0"
 MAX_SYMBOLS_PER_REQUEST = 50
 DEFAULT_ALLOWED_DOMAINS = (
     "pypi.org",
@@ -38,7 +38,8 @@ class Settings:
     # RepoHeal V3 Settings
     groq_api_key: str | None = None
     groq_model: str = "llama-3.3-70b-versatile"
-    max_search_results: int = 5
+    max_search_results: int = 20
+    serper_api_key: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -61,7 +62,8 @@ class Settings:
         
         groq_api_key = os.getenv("GROQ_API_KEY", "").strip() or None
         groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
-        max_search_results = int(os.getenv("MAX_SEARCH_RESULTS", "5"))
+        max_search_results = int(os.getenv("MAX_SEARCH_RESULTS", "20"))
+        serper_api_key = os.getenv("SERPER_API_KEY", "").strip() or None
 
         return cls(
             mongodb_uri=mongodb_uri,
@@ -75,6 +77,7 @@ class Settings:
             groq_api_key=groq_api_key,
             groq_model=groq_model,
             max_search_results=max_search_results,
+            serper_api_key=serper_api_key,
         )
 
 

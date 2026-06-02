@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from app.knowledge.repository import KnowledgeRepository
-from app.discovery.web_search import generate_search_queries, search
+from app.discovery.web_search import generate_search_queries, serper_search, rank_sources
 from app.discovery.document_extractor import fetch_page, extract_relevant_sections
 from app.discovery.llm_extractor import extract_relationships
 from app.discovery.validation import validate_relationship
@@ -48,7 +48,7 @@ class MigrationEngine:
             known_symbol = self.knowledge_repository.lookup_symbol(symbol)
             known_relationships = self.knowledge_repository.lookup_relationships(symbol)
             
-            if known_symbol and known_relationships:
+            if known_symbol:
                 # Cache HIT!
                 results.append({
                     "symbol": symbol,
@@ -58,13 +58,15 @@ class MigrationEngine:
                 })
                 continue
                 
-            # Miss: We know the symbol but no relationships, or we don't know the symbol
-            if not known_symbol:
-                self.knowledge_repository.insert_symbol(symbol, library)
+            # Miss: we don't know the symbol
+            self.knowledge_repository.insert_symbol(symbol, library)
                 
             debug_trace = {
                 "flow": "discovery",
+                "search_provider": "serper",
                 "queries": [],
+                "raw_results_count": 0,
+                "ranked_results": [],
                 "urls_fetched": [],
                 "snippets_extracted": [],
                 "relationships_extracted": [],
@@ -72,15 +74,19 @@ class MigrationEngine:
             } if debug else None
 
             # Step 2: Discovery Mode (Search)
-            queries = generate_search_queries(symbol)
+            queries = generate_search_queries(symbol, library)
             if debug: debug_trace["queries"] = queries
-            search_results = search(queries)
+            search_results = serper_search(queries)
+            if debug: debug_trace["raw_results_count"] = len(search_results)
+            
+            ranked_results = rank_sources(search_results)
+            if debug: debug_trace["ranked_results"] = [{"title": r.get("title"), "url": r.get("url"), "score": r.get("score")} for r in ranked_results]
             
             new_relationships = []
             
             # Step 3 & 4: Fetch pages and LLM extraction
-            for result in search_results:
-                url = result.get("href")
+            for result in ranked_results:
+                url = result.get("url")
                 if not url: continue
                 if debug: debug_trace["urls_fetched"].append(url)
                 
@@ -91,7 +97,7 @@ class MigrationEngine:
                 if not snippets: continue
                 if debug: debug_trace["snippets_extracted"].extend(snippets)
                 
-                extracted_rels = extract_relationships(symbol, snippets)
+                extracted_rels = extract_relationships(symbol, library, snippets, ranked_results)
                 if debug: debug_trace["relationships_extracted"].extend(extracted_rels)
                 
                 # Step 5: Validation & Insert
@@ -100,30 +106,36 @@ class MigrationEngine:
                     if debug: debug_trace["validation_results"].append({"relationship": rel, "valid": is_valid})
                     
                     if is_valid:
-                        # Insert / Upsert (if Rediscovered -> update timestamp but keep status unless we explicitly promote)
-                        # We use find_one_and_update in repo to insert as candidate.
-                        rel_id = self.knowledge_repository.insert_relationship(
-                            from_sym=rel.get("from"),
-                            relation=rel.get("relation"),
-                            to_sym=rel.get("to"),
-                            confidence=rel.get("confidence", 1.0),
-                            library=library
-                        )
-                        
-                        # Check if it was already known and we just rediscovered it -> Promote!
                         existing_rel = next((r for r in known_relationships if r["to"] == rel.get("to") and r["relation"] == rel.get("relation")), None)
-                        if existing_rel and existing_rel.get("status") == "candidate":
-                            self.knowledge_repository.promote_to_verified(rel_id)
-                            rel["status"] = "verified"
+                        if existing_rel:
+                            updated_rel = self.knowledge_repository.increment_supporting_sources(existing_rel["_id"])
+                            if updated_rel:
+                                rel["status"] = updated_rel.get("status", "candidate")
+                            
+                            self.knowledge_repository.insert_evidence(
+                                relationship_id=existing_rel["_id"],
+                                url=url,
+                                source_type="discovery",
+                                snippet=snippets[0] if snippets else ""
+                            )
                         else:
+                            rel_id = self.knowledge_repository.insert_relationship(
+                                from_sym=rel.get("from"),
+                                relation=rel.get("relation"),
+                                to_sym=rel.get("to"),
+                                confidence=rel.get("confidence", 1.0),
+                                library=library
+                            )
                             rel["status"] = "candidate"
                             
-                        self.knowledge_repository.insert_evidence(
-                            relationship_id=rel_id,
-                            url=url,
-                            source_type="discovery",
-                            snippet=snippets[0] if snippets else ""
-                        )
+                            self.knowledge_repository.insert_evidence(
+                                relationship_id=rel_id,
+                                url=url,
+                                source_type="discovery",
+                                snippet=snippets[0] if snippets else ""
+                            )
+                            
+                            known_relationships.append({"_id": rel_id, "to": rel.get("to"), "relation": rel.get("relation"), "status": "candidate"})
                         
                         new_relationships.append(rel)
                         
