@@ -36,7 +36,7 @@ JSON format:
 Valid relations: "replaced_by", "renamed_to", "moved_to", "deprecated_in", "removed_in", "superseded_by".
 """
 
-def _groq_extract(symbol: str, library: str, snippets: list[str], source_context: list[dict]) -> list[dict]:
+def extract_relationships_groq(symbol: str, library: str, snippets: list[str], source_context: list[dict]) -> list[dict]:
     settings = get_settings()
     api_key = settings.groq_api_key
     if not api_key:
@@ -74,15 +74,3 @@ def _groq_extract(symbol: str, library: str, snippets: list[str], source_context
     except Exception as e:
         logger.error(f"Groq extraction failed: {e}")
         return []
-
-def extract_relationships(symbol: str, library: str, snippets: list[str], source_context: list[dict]) -> list[dict]:
-    if not snippets:
-        return []
-        
-    # 1. Try regex first
-    regex_rels = extract_relationships_regex(symbol, library, snippets)
-    if regex_rels:
-        return regex_rels
-        
-    # 2. Fallback to Groq
-    return _groq_extract(symbol, library, snippets, source_context)

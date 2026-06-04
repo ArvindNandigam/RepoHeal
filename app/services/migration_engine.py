@@ -6,7 +6,8 @@ from typing import Any
 from app.knowledge.repository import KnowledgeRepository
 from app.discovery.web_search import generate_search_queries, serper_search, rank_sources
 from app.discovery.document_extractor import fetch_page, extract_relevant_sections
-from app.discovery.llm_extractor import extract_relationships
+from app.discovery.regex_extractor import extract_relationships_regex
+from app.discovery.llm_extractor import extract_relationships_groq
 from app.discovery.validation import validate_relationship
 from app.services.version_resolver import resolve_library_metadata
 
@@ -31,6 +32,27 @@ def _deduplicate_relationships(rels: list[dict]) -> list[dict]:
 class MigrationEngine:
     def __init__(self, knowledge_repository: KnowledgeRepository) -> None:
         self.knowledge_repository = knowledge_repository
+
+    def _store_relationship(self, rel: dict, url: str, snippets: list[str], known_relationships: list[dict], library: str, debug_trace: dict | None) -> None:
+        existing_rel = next((r for r in known_relationships if r["to"] == rel.get("to") and r["relation"] == rel.get("relation")), None)
+        if existing_rel:
+            updated_rel = self.knowledge_repository.increment_supporting_sources(existing_rel["_id"])
+            if updated_rel:
+                rel["status"] = updated_rel.get("status", "candidate")
+            self.knowledge_repository.insert_evidence(
+                relationship_id=existing_rel["_id"], url=url, source_type="discovery", snippet=snippets[0] if snippets else ""
+            )
+        else:
+            rel_id = self.knowledge_repository.insert_relationship(
+                from_sym=rel.get("from"), relation=rel.get("relation"), to_sym=rel.get("to"), confidence=rel.get("confidence", 1.0), library=library
+            )
+            rel["status"] = "candidate"
+            self.knowledge_repository.insert_evidence(
+                relationship_id=rel_id, url=url, source_type="discovery", snippet=snippets[0] if snippets else ""
+            )
+            if debug_trace:
+                debug_trace["storage_action"] = "candidate_created"
+            known_relationships.append({"_id": rel_id, "to": rel.get("to"), "relation": rel.get("relation"), "status": "candidate"})
 
     def resolve(self, library: str, symbols: list[str], debug: bool = False) -> dict[str, Any]:
         """
@@ -85,6 +107,9 @@ class MigrationEngine:
                 "urls_fetched": [],
                 "snippets_extracted": [],
                 "relationships_extracted": [],
+                "regex_used": False,
+                "groq_used": False,
+                "skip_reason": None,
                 "regex_relationships": [],
                 "groq_relationships": [],
                 "deduplicated_relationships": [],
@@ -102,9 +127,13 @@ class MigrationEngine:
             ranked_results = rank_sources(search_results)
             if debug: debug_trace["ranked_results"] = [{"title": r.get("title"), "url": r.get("url"), "score": r.get("score")} for r in ranked_results]
             
-            new_relationships = []
+            # Step 3 & 4: Fetch pages and extraction
             
-            # Step 3 & 4: Fetch pages and LLM extraction
+            # PHASE 1: Regex Extraction
+            # We process pages until we find a validated regex relationship.
+            found_valid_regex = False
+            page_data_cache = [] # Cache pages we fetch in case we need Groq fallback
+            
             for result in ranked_results:
                 url = result.get("url")
                 if not url: continue
@@ -117,63 +146,62 @@ class MigrationEngine:
                 if not snippets: continue
                 if debug: debug_trace["snippets_extracted"].extend(snippets)
                 
-                extracted_rels = extract_relationships(symbol, library, snippets, ranked_results)
-                if debug:
-                    debug_trace["relationships_extracted"].extend(extracted_rels)
-                    for r in extracted_rels:
-                        if r.get("extraction_method") == "regex":
-                            debug_trace["regex_relationships"].append(r)
-                        elif r.get("extraction_method") == "groq":
-                            debug_trace["groq_relationships"].append(r)
-                            
-                extracted_rels = _deduplicate_relationships(extracted_rels)
-                if debug:
-                    debug_trace["deduplicated_relationships"].extend(extracted_rels)
+                # Cache for groq just in case
+                page_data_cache.append({"url": url, "page_text": page_text, "snippets": snippets})
                 
-                # Step 5: Validation & Insert
-                for rel in extracted_rels:
-                    is_valid, rejection_reason = validate_relationship(rel, page_text)
-                    if debug: 
-                        debug_trace["validation_results"].append({"relationship": rel, "valid": is_valid})
-                        if not is_valid:
-                            debug_trace["rejected_relationships"].append({"relationship": rel, "reason": rejection_reason})
+                regex_rels = extract_relationships_regex(symbol, library, snippets)
+                if regex_rels:
+                    if debug:
+                        debug_trace["regex_used"] = True
+                        debug_trace["regex_relationships"].extend(regex_rels)
+                        debug_trace["relationships_extracted"].extend(regex_rels)
+                        
+                    deduped = _deduplicate_relationships(regex_rels)
+                    if debug: debug_trace["deduplicated_relationships"].extend(deduped)
                     
-                    if is_valid:
-                        existing_rel = next((r for r in known_relationships if r["to"] == rel.get("to") and r["relation"] == rel.get("relation")), None)
-                        if existing_rel:
-                            updated_rel = self.knowledge_repository.increment_supporting_sources(existing_rel["_id"])
-                            if updated_rel:
-                                rel["status"] = updated_rel.get("status", "candidate")
-                            
-                            self.knowledge_repository.insert_evidence(
-                                relationship_id=existing_rel["_id"],
-                                url=url,
-                                source_type="discovery",
-                                snippet=snippets[0] if snippets else ""
-                            )
-                        else:
-                            rel_id = self.knowledge_repository.insert_relationship(
-                                from_sym=rel.get("from"),
-                                relation=rel.get("relation"),
-                                to_sym=rel.get("to"),
-                                confidence=rel.get("confidence", 1.0),
-                                library=library
-                            )
-                            rel["status"] = "candidate"
-                            
-                            self.knowledge_repository.insert_evidence(
-                                relationship_id=rel_id,
-                                url=url,
-                                source_type="discovery",
-                                snippet=snippets[0] if snippets else ""
-                            )
-                            
-                            if debug: debug_trace["storage_action"] = "candidate_created"
-                            
-                            known_relationships.append({"_id": rel_id, "to": rel.get("to"), "relation": rel.get("relation"), "status": "candidate"})
+                    for rel in deduped:
+                        is_valid, rejection_reason = validate_relationship(rel, page_text)
+                        if debug: 
+                            debug_trace["validation_results"].append({"relationship": rel, "valid": is_valid})
+                            if not is_valid:
+                                debug_trace["rejected_relationships"].append({"relationship": rel, "reason": rejection_reason})
                         
-                        new_relationships.append(rel)
+                        if is_valid:
+                            self._store_relationship(rel, url, snippets, known_relationships, library, debug_trace)
+                            found_valid_regex = True
+                            
+                # If regex found valid relationships on this page, we STOP entirely.
+                if found_valid_regex:
+                    if debug: debug_trace["skip_reason"] = "regex_relationship_found"
+                    break
+                    
+            # PHASE 2: Groq Fallback
+            if not found_valid_regex:
+                if debug: debug_trace["groq_used"] = True
+                
+                all_snippets = [s for page in page_data_cache for s in page["snippets"]]
+                if all_snippets:
+                    groq_rels = extract_relationships_groq(symbol, library, all_snippets, ranked_results)
+                    if groq_rels:
+                        if debug:
+                            debug_trace["groq_relationships"].extend(groq_rels)
+                            debug_trace["relationships_extracted"].extend(groq_rels)
+                            
+                        deduped = _deduplicate_relationships(groq_rels)
+                        if debug: debug_trace["deduplicated_relationships"].extend(deduped)
                         
+                        fallback_page = page_data_cache[0] if page_data_cache else None
+                        if fallback_page:
+                            for rel in deduped:
+                                is_valid, rejection_reason = validate_relationship(rel, fallback_page["page_text"])
+                                if debug:
+                                    debug_trace["validation_results"].append({"relationship": rel, "valid": is_valid})
+                                    if not is_valid:
+                                        debug_trace["rejected_relationships"].append({"relationship": rel, "reason": rejection_reason})
+                                        
+                                if is_valid:
+                                    self._store_relationship(rel, fallback_page["url"], fallback_page["snippets"], known_relationships, library, debug_trace)
+
             # Discovery completed without crashing — NOW insert the symbol as known
             self.knowledge_repository.insert_symbol(symbol, library)
             
