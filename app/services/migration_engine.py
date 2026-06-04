@@ -12,6 +12,22 @@ from app.services.version_resolver import resolve_library_metadata
 
 logger = logging.getLogger(__name__)
 
+def _deduplicate_relationships(rels: list[dict]) -> list[dict]:
+    best: dict[tuple, dict] = {}
+    METHOD_RANK = {"regex": 2, "groq": 1}
+    for rel in rels:
+        key = (rel.get("from"), rel.get("relation"), rel.get("to"))
+        existing = best.get(key)
+        if existing is None:
+            best[key] = rel
+        else:
+            # Higher confidence wins; on tie, higher method rank wins
+            new_score = (rel.get("confidence", 0), METHOD_RANK.get(rel.get("extraction_method"), 0))
+            old_score = (existing.get("confidence", 0), METHOD_RANK.get(existing.get("extraction_method"), 0))
+            if new_score > old_score:
+                best[key] = rel
+    return list(best.values())
+
 class MigrationEngine:
     def __init__(self, knowledge_repository: KnowledgeRepository) -> None:
         self.knowledge_repository = knowledge_repository
@@ -71,7 +87,9 @@ class MigrationEngine:
                 "relationships_extracted": [],
                 "regex_relationships": [],
                 "groq_relationships": [],
+                "deduplicated_relationships": [],
                 "validation_results": [],
+                "rejected_relationships": [],
                 "storage_action": None
             } if debug else None
 
@@ -107,11 +125,18 @@ class MigrationEngine:
                             debug_trace["regex_relationships"].append(r)
                         elif r.get("extraction_method") == "groq":
                             debug_trace["groq_relationships"].append(r)
+                            
+                extracted_rels = _deduplicate_relationships(extracted_rels)
+                if debug:
+                    debug_trace["deduplicated_relationships"].extend(extracted_rels)
                 
                 # Step 5: Validation & Insert
                 for rel in extracted_rels:
-                    is_valid = validate_relationship(rel, page_text)
-                    if debug: debug_trace["validation_results"].append({"relationship": rel, "valid": is_valid})
+                    is_valid, rejection_reason = validate_relationship(rel, page_text)
+                    if debug: 
+                        debug_trace["validation_results"].append({"relationship": rel, "valid": is_valid})
+                        if not is_valid:
+                            debug_trace["rejected_relationships"].append({"relationship": rel, "reason": rejection_reason})
                     
                     if is_valid:
                         existing_rel = next((r for r in known_relationships if r["to"] == rel.get("to") and r["relation"] == rel.get("relation")), None)

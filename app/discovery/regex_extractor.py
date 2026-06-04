@@ -11,7 +11,7 @@ def normalize_symbol(raw: str) -> str:
     """
     s = raw.strip()
     # Remove all markdown formatting characters like backticks or asterisks
-    s = re.sub(r"[`*_'\"]", "", s)
+    s = re.sub(r"[`*'\"]", "", s)
     s = s.rstrip("();:,!?")
     return s.strip()
 
