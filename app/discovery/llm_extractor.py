@@ -6,6 +6,8 @@ from groq import Groq
 
 from app.config import get_settings
 
+from app.discovery.regex_extractor import extract_relationships_regex
+
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """
@@ -34,10 +36,7 @@ JSON format:
 Valid relations: "replaced_by", "renamed_to", "moved_to", "deprecated_in", "removed_in", "superseded_by".
 """
 
-def extract_relationships(symbol: str, library: str, snippets: list[str], source_context: list[dict]) -> list[dict]:
-    if not snippets:
-        return []
-        
+def _groq_extract(symbol: str, library: str, snippets: list[str], source_context: list[dict]) -> list[dict]:
     settings = get_settings()
     api_key = settings.groq_api_key
     if not api_key:
@@ -68,7 +67,22 @@ def extract_relationships(symbol: str, library: str, snippets: list[str], source
             return []
             
         parsed = json.loads(response_text)
-        return parsed.get("relationships", [])
+        rels = parsed.get("relationships", [])
+        for r in rels:
+            r["extraction_method"] = "groq"
+        return rels
     except Exception as e:
         logger.error(f"Groq extraction failed: {e}")
         return []
+
+def extract_relationships(symbol: str, library: str, snippets: list[str], source_context: list[dict]) -> list[dict]:
+    if not snippets:
+        return []
+        
+    # 1. Try regex first
+    regex_rels = extract_relationships_regex(symbol, library, snippets)
+    if regex_rels:
+        return regex_rels
+        
+    # 2. Fallback to Groq
+    return _groq_extract(symbol, library, snippets, source_context)

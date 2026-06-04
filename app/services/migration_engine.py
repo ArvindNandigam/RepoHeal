@@ -69,7 +69,10 @@ class MigrationEngine:
                 "urls_fetched": [],
                 "snippets_extracted": [],
                 "relationships_extracted": [],
-                "validation_results": []
+                "regex_relationships": [],
+                "groq_relationships": [],
+                "validation_results": [],
+                "storage_action": None
             } if debug else None
 
             # Step 2: Discovery Mode (Search)
@@ -97,7 +100,13 @@ class MigrationEngine:
                 if debug: debug_trace["snippets_extracted"].extend(snippets)
                 
                 extracted_rels = extract_relationships(symbol, library, snippets, ranked_results)
-                if debug: debug_trace["relationships_extracted"].extend(extracted_rels)
+                if debug:
+                    debug_trace["relationships_extracted"].extend(extracted_rels)
+                    for r in extracted_rels:
+                        if r.get("extraction_method") == "regex":
+                            debug_trace["regex_relationships"].append(r)
+                        elif r.get("extraction_method") == "groq":
+                            debug_trace["groq_relationships"].append(r)
                 
                 # Step 5: Validation & Insert
                 for rel in extracted_rels:
@@ -133,6 +142,8 @@ class MigrationEngine:
                                 source_type="discovery",
                                 snippet=snippets[0] if snippets else ""
                             )
+                            
+                            if debug: debug_trace["storage_action"] = "candidate_created"
                             
                             known_relationships.append({"_id": rel_id, "to": rel.get("to"), "relation": rel.get("relation"), "status": "candidate"})
                         

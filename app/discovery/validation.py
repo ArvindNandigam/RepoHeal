@@ -42,9 +42,10 @@ def validate_relationship(relationship: dict, source_text: str) -> bool:
         logger.warning(f"Validation failed: new symbol '{new_tail}' not found in source text")
         return False
         
-    # 4. Relationship phrase exists
-    if not any(phrase in text_lower for phrase in RELATIONSHIP_PHRASES):
-        logger.warning(f"Validation failed: no relationship phrase found in source text")
-        return False
+    # 4. Relationship phrase exists (bypass for regex-extracted migration tables)
+    if relationship.get("extraction_method") != "regex":
+        if not any(phrase in text_lower for phrase in RELATIONSHIP_PHRASES):
+            logger.warning(f"Validation failed: no relationship phrase found in source text")
+            return False
         
     return True
