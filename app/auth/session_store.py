@@ -1,83 +1,39 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from app.graph.connection import (
-    neo4j_connection
-)
-
+from app.db.database import get_mongo_db
 from app.config import settings
-
-from app.utils.logger import (
-    get_logger
-)
+from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 
 def _build_fernet() -> Fernet | None:
-
     encryption_key = settings.GITHUB_TOKEN_ENCRYPTION_KEY
-
     if not encryption_key:
         return None
-
     return Fernet(encryption_key.encode())
 
 
 class SessionStore:
 
-    def _encrypt_token(
-        self,
-        github_token: str
-    ) -> str:
-
+    def _encrypt_token(self, github_token: str) -> str:
         fernet = _build_fernet()
-
         if not fernet:
-            logger.warning(
-                "GitHub token encryption key is missing; storing raw token"
-            )
+            logger.warning("GitHub token encryption key is missing; storing raw token")
             return github_token
+        return fernet.encrypt(github_token.encode()).decode()
 
-        return fernet.encrypt(
-            github_token.encode()
-        ).decode()
-
-    def _decrypt_token(
-        self,
-        github_token: str
-    ) -> str:
-
+    def _decrypt_token(self, github_token: str) -> str:
         fernet = _build_fernet()
-
         if not fernet:
             return github_token
-
         try:
-            return fernet.decrypt(
-                github_token.encode()
-            ).decode()
+            return fernet.decrypt(github_token.encode()).decode()
         except InvalidToken:
-            logger.warning(
-                "Stored GitHub token was not encrypted; returning raw value"
-            )
+            logger.warning("Stored GitHub token was not encrypted; returning raw value")
             return github_token
-
-    def _is_expired(
-        self,
-        expires_at: str | None
-    ) -> bool:
-
-        if not expires_at:
-            return True
-
-        try:
-            return datetime.fromisoformat(
-                expires_at
-            ) <= datetime.utcnow()
-        except ValueError:
-            return True
 
     def create_session(
         self,
@@ -86,157 +42,62 @@ class SessionStore:
         github_login: str,
         github_token: str
     ):
+        expires_at = datetime.now(timezone.utc) + timedelta(days=1)
+        stored_github_token = self._encrypt_token(github_token)
 
-        expires_at = (
-            datetime.utcnow()
-            + timedelta(days=1)
-        ).isoformat()
-
-        stored_github_token = self._encrypt_token(
-            github_token
+        db = get_mongo_db()
+        db.sessions.update_one(
+            {"session_id": session_id},
+            {"$set": {
+                "session_id": session_id,
+                "github_id": github_id,
+                "github_login": github_login,
+                "github_token": stored_github_token,
+                "created_at": datetime.now(timezone.utc),
+                "expires_at": expires_at,
+            }},
+            upsert=True
         )
+        logger.info(f"Session created for {github_login}")
 
-        with neo4j_connection.get_session() as session:
+    def get_session(self, session_id: str):
+        db = get_mongo_db()
+        doc = db.sessions.find_one({"session_id": session_id})
 
-            session.run(
-                """
-                MERGE (s:Session {
-                    session_id: $session_id
-                })
+        if not doc:
+            return None
 
-                SET
-                    s.github_id = $github_id,
-                    s.github_login = $github_login,
-                    s.github_token = $github_token,
-                    s.created_at = $created_at,
-                    s.expires_at = $expires_at
-                """,
-                session_id=session_id,
-                github_id=github_id,
-                github_login=github_login,
-                github_token=stored_github_token,
-                created_at=datetime.utcnow().isoformat(),
-                expires_at=expires_at
-            )
+        # MongoDB TTL cleanup is eventual (~60s), so double-check expiry
+        expires_at = doc.get("expires_at")
+        if expires_at and expires_at <= datetime.now(timezone.utc):
+            self.delete_session(session_id)
+            return None
 
-        logger.info(
-            f"Session created for "
-            f"{github_login}"
-        )
+        return {
+            "session_id": doc["session_id"],
+            "github_id": doc.get("github_id"),
+            "github_login": doc.get("github_login"),
+            "github_token": self._decrypt_token(doc["github_token"]) if doc.get("github_token") else None,
+            "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else None,
+            "expires_at": doc.get("expires_at").isoformat() if doc.get("expires_at") else None,
+        }
 
-    def get_session(
-        self,
-        session_id: str
-    ):
+    def delete_session(self, session_id: str):
+        db = get_mongo_db()
+        db.sessions.delete_one({"session_id": session_id})
+        logger.info(f"Session deleted: {session_id}")
 
-        with neo4j_connection.get_session() as session:
-
-            result = session.run(
-                """
-                MATCH (s:Session {
-                    session_id: $session_id
-                })
-
-                RETURN s
-                """,
-                session_id=session_id
-            )
-
-            record = result.single()
-
-            if not record:
-                return None
-
-            session_data = dict(record["s"])
-
-            if "github_token" in session_data:
-                session_data["github_token"] = self._decrypt_token(
-                    session_data["github_token"]
-                )
-
-            if self._is_expired(
-                session_data.get("expires_at")
-            ):
-
-                self.delete_session(
-                    session_id
-                )
-
-                return None
-
-            return session_data
-
-    def delete_session(
-        self,
-        session_id: str
-    ):
-
-        with neo4j_connection.get_session() as session:
-
-            session.run(
-                """
-                MATCH (s:Session {
-                    session_id: $session_id
-                })
-
-                DETACH DELETE s
-                """,
-                session_id=session_id
-            )
-
-        logger.info(
-            f"Session deleted: "
-            f"{session_id}"
-        )
-
-    def delete_sessions_for_github_user(
-        self,
-        github_id: int
-    ):
-
-        with neo4j_connection.get_session() as session:
-
-            session.run(
-                """
-                MATCH (s:Session {
-                    github_id: $github_id
-                })
-
-                DETACH DELETE s
-                """,
-                github_id=github_id
-            )
-
-        logger.info(
-            f"Deleted prior sessions for GitHub user: {github_id}"
-        )
+    def delete_sessions_for_github_user(self, github_id: int):
+        db = get_mongo_db()
+        result = db.sessions.delete_many({"github_id": github_id})
+        logger.info(f"Deleted {result.deleted_count} prior sessions for GitHub user: {github_id}")
 
     def cleanup_expired_sessions(self):
-
-        with neo4j_connection.get_session() as session:
-
-            result = session.run(
-                """
-                MATCH (s:Session)
-                WHERE s.expires_at IS NOT NULL
-                  AND datetime(s.expires_at) < datetime()
-                WITH s
-                DETACH DELETE s
-                RETURN count(*) AS deleted_count
-                """
-            )
-
-            record = result.single()
-
-            deleted_count = (
-                record["deleted_count"]
-                if record
-                else 0
-            )
-
-        logger.info(
-            f"Expired session cleanup complete: {deleted_count} deleted"
-        )
+        # MongoDB TTL index handles this automatically, but we can force it
+        db = get_mongo_db()
+        now = datetime.now(timezone.utc)
+        result = db.sessions.delete_many({"expires_at": {"$lte": now}})
+        logger.info(f"Expired session cleanup complete: {result.deleted_count} deleted")
 
 
 session_store = SessionStore()

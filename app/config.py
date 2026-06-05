@@ -24,6 +24,8 @@ class Settings:
     NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
     NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
+    MONGODB_URI = os.getenv("MONGODB_URI")
+    MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "RepoHeal")
 
 settings = Settings()
 
