@@ -1,6 +1,7 @@
+from RepoHeal.app.routers import analysis
 from fastapi import APIRouter, Depends, Request
 from app.errors.exceptions import GraphError, RepositoryNotFoundError
-from app.models.schemas import GraphResponse, RepositoryStatus
+from app.models.schemas import GraphResponse, GraphBuildingResponse, RepositoryStatus
 from app.auth.jwt_manager import verify_session_token
 from app.auth.authorization import verify_repository_access
 from app.routers.dependencies import get_session_data, ensure_repoheal_installed, load_cached_analysis
@@ -33,10 +34,24 @@ async def get_graph_visualization(
     logger.info(f"Graph visualization requested for: {repo_id}")
 
     try:
-        analysis = load_cached_analysis(repo_owner, repo_name)
-        if not analysis["imports"]["files"]:
-            raise RepositoryNotFoundError(message="No cached analysis found. Run /analyze first.")
+        analysis = load_cached_analysis(
+            repo_owner,
+            repo_name
+        )
 
+        if not analysis:
+            return {
+                "repository": repo_id,
+                "status": "building",
+                "message": "Analysis in progress"
+            }
+
+        if not analysis.get("imports", {}).get("files"):
+            return {
+                "repository": repo_id,
+                "status": "building",
+                "message": "Analysis in progress"
+            }
         visualizer = GraphVisualizer(analysis)
         graph = visualizer.to_cytoscape_format(repo_id)
 

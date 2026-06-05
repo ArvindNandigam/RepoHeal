@@ -37,8 +37,14 @@ class RepositoryStatus(BaseModel):
 
 class GraphResponse(BaseModel):
     repository: str
-    elements: Dict[str, Any]
+    nodes: List[Dict[str, Any]]
+    edges: List[Dict[str, Any]]
     statistics: Dict[str, Any]
+
+class GraphBuildingResponse(BaseModel):
+    repository: str
+    status: str
+    message: str
 
 class WebhookResponse(BaseModel):
     received: bool
