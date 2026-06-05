@@ -1,4 +1,4 @@
-from RepoHeal.app.routers import analysis
+from app.routers import analysis
 from fastapi import APIRouter, Depends, Request
 from app.errors.exceptions import GraphError, RepositoryNotFoundError
 from app.models.schemas import GraphResponse, GraphBuildingResponse, RepositoryStatus
