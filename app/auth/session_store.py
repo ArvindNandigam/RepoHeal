@@ -69,10 +69,15 @@ class SessionStore:
 
         # MongoDB TTL cleanup is eventual (~60s), so double-check expiry
         expires_at = doc.get("expires_at")
-        if expires_at and expires_at <= datetime.now(timezone.utc):
-            self.delete_session(session_id)
-            return None
 
+        if expires_at:
+            # Handle legacy naive datetimes already stored in MongoDB
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+            if expires_at <= datetime.now(timezone.utc):
+                self.delete_session(session_id)
+                return None
         return {
             "session_id": doc["session_id"],
             "github_id": doc.get("github_id"),
@@ -96,7 +101,17 @@ class SessionStore:
         # MongoDB TTL index handles this automatically, but we can force it
         db = get_mongo_db()
         now = datetime.now(timezone.utc)
-        result = db.sessions.delete_many({"expires_at": {"$lte": now}})
+
+        # MongoDB sometimes stores datetimes without timezone info.
+        # Convert comparison value to naive UTC for maximum compatibility.
+        naive_now = now.replace(tzinfo=None)
+
+        result = db.sessions.delete_many({
+            "$or": [
+                {"expires_at": {"$lte": now}},
+                {"expires_at": {"$lte": naive_now}}
+            ]
+        })
         logger.info(f"Expired session cleanup complete: {result.deleted_count} deleted")
 
 
