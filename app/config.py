@@ -8,7 +8,7 @@ load_dotenv()
 class Settings:
     ENVIRONMENT = os.getenv(
         "ENVIRONMENT",
-        "prpoduction"
+        "production"
     )
 
     GITHUB_OAUTH_CLIENT_ID = os.getenv("GITHUB_OAUTH_CLIENT_ID")
