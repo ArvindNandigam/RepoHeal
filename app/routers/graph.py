@@ -5,8 +5,8 @@ from app.errors.exceptions import GraphError, RepositoryNotFoundError
 from app.models.schemas import GraphResponse, GraphBuildingResponse, RepositoryStatus
 from app.auth.jwt_manager import verify_session_token
 from app.auth.authorization import verify_repository_access
-from app.routers.dependencies import get_session_data, ensure_repoheal_installed, load_cached_analysis
-from app.visualization.graph_api import GraphVisualizer
+from app.routers.dependencies import get_session_data, ensure_repoheal_installed
+from app.visualization.neo4j_graph_api import Neo4jGraphVisualizer
 from app.graph.connection import neo4j_connection
 from app.utils.logger import get_logger
 from app.utils.rate_limit import limiter
@@ -35,31 +35,15 @@ async def get_graph_visualization(
     logger.info(f"Graph visualization requested for: {repo_id}")
 
     try:
-        analysis = load_cached_analysis(
-            repo_owner,
-            repo_name
-        )
-
-        if not analysis:
-            return {
-                "repository": repo_id,
-                "status": "building",
-                "message": "Analysis in progress"
-            }
-
-        if not analysis.get("imports", {}).get("files"):
-            return {
-                "repository": repo_id,
-                "status": "building",
-                "message": "Analysis in progress"
-            }
-        visualizer = GraphVisualizer(analysis)
-        graph = visualizer.to_cytoscape_format(repo_id)
+        graph = Neo4jGraphVisualizer.to_cytoscape_format(repo_id)
 
         return {
             "repository": repo_id,
             **graph,
-            "statistics": visualizer.get_statistics()
+            "statistics": {
+                "nodes": len(graph["nodes"]),
+                "edges": len(graph["edges"])
+            }
         }
     except RepositoryNotFoundError:
         raise
