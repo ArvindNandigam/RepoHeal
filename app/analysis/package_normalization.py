@@ -15,8 +15,8 @@ def normalize_package_name(name: str) -> str:
     if not name:
         return name
 
-    root = name.split(".")[0].strip()
-    return PACKAGE_ALIASES.get(root.lower(), root)
+    root = name.split(".")[0].strip().replace("_", "-")
+    return PACKAGE_ALIASES.get(root.lower(), root.lower())
 
 
 def split_namespace_parts(name: str):

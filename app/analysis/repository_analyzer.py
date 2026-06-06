@@ -2,10 +2,31 @@ from app.analysis.ast_scanner import scan_repository
 from app.analysis.dependency_detector import extract_requirements
 from app.analysis.package_normalization import normalize_package_name
 
+import concurrent.futures
+import requests
+
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+def _fetch_pypi_version(package: str):
+    try:
+        response = requests.get(f"https://pypi.org/pypi/{package}/json", timeout=3)
+        if response.status_code == 200:
+            return package, response.json()["info"]["version"]
+    except Exception as e:
+        pass
+    return package, None
+
+def get_latest_pypi_versions(packages):
+    results = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_pkg = {executor.submit(_fetch_pypi_version, pkg): pkg for pkg in packages}
+        for future in concurrent.futures.as_completed(future_to_pkg):
+            pkg, version = future.result()
+            if version:
+                results[pkg] = version
+    return results
 
 def analyze_repository(repo_path):
 
@@ -41,11 +62,16 @@ def analyze_repository(repo_path):
     missing_packages = sorted(all_imports - declared_packages)
     unused_packages = sorted(declared_packages - all_imports)
 
+    logger.info("Fetching latest PyPI versions for packages...")
+    packages_to_check = all_imports.union(declared_packages)
+    latest_versions = get_latest_pypi_versions(packages_to_check)
+
     dependency_graph = {}
     for package in sorted(all_imports):
         package_info = dependencies.get(package, {})
         dependency_graph[package] = {
             "version": package_info.get("version", "unknown"),
+            "latest_version": latest_versions.get(package, "unknown"),
             "type": (
                 "third-party"
                 if package in declared_packages

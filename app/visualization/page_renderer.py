@@ -79,6 +79,8 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
       margin: 0;
       font-size: 28px;
       line-height: 1.1;
+      overflow-wrap: break-word;
+      word-break: break-all;
     }
 
     .muted {
@@ -299,6 +301,7 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
         if (data.path) details.push(`Path: ${data.path}`);
         if (data.package_type) details.push(`Package type: ${data.package_type}`);
         if (data.version) details.push(`Version: ${data.version}`);
+        if (data.latest_version && data.latest_version !== "unknown") details.push(`Latest: ${data.latest_version}`);
         if (data.status) details.push(`Status: ${data.status}`);
         if (typeof data.imports === "number") details.push(`Imports: ${data.imports}`);
         if (typeof data.usage_count === "number") details.push(`Usage count: ${data.usage_count}`);
@@ -447,7 +450,9 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
                 "width": 34,
                 "height": 34,
                 "text-valign": "center",
-                "text-halign": "center"
+                "text-halign": "center",
+                "text-wrap": "ellipsis",
+                "text-max-width": 150
               }
             },
             {
@@ -459,7 +464,9 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
                 "shape": "ellipse",
                 "border-width": 2,
                 "border-color": "rgba(79, 209, 197, 0.85)",
-                "font-size": 12
+                "font-size": 12,
+                "text-wrap": "wrap",
+                "text-max-width": 100
               }
             },
             {
@@ -535,7 +542,9 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
                 "border-width": 1,
                 "border-color": "rgba(255,255,255,0.14)",
                 "text-valign": "top",
-                "text-halign": "center"
+                "text-halign": "center",
+                "text-wrap": "wrap",
+                "text-max-width": 300
               }
             },
             {

@@ -83,9 +83,8 @@ def extract_imports_from_python_source(source, module_index=None, import_aliases
 
         tree = ast.parse(source)
 
-        # build local import alias map for this source
         import_aliases = import_aliases or {}
-        for node in tree.body:
+        for node in ast.walk(tree):
 
             if isinstance(node, ast.Import):
 
@@ -353,7 +352,7 @@ def extract_python_semantics(source, module_name=None, module_index=None):
 
         import_aliases = {}
 
-        for node in tree.body:
+        for node in ast.walk(tree):
 
             if isinstance(node, ast.Import):
 
@@ -396,10 +395,17 @@ def extract_python_semantics(source, module_name=None, module_index=None):
                         resolved_root,
                         module_index
                     )
+                    
+                    if root_name != resolved_root:
+                        parts = call_name.split(".")
+                        parts[0] = resolved_root
+                        qualified_call_name = ".".join(parts)
+                    else:
+                        qualified_call_name = call_name
 
                     semantics["calls"].append(
                         {
-                            "name": call_name,
+                            "name": qualified_call_name,
                             "canonical_root": canonical_root,
                             "line": getattr(node, "lineno", None),
                             "function": ".".join(function_stack)
