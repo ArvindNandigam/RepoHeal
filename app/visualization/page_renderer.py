@@ -301,6 +301,7 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
         if (data.path) details.push(`Path: ${data.path}`);
         if (data.package_type) details.push(`Package type: ${data.package_type}`);
         if (data.version) details.push(`Version: ${data.version}`);
+        if (data.latest_version && data.latest_version !== "unknown") details.push(`Latest: ${data.latest_version}`);
         if (data.status) details.push(`Status: ${data.status}`);
         if (typeof data.imports === "number") details.push(`Imports: ${data.imports}`);
         if (typeof data.usage_count === "number") details.push(`Usage count: ${data.usage_count}`);

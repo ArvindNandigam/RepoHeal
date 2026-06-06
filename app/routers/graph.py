@@ -1,3 +1,4 @@
+from typing import Union
 from app.routers import analysis
 from fastapi import APIRouter, Depends, Request
 from app.errors.exceptions import GraphError, RepositoryNotFoundError
@@ -14,7 +15,7 @@ logger = get_logger(__name__)
 
 router = APIRouter(tags=["graph"])
 
-@router.get("/graph/{repo_owner}/{repo_name}", response_model=GraphResponse)
+@router.get("/graph/{repo_owner}/{repo_name}", response_model=Union[GraphResponse, GraphBuildingResponse])
 @limiter.limit("30/minute")
 async def get_graph_visualization(
     request: Request,
