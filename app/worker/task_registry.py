@@ -72,6 +72,12 @@ def run_analysis_in_background(job_id: str, repo_owner: str, repo_name: str):
     from app.storage.metadata_store import save_analysis_to_metadata
     from app.routers.dependencies import get_repo_cache_path
     from app.graph.graph_builder import Neo4jGraphBuilder
+    
+    from app.github.installations import get_repository_installation
+    from app.github.client import RepoHealGitHubClient
+    from app.intelligence.webtool_client import WebtoolClient
+    from app.intelligence.pipeline import MigrationPipeline
+    import asyncio
 
     repo_id = f"{repo_owner}/{repo_name}"
     repo_path = None
@@ -89,6 +95,29 @@ def run_analysis_in_background(job_id: str, repo_owner: str, repo_name: str):
 
         graph_builder = Neo4jGraphBuilder()
         graph_builder.build_graph(repo_id, analysis)
+
+        # Run Migration Pipeline
+        try:
+            installation = get_repository_installation(repo_owner, repo_name)
+            if installation and "id" in installation:
+                installation_id = installation["id"]
+                github_client = RepoHealGitHubClient(installation_id)
+                repo_obj = github_client.get_repo(repo_id)
+                
+                async def run_pipeline():
+                    webtool_client = WebtoolClient()
+                    pipeline = MigrationPipeline(webtool_client, github_client)
+                    try:
+                        report = await pipeline.run(analysis, repo_id, repo_obj)
+                        logger.info(f"Migration pipeline finished for {repo_id} with score {report.overall_health_score}")
+                    finally:
+                        await webtool_client.close()
+                        
+                asyncio.run(run_pipeline())
+            else:
+                logger.warning(f"No installation found for {repo_id}, skipping migration pipeline.")
+        except Exception as pipeline_err:
+            logger.error(f"Migration pipeline failed for {repo_id}: {pipeline_err}")
 
         update_job(job_id, JobStatus.COMPLETED, result={
             "repository": repo_id,

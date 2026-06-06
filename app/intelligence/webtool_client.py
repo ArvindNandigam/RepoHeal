@@ -92,12 +92,12 @@ class WebtoolClient:
         return await self._request_with_retry("GET", endpoint, params=params)
         
     async def queue_for_batch(self, library: str, symbol: str):
-        """Add a symbol to the batch queue for a library."""
+        """Add a symbol to the batch queue for a library. (Deprecated: use get_bulk_intelligence)"""
         async with self._batch_lock:
             self._batch_queue[library].append(symbol)
             
     async def process_batch(self) -> Dict[str, Any]:
-        """Send all batched symbols and clear the queue."""
+        """Send all batched symbols and clear the queue. (Deprecated: use get_bulk_intelligence)"""
         async with self._batch_lock:
             if not self._batch_queue:
                 return {}
@@ -113,5 +113,19 @@ class WebtoolClient:
         endpoint = "/api/v1/intelligence/batch/symbols"
         return await self._request_with_retry("POST", endpoint, json=payload)
         
+    async def get_symbol_intelligence(self, library: str, symbols: List[str]) -> Dict[str, Any]:
+        """Fetch intelligence for specific symbols in a library."""
+        endpoint = "/symbol-intelligence"
+        payload = {"library": library, "symbols": symbols}
+        return await self._request_with_retry("POST", endpoint, json=payload)
+
+    async def get_bulk_intelligence(self, libraries: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Fetch intelligence for multiple libraries and symbols.
+        Expected format for libraries: [{"library": "flask", "symbols": ["Flask.before_request"]}]
+        """
+        endpoint = "/bulk-library-intelligence"
+        payload = {"libraries": libraries}
+        return await self._request_with_retry("POST", endpoint, json=payload)
+
     async def close(self):
         await self.client.aclose()

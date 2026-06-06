@@ -188,6 +188,37 @@ class RepoHealGitHubClient:
                 f"Created file: {file_path}"
             )
 
+    def batch_upsert_files(self, repo, branch_name, files_to_commit: dict, commit_message: str):
+        """
+        Commit multiple files at once using the Git Tree API.
+        files_to_commit: dict mapping file_path -> file content string
+        """
+        from github import InputGitTreeElement
+        try:
+            branch = repo.get_branch(branch_name)
+            base_tree = repo.get_git_tree(branch.commit.sha, recursive=False)
+            
+            tree_elements = []
+            for path, content in files_to_commit.items():
+                tree_elements.append(
+                    InputGitTreeElement(path=path, mode='100644', type='blob', content=content)
+                )
+                
+            new_tree = repo.create_git_tree(tree_elements, base_tree)
+            parent_commit = repo.get_git_commit(branch.commit.sha)
+            new_commit = repo.create_git_commit(commit_message, new_tree, [parent_commit])
+            
+            ref = repo.get_git_ref(f"heads/{branch_name}")
+            ref.edit(new_commit.sha)
+            
+            logger.info(f"Batched {len(files_to_commit)} files to {branch_name} via Tree API")
+        except GithubException as e:
+            logger.error(f"GitHub API error during batch commit to {branch_name}: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error during batch commit to {branch_name}: {e}")
+            raise
+
     def bootstrap_metadata_branch(self, repo):
 
         repo_full_name = repo.full_name

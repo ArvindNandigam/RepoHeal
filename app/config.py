@@ -27,6 +27,12 @@ class Settings:
     MONGODB_URI = os.getenv("MONGODB_URI")
     MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "RepoHeal")
 
+    RISK_WEIGHT_AFFECTED_FILES = float(os.getenv("RISK_WEIGHT_AFFECTED_FILES", "0.30"))
+    RISK_WEIGHT_BREAKING_SEVERITY = float(os.getenv("RISK_WEIGHT_BREAKING_SEVERITY", "0.25"))
+    RISK_WEIGHT_CONFIDENCE = float(os.getenv("RISK_WEIGHT_CONFIDENCE", "0.20"))
+    RISK_WEIGHT_VERSION_DISTANCE = float(os.getenv("RISK_WEIGHT_VERSION_DISTANCE", "0.15"))
+    RISK_WEIGHT_REPO_SIZE = float(os.getenv("RISK_WEIGHT_REPO_SIZE", "0.10"))
+
 settings = Settings()
 
 
