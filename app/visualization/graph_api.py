@@ -306,7 +306,6 @@ class GraphVisualizer:
                     {
                         "package_type": package_type,
                         "version": details.get("version", "unknown"),
-                        "latest_version": details.get("latest_version", "unknown"),
                         "status": details.get("status", "unknown"),
                         "color": package_colors.get(package_type, "#999999"),
                         "view_level": self._node_view_level("package")
@@ -324,7 +323,6 @@ class GraphVisualizer:
                         "kind": "Package",
                         "package_type": package_type,
                         "version": details.get("version", "unknown"),
-                        "latest_version": details.get("latest_version", "unknown"),
                         "status": details.get("status", "unknown"),
                         "color": package_colors.get(package_type, "#999999"),
                         "repo_id": repo_id,
