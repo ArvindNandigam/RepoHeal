@@ -23,6 +23,7 @@ def ensure_repoheal_installed(repo_owner: str, repo_name: str):
 
 def load_cached_analysis(repo_owner: str, repo_name: str):
     cache_store = MetadataStore(str(get_repo_cache_path(repo_owner, repo_name)))
+
     full_analysis = cache_store.load_full_analysis_snapshot() or {}
     if full_analysis:
         return full_analysis
@@ -30,12 +31,14 @@ def load_cached_analysis(repo_owner: str, repo_name: str):
     imports = cache_store.load_imports() or {"files": {}, "summary": {}}
     dependencies = cache_store.load_packages() or {"declared": {}, "count": 0}
     dependency_graph = cache_store.load_dependency_graph() or {}
+    semantic_graph = cache_store.load_semantic_graph() or {"files": {}}
     summary = cache_store.load_analysis_snapshot() or {}
 
     return {
         "imports": imports,
         "dependencies": dependencies,
         "dependency_graph": dependency_graph,
+        "semantic_graph": semantic_graph,
         "issues": summary.get("issues", {})
     }
 
