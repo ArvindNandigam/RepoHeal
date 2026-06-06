@@ -43,8 +43,9 @@ def analyze_repository(repo_path):
 
     dependency_graph = {}
     for package in sorted(all_imports):
+        package_info = dependencies.get(package, {})
         dependency_graph[package] = {
-            "version": dependencies.get(package, "unknown"),
+            "version": package_info.get("version", "unknown"),
             "type": (
                 "third-party"
                 if package in declared_packages
@@ -56,6 +57,9 @@ def analyze_repository(repo_path):
                 else "missing"
             )
         }
+
+    from app.analysis.fingerprint import generate_fingerprints
+    fingerprints = generate_fingerprints(semantic_graph, dependencies)
 
     analysis = {
         "imports": {
@@ -74,6 +78,7 @@ def analyze_repository(repo_path):
             "count": len(dependencies)
         },
         "dependency_graph": dependency_graph,
+        "fingerprints": fingerprints,
         "issues": {
             "missing_dependencies": missing_packages,
             "unused_dependencies": unused_packages,
