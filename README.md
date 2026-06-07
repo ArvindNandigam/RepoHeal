@@ -31,8 +31,11 @@ Every endpoint except `GET /health` requires:
 Authorization: Bearer <INTERNAL_API_KEY>
 ```
 
-The service rate limits `POST /library-intelligence` and `POST /bulk-library-intelligence` to 100 requests per minute per API key.
+The service rate limits intelligence endpoints to 100 requests per minute per API key.
 Bulk requests are capped at 25 libraries per request.
+
+RepoHeal should use `POST /bulk-library-intelligence` and configure the same
+`INTERNAL_API_KEY` value in both Render services.
 
 ## Render Deployment
 

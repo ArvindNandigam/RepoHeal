@@ -55,11 +55,12 @@ def format_bulk_response(result_items: list[dict[str, Any]]) -> dict[str, Any]:
     formatted_results: list[dict[str, Any]] = []
     for item in result_items:
         if item.get("status") == "success" and isinstance(item.get("result"), dict):
+            symbol_response = format_symbol_response(item["result"])
             formatted_results.append(
                 {
                     "library": item["library"],
-                    "latest_version": item["result"].get("latest_version"),
-                    "results": item["result"].get("results", [])
+                    "latest_version": symbol_response.get("latest_version"),
+                    "results": symbol_response.get("results", [])
                 }
             )
             continue

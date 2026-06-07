@@ -184,6 +184,7 @@ def create_app() -> FastAPI:
         response = _failure_response("rate_limit_exceeded", 429)
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Service-Version"] = settings.service_version
+        response.headers["Retry-After"] = "60"
         return response
 
     @app.on_event("startup")
