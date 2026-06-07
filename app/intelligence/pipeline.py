@@ -1,7 +1,7 @@
 import uuid
 from typing import Dict, Any
 
-from app.intelligence.webtool_client import WebtoolClient
+from app.intelligence.providers import IntelligenceProvider
 from app.intelligence.correlator import MigrationCorrelator
 from app.analysis.impact_analyzer import ImpactAnalyzer
 from app.analysis.risk_classifier import RiskClassifier
@@ -17,8 +17,8 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 class MigrationPipeline:
-    def __init__(self, webtool_client: WebtoolClient, github_client: RepoHealGitHubClient):
-        self.correlator = MigrationCorrelator(webtool_client)
+    def __init__(self, intelligence_provider: IntelligenceProvider, github_client: RepoHealGitHubClient):
+        self.correlator = MigrationCorrelator(intelligence_provider)
         self.impact_analyzer = ImpactAnalyzer()
         self.risk_classifier = RiskClassifier()
         self.report_generator = HealthReportGenerator()

@@ -7,6 +7,9 @@ class RepositoryConfig(BaseModel):
     repo: str
     private: bool
     analyze_url: str
+    reanalyze_url: str
+    health_refresh_url: str
+    status_url: str
     visualize_url: str
     workspace_url: str
 
@@ -36,6 +39,9 @@ class RepositoryStatus(BaseModel):
     message: str = "Analysis has not started"
     files: Optional[int] = None
     packages: Optional[int] = None
+    last_analysis: Optional[str] = None
+    last_health_refresh: Optional[str] = None
+    last_commit_analyzed: Optional[str] = None
 
 class GraphResponse(BaseModel):
     repository: str

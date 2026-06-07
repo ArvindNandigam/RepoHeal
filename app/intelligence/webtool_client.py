@@ -1,8 +1,10 @@
 import asyncio
+import json
 import os
 import httpx
 from typing import Dict, List, Any
 from collections import defaultdict
+from app.cache.cache_manager import CacheManager
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -11,6 +13,14 @@ class CircuitBreakerOpenException(Exception):
     pass
 
 class WebtoolClient:
+    _failure_count = 0
+    _failure_threshold = 5
+    _circuit_open = False
+    _last_failure_time = 0.0
+    _reset_timeout = 300
+    _inflight: Dict[str, asyncio.Task] = {}
+    _inflight_lock = asyncio.Lock()
+
     def __init__(self, base_url: str = None, api_key: str = None):
         self.base_url = base_url or os.getenv("WEBTOOL_API_URL", "https://restrictedwebtool.onrender.com")
         self.api_key = api_key or os.getenv("INTERNAL_API_KEY", "vT5X3du/efIgYBGtXSC1B++jlF/7vszfSl6EtcE/wzLIQgjLZ7qyvtamNE7ZhqxI")
@@ -29,41 +39,81 @@ class WebtoolClient:
             timeout=timeout,
         )
         
-        # Circuit Breaker state
-        self.failure_count = 0
-        self.failure_threshold = 5
-        self.circuit_open = False
-        self.last_failure_time = 0
-        self.reset_timeout = 60 # seconds
-        
         # Batching state
         self._batch_queue = defaultdict(list)
         self._batch_lock = asyncio.Lock()
 
     async def _check_circuit(self):
-        if self.circuit_open:
-            if asyncio.get_event_loop().time() - self.last_failure_time > self.reset_timeout:
+        if self.__class__._circuit_open:
+            if asyncio.get_event_loop().time() - self.__class__._last_failure_time > self.__class__._reset_timeout:
                 logger.info("Circuit breaker half-open, trying request")
-                self.circuit_open = False
+                self.__class__._circuit_open = False
             else:
                 raise CircuitBreakerOpenException("Circuit breaker is OPEN")
 
     def _record_success(self):
-        self.failure_count = 0
-        self.circuit_open = False
+        self.__class__._failure_count = 0
+        self.__class__._circuit_open = False
 
     def _record_failure(self):
-        self.failure_count += 1
-        if self.failure_count >= self.failure_threshold:
+        self.__class__._failure_count += 1
+        if self.__class__._failure_count >= self.__class__._failure_threshold:
             logger.error("Circuit breaker OPENED")
-            self.circuit_open = True
-            self.last_failure_time = asyncio.get_event_loop().time()
+            self.__class__._circuit_open = True
+            self.__class__._last_failure_time = asyncio.get_event_loop().time()
+
+    def _cache_key(self, method: str, endpoint: str, kwargs: Dict[str, Any]) -> str:
+        payload = json.dumps(
+            {
+                "method": method.upper(),
+                "endpoint": endpoint,
+                "params": kwargs.get("params"),
+                "json": kwargs.get("json"),
+            },
+            sort_keys=True,
+            default=str
+        )
+        return f"webtool:{payload}"
+
+    async def _coalesce_request(self, key: str, request_factory):
+        async with self.__class__._inflight_lock:
+            existing = self.__class__._inflight.get(key)
+            if existing:
+                logger.info(f"Coalescing duplicate Restricted Webtool request: {key}")
+                task = existing
+                created = False
+            else:
+                task = asyncio.create_task(request_factory())
+                self.__class__._inflight[key] = task
+                created = True
+
+        if not created:
+            return await task
+
+        try:
+            return await task
+        finally:
+            async with self.__class__._inflight_lock:
+                if self.__class__._inflight.get(key) is task:
+                    self.__class__._inflight.pop(key, None)
 
     async def _request_with_retry(self, method: str, endpoint: str, **kwargs):
-        max_retries = 3
-        base_delay = 1.0
-        
-        for attempt in range(max_retries):
+        cache_key = self._cache_key(method, endpoint, kwargs)
+        cached = CacheManager.get(cache_key)
+        if cached is not None:
+            return cached
+
+        async def outbound():
+            result = await self._request_uncached(method, endpoint, **kwargs)
+            CacheManager.set(cache_key, result, ttl_seconds=86400)
+            return result
+
+        return await self._coalesce_request(cache_key, outbound)
+
+    async def _request_uncached(self, method: str, endpoint: str, **kwargs):
+        delays = [2, 4, 8, 16]
+
+        for attempt in range(len(delays) + 1):
             await self._check_circuit()
             
             try:
@@ -76,13 +126,13 @@ class WebtoolClient:
                 if (
                     isinstance(e, httpx.HTTPStatusError)
                     and e.response.status_code == 429
-                    and attempt < max_retries - 1
+                    and attempt < len(delays)
                 ):
                     retry_after = e.response.headers.get("Retry-After")
                     try:
-                        delay = max(float(retry_after), base_delay)
+                        delay = max(float(retry_after), delays[attempt])
                     except (TypeError, ValueError):
-                        delay = base_delay * (2 ** attempt)
+                        delay = delays[attempt]
                     logger.warning(
                         f"Rate limited on {endpoint}; retrying in {delay}s"
                     )
@@ -96,11 +146,11 @@ class WebtoolClient:
                     logger.error(f"Client error on {endpoint}: {e}")
                     raise
                     
-                if attempt == max_retries - 1:
+                if attempt == len(delays):
                     logger.error(f"Max retries reached for {endpoint}: {e}")
                     raise
                     
-                delay = base_delay * (2 ** attempt)
+                delay = delays[attempt]
                 logger.warning(f"Request failed, retrying in {delay}s: {e}")
                 await asyncio.sleep(delay)
                 

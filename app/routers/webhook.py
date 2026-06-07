@@ -1,14 +1,23 @@
 from datetime import datetime
+import shutil
 from fastapi import APIRouter, BackgroundTasks, Request
 from app.errors.exceptions import AuthenticationError, ExternalServiceError
 from app.github.webhooks import verify_github_signature
 from app.github.client import RepoHealGitHubClient
+from app.github.metadata_branch import MetadataBranchManager
 from app.github.installed_repositories import (
     upsert_installed_repositories,
-    remove_installed_repositories
+    remove_installed_repositories,
+    list_installed_repositories_for_installation
 )
+from app.graph.graph_builder import Neo4jGraphBuilder
+from app.routers.dependencies import get_repo_cache_path
 from app.utils.logger import get_logger
-from app.worker.task_registry import create_job, run_analysis_in_background
+from app.worker.task_registry import (
+    cancel_repository_jobs,
+    create_job,
+    run_analysis_in_background,
+)
 
 logger = get_logger(__name__)
 
@@ -100,6 +109,11 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
         installation = payload.get("installation") or {}
         installation_id = installation.get("id")
         if installation_id:
+            repositories = _repositories_for_uninstall(
+                installation_id,
+                payload.get("repositories") or []
+            )
+            cleanup_uninstalled_repositories(installation_id, repositories)
             remove_installed_repositories(installation_id)
 
         return {
@@ -157,3 +171,64 @@ def queue_repository_analyses(
         logger.info(f"Queued analysis for {full_name}")
 
     return queued
+
+
+def _repositories_for_uninstall(
+    installation_id: int,
+    payload_repositories: list[dict]
+) -> list[dict]:
+    stored_repositories = list_installed_repositories_for_installation(
+        installation_id
+    )
+    if stored_repositories:
+        return stored_repositories
+    return payload_repositories
+
+
+def cleanup_uninstalled_repositories(
+    installation_id: int,
+    repositories: list[dict]
+) -> None:
+    github_client = None
+    try:
+        github_client = RepoHealGitHubClient(installation_id)
+    except Exception as exc:
+        logger.warning(
+            f"Could not initialize GitHub client for uninstall metadata update "
+            f"{installation_id}: {exc}"
+        )
+
+    for repository in repositories:
+        full_name = repository.get("full_name")
+        if not full_name or "/" not in full_name:
+            continue
+
+        repo_owner, repo_name = full_name.split("/", 1)
+        repo_id = f"{repo_owner}/{repo_name}"
+
+        try:
+            Neo4jGraphBuilder().clear_repository_graph(repo_id)
+        except Exception as exc:
+            logger.error(f"Neo4j uninstall cleanup failed for {repo_id}: {exc}")
+
+        try:
+            shutil.rmtree(get_repo_cache_path(repo_owner, repo_name), ignore_errors=True)
+        except Exception as exc:
+            logger.error(f"Cache uninstall cleanup failed for {repo_id}: {exc}")
+
+        try:
+            cancel_repository_jobs(repo_owner, repo_name)
+        except Exception as exc:
+            logger.error(f"Job uninstall cleanup failed for {repo_id}: {exc}")
+
+        if github_client:
+            try:
+                repo = github_client.get_repo(repo_id)
+                MetadataBranchManager(github_client).mark_uninstalled(
+                    repo,
+                    installation_id
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"Metadata branch uninstall marker skipped for {repo_id}: {exc}"
+                )

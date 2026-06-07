@@ -243,19 +243,28 @@ class RepoHealGitHubClient:
             f"{workspace_url}\n"
         )
 
-        metadata_json = json.dumps(
-            {
-                "schema_version": 1,
-                "repository": repo_full_name,
-                "branch": REPOHEAL_METADATA_BRANCH,
-                "workspace_url": workspace_url,
-                "created_at": datetime.now(
-                    timezone.utc
-                ).isoformat(),
-                "artifacts": []
-            },
-            indent=2
-        ) + "\n"
+        metadata = self._load_metadata_manifest(repo)
+        created_at = metadata.get(
+            "created_at",
+            datetime.now(timezone.utc).isoformat()
+        )
+        metadata.update({
+            "schema_version": max(metadata.get("schema_version", 1), 2),
+            "repository": repo_full_name,
+            "branch": REPOHEAL_METADATA_BRANCH,
+            "workspace_url": workspace_url,
+            "created_at": created_at,
+            "status": "active",
+        })
+        metadata.setdefault("artifacts", [])
+        metadata.setdefault("last_analysis", metadata.get("latest_analysis_at"))
+        metadata.setdefault("last_health_refresh", None)
+        metadata.setdefault("last_commit_analyzed", None)
+        metadata.setdefault("latest_analysis", None)
+        metadata.setdefault("latest_report", None)
+        metadata.setdefault("latest_migration", None)
+        metadata.pop("uninstalled_at", None)
+        metadata_json = json.dumps(metadata, indent=2, default=str) + "\n"
 
         self.upsert_file(
             repo,
@@ -286,6 +295,16 @@ class RepoHealGitHubClient:
                 "RepoHeal metadata directory\n",
                 f"Initialize {placeholder_path}"
             )
+
+    def _load_metadata_manifest(self, repo):
+        try:
+            contents = repo.get_contents(
+                "repoheal.meta/metadata.json",
+                ref=REPOHEAL_METADATA_BRANCH
+            )
+            return json.loads(contents.decoded_content.decode("utf-8"))
+        except Exception:
+            return {}
 
     def bootstrap_installation_metadata(self, repositories=None):
 

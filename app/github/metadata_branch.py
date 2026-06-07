@@ -33,22 +33,32 @@ class MetadataBranchManager:
             f"data_{self._safe_name(repo_id)}_{snapshot_id}.json"
         )
         manifest = self._load_manifest(repo)
+        latest_analysis_path = f"{self.base_path}/snapshots/latest_analysis.json"
+        latest_graph_path = f"{self.base_path}/snapshots/latest_graph.json"
+        latest_packages_path = f"{self.base_path}/snapshots/latest_packages.json"
+        latest_imports_path = f"{self.base_path}/snapshots/latest_imports.json"
+        latest_risk_report_path = f"{self.base_path}/reports/dependency_risk_report.json"
         manifest.update({
             "schema_version": max(manifest.get("schema_version", 1), 2),
             "repository": repo_id,
             "branch": self.branch_name,
+            "status": "active",
+            "last_analysis": analyzed_at,
             "latest_analysis_at": analyzed_at,
+            "last_commit_analyzed": self._get_default_commit_sha(repo),
+            "latest_analysis": latest_analysis_path,
             "latest_files": {
-                "analysis": f"{self.base_path}/snapshots/latest_analysis.json",
-                "graph": f"{self.base_path}/snapshots/latest_graph.json",
+                "analysis": latest_analysis_path,
+                "graph": latest_graph_path,
                 "graph_snapshot": graph_snapshot_path,
-                "packages": f"{self.base_path}/snapshots/latest_packages.json",
-                "imports": f"{self.base_path}/snapshots/latest_imports.json",
-                "dependency_risk_report": (
-                    f"{self.base_path}/reports/dependency_risk_report.json"
-                )
+                "packages": latest_packages_path,
+                "imports": latest_imports_path,
+                "dependency_risk_report": latest_risk_report_path
             }
         })
+        manifest.setdefault("last_health_refresh", None)
+        manifest.setdefault("latest_report", None)
+        manifest.setdefault("latest_migration", None)
 
         graph_payload = {
             "repository": repo_id,
@@ -57,21 +67,21 @@ class MetadataBranchManager:
         }
         files_to_commit = {
             f"{self.base_path}/metadata.json": self._json(manifest),
-            f"{self.base_path}/snapshots/latest_analysis.json": self._json({
+            latest_analysis_path: self._json({
                 "repository": repo_id,
                 "analyzed_at": analyzed_at,
                 "analysis": analysis
             }),
-            f"{self.base_path}/snapshots/latest_graph.json": self._json(graph_payload),
+            latest_graph_path: self._json(graph_payload),
             graph_snapshot_path: self._json(graph_payload),
-            f"{self.base_path}/snapshots/latest_packages.json": self._json({
+            latest_packages_path: self._json({
                 **analysis.get("dependencies", {}),
                 "packages": analysis.get("dependency_graph", {})
             }),
-            f"{self.base_path}/snapshots/latest_imports.json": self._json(
+            latest_imports_path: self._json(
                 analysis.get("imports", {})
             ),
-            f"{self.base_path}/reports/dependency_risk_report.json": self._json({
+            latest_risk_report_path: self._json({
                 "repository": repo_id,
                 "analyzed_at": analyzed_at,
                 "issues": analysis.get("issues", {}),
@@ -132,7 +142,8 @@ class MetadataBranchManager:
         
         self.client.ensure_branch(repo, self.branch_name)
         
-        date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+        refreshed_at = datetime.now(timezone.utc)
+        date_str = refreshed_at.strftime("%Y%m%d")
         
         doc_path = f"{self.base_path}/migrations/{document.filename}"
         report_path = f"{self.base_path}/reports/health_report_{date_str}_{snapshot_id}.json"
@@ -144,7 +155,7 @@ class MetadataBranchManager:
             raise ValueError(
                 f"Migration document already exists and is immutable: {doc_path}"
             )
-        
+
         generator = HealthReportGenerator()
         manifest = self._load_manifest(repo)
         self._add_artifact_to_manifest(
@@ -156,6 +167,13 @@ class MetadataBranchManager:
             report_path,
             snapshot_path
         )
+        manifest.update({
+            "status": "active",
+            "last_health_refresh": refreshed_at.isoformat(),
+            "latest_report": report_path,
+            "latest_migration": doc_path,
+            "latest_analysis": manifest.get("latest_analysis", snapshot_path),
+        })
         
         files_to_commit = {
             manifest_path: self._json(manifest),
@@ -180,6 +198,39 @@ class MetadataBranchManager:
             # Fallback to individual upserts if tree API fails
             for path, content in files_to_commit.items():
                 self.client.upsert_file(repo, self.branch_name, path, content, f"Add {path}")
+
+    def mark_uninstalled(
+        self,
+        repo,
+        installation_id: int,
+        uninstalled_at: str | None = None
+    ) -> None:
+        """Preserve metadata artifacts and mark the repository inactive."""
+        manifest_path = f"{self.base_path}/metadata.json"
+        manifest = self._load_manifest(repo)
+        manifest.update({
+            "schema_version": max(manifest.get("schema_version", 1), 2),
+            "repository": getattr(repo, "full_name", manifest.get("repository")),
+            "branch": self.branch_name,
+            "status": "uninstalled",
+            "uninstalled_at": uninstalled_at or datetime.now(timezone.utc).isoformat(),
+            "installation_id": installation_id,
+        })
+        manifest.setdefault("last_analysis", manifest.get("latest_analysis_at"))
+        manifest.setdefault("last_health_refresh", None)
+        manifest.setdefault("last_commit_analyzed", None)
+        manifest.setdefault("latest_analysis", None)
+        manifest.setdefault("latest_report", None)
+        manifest.setdefault("latest_migration", None)
+
+        self.client.ensure_branch(repo, self.branch_name)
+        self.client.upsert_file(
+            repo,
+            self.branch_name,
+            manifest_path,
+            self._json(manifest),
+            "Mark RepoHeal metadata as uninstalled"
+        )
 
     def _update_manifest(self, repo, document: MigrationDocument, snapshot_id: str, doc_path: str, report_path: str, snapshot_path: str):
         manifest_path = f"{self.base_path}/metadata.json"
@@ -216,6 +267,7 @@ class MetadataBranchManager:
             "schema_version": max(manifest.get("schema_version", 1), 2),
             "repository": getattr(repo, "full_name", manifest.get("repository")),
             "branch": self.branch_name,
+            "status": "active",
         })
         manifest.setdefault("artifacts", [])
         artifact = {
@@ -245,6 +297,13 @@ class MetadataBranchManager:
             return True
         except Exception:
             return False
+
+    def _get_default_commit_sha(self, repo) -> str | None:
+        try:
+            return repo.get_branch(repo.default_branch).commit.sha
+        except Exception as exc:
+            logger.warning(f"Could not read default branch commit for metadata: {exc}")
+            return None
 
     def _readme(self) -> str:
         return (

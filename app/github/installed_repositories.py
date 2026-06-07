@@ -99,6 +99,40 @@ def remove_installed_repositories(
     )
 
 
+def list_installed_repositories_for_installation(
+    installation_id: int
+) -> list[dict]:
+
+    with neo4j_connection.get_session() as session:
+
+        result = session.run(
+            """
+            MATCH (r:InstalledRepository)
+            WHERE r.installation_id = $installation_id
+            RETURN
+                r.repo_id AS repo_id,
+                r.full_name AS full_name,
+                r.owner AS owner,
+                r.repo_name AS repo_name
+            ORDER BY r.full_name
+            """,
+            installation_id=installation_id
+        )
+
+        repositories = [
+            {
+                "id": record["repo_id"],
+                "full_name": record["full_name"],
+                "owner": {"login": record["owner"]},
+                "name": record["repo_name"],
+            }
+            for record in result
+            if record["full_name"]
+        ]
+
+    return repositories
+
+
 def get_installed_repositories() -> set[str]:
 
     with neo4j_connection.get_session() as session:

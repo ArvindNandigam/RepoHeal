@@ -25,7 +25,7 @@ router = APIRouter(tags=["graph"])
 
 
 def _is_stale_finalizing_status(status: dict) -> bool:
-    if status.get("status") != "running" or status.get("progress", 0) < 90:
+    if status.get("status") not in {"running", "writing_metadata", "generating_reports"} or status.get("progress", 0) < 90:
         return False
 
     updated_at = status.get("updated_at")
@@ -44,6 +44,18 @@ def _is_stale_finalizing_status(status: dict) -> bool:
 
 def _graph_has_nodes(graph: dict | None) -> bool:
     return bool(graph and graph.get("nodes"))
+
+
+def _is_analysis_incomplete(status: dict) -> bool:
+    return status.get("status") not in {"completed", "not_started"}
+
+
+def _status_metadata(status: dict) -> dict:
+    return {
+        "last_analysis": status.get("last_analysis"),
+        "last_health_refresh": status.get("last_health_refresh"),
+        "last_commit_analyzed": status.get("last_commit_analyzed"),
+    }
 
 
 def _build_cached_graph(repo_id: str, analysis: dict | None) -> dict | None:
@@ -105,7 +117,7 @@ async def get_graph_visualization(
     try:
         analysis_status = get_analysis_status(repo_owner, repo_name)
         if (
-            analysis_status["status"] in {"queued", "running", "failed"}
+            _is_analysis_incomplete(analysis_status)
             and not _is_stale_finalizing_status(analysis_status)
         ):
             return {
@@ -179,7 +191,8 @@ async def get_repository_status(
                 "repository": repo_id,
                 "status": analysis_status["status"],
                 "progress": analysis_status["progress"],
-                "message": analysis_status["message"]
+                "message": analysis_status["message"],
+                **_status_metadata(analysis_status)
             }
 
         analysis = load_cached_analysis(repo_owner, repo_name)
@@ -193,7 +206,8 @@ async def get_repository_status(
             "progress": 0,
             "message": "Graph snapshot missing; analysis must be rerun",
             "files": 0,
-            "packages": 0
+            "packages": 0,
+            **_status_metadata(analysis_status)
         }
 
         with neo4j_connection.get_session() as session:
@@ -218,7 +232,8 @@ async def get_repository_status(
                     "progress": 100,
                     "message": "Analysis complete",
                     "files": 0,
-                    "packages": 0
+                    "packages": 0,
+                    **_status_metadata(analysis_status)
                 }
 
             file_count = record["file_count"]
@@ -236,7 +251,8 @@ async def get_repository_status(
                 "progress": 100,
                 "message": "Analysis complete",
                 "files": file_count,
-                "packages": package_count
+                "packages": package_count,
+                **_status_metadata(analysis_status)
             }
     except Exception as e:
         logger.error(f"Status endpoint failed for {repo_id}: {e}")

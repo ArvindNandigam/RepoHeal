@@ -47,6 +47,9 @@ def _ensure_indexes(db):
         db.jobs.create_index(
             [("repo_owner", 1), ("repo_name", 1), ("created_at", -1)]
         )
+        db.jobs.create_index(
+            [("repo_owner", 1), ("repo_name", 1), ("status", 1)]
+        )
 
         # Repository status persists independently from expiring job records.
         db.repository_analysis_status.create_index(

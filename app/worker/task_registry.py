@@ -1,7 +1,9 @@
 import uuid
 import traceback
+import shutil
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+from pathlib import Path
 
 from app.db.database import get_mongo_db
 from app.utils.logger import get_logger
@@ -12,16 +14,34 @@ logger = get_logger(__name__)
 class JobStatus(str, Enum):
     NOT_STARTED = "not_started"
     QUEUED = "queued"
-    RUNNING = "running"
+    DOWNLOADING = "downloading"
+    EXTRACTING = "extracting"
+    ANALYZING = "analyzing"
+    BUILDING_GRAPH = "building_graph"
+    WRITING_METADATA = "writing_metadata"
+    GENERATING_REPORTS = "generating_reports"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+ACTIVE_STATUSES = {
+    JobStatus.QUEUED.value,
+    JobStatus.DOWNLOADING.value,
+    JobStatus.EXTRACTING.value,
+    JobStatus.ANALYZING.value,
+    JobStatus.BUILDING_GRAPH.value,
+    JobStatus.WRITING_METADATA.value,
+    JobStatus.GENERATING_REPORTS.value,
+}
 
 
 def create_job(
     repo_owner: str,
     repo_name: str,
     skip_if_recent: bool = False,
-    recent_hours: int = 24
+    recent_hours: int = 24,
+    force: bool = False,
+    job_type: str = "analysis"
 ) -> str | None:
     """Register a new job in MongoDB and return its ID."""
     db = get_mongo_db()
@@ -29,17 +49,16 @@ def create_job(
         "repo_owner": repo_owner,
         "repo_name": repo_name,
     })
-    if current and current.get("status") in {
-        JobStatus.QUEUED.value,
-        JobStatus.RUNNING.value,
-    }:
+    if current and current.get("status") in ACTIVE_STATUSES:
         return None
 
     completed_at = current.get("completed_at") if current else None
     if isinstance(completed_at, datetime) and completed_at.tzinfo is None:
         completed_at = completed_at.replace(tzinfo=timezone.utc)
     if (
-        skip_if_recent
+        not force
+        and job_type == "analysis"
+        and skip_if_recent
         and isinstance(completed_at, datetime)
         and completed_at >= datetime.now(timezone.utc) - timedelta(hours=recent_hours)
     ):
@@ -51,9 +70,10 @@ def create_job(
         "job_id": job_id,
         "repo_owner": repo_owner,
         "repo_name": repo_name,
+        "job_type": job_type,
         "status": JobStatus.QUEUED.value,
-        "progress": 10,
-        "message": "Repository download queued",
+        "progress": 0,
+        "message": _queued_message(job_type),
         "result": None,
         "error": None,
         "created_at": now,
@@ -64,11 +84,20 @@ def create_job(
         repo_owner,
         repo_name,
         JobStatus.QUEUED,
-        10,
-        "Repository download queued",
-        job_id=job_id
+        0,
+        _queued_message(job_type),
+        job_id=job_id,
+        job_type=job_type
     )
     return job_id
+
+
+def _queued_message(job_type: str) -> str:
+    if job_type == "health_refresh":
+        return "Health refresh queued"
+    if job_type == "reanalyze":
+        return "Full repository reanalysis queued"
+    return "Repository analysis queued"
 
 
 def update_job(
@@ -103,7 +132,8 @@ def update_repository_status(
     progress: int,
     message: str,
     job_id: str | None = None,
-    error: str | None = None
+    error: str | None = None,
+    job_type: str | None = None
 ):
     """Persist the latest repository-level analysis state."""
     db = get_mongo_db()
@@ -117,12 +147,18 @@ def update_repository_status(
         "message": message,
         "updated_at": now,
     }
+    if job_type:
+        update["job_type"] = job_type
     if job_id:
         update["job_id"] = job_id
     if error is not None:
         update["error"] = error
     if status == JobStatus.COMPLETED:
         update["completed_at"] = now
+        if job_type == "health_refresh":
+            update["last_health_refresh"] = now
+        else:
+            update["last_analysis"] = now
 
     operation = {
         "$set": update,
@@ -145,7 +181,8 @@ def set_analysis_progress(
     status: JobStatus,
     progress: int,
     message: str,
-    error: str | None = None
+    error: str | None = None,
+    job_type: str | None = None
 ):
     update_job(
         job_id,
@@ -161,8 +198,43 @@ def set_analysis_progress(
         progress,
         message,
         job_id=job_id,
-        error=error
+        error=error,
+        job_type=job_type
     )
+
+
+def cancel_repository_jobs(
+    repo_owner: str,
+    repo_name: str,
+    reason: str = "Repository uninstalled"
+) -> int:
+    """Mark active queued/background jobs as failed so workers stop advertising progress."""
+    db = get_mongo_db()
+    result = db.jobs.update_many(
+        {
+            "repo_owner": repo_owner,
+            "repo_name": repo_name,
+            "status": {"$in": list(ACTIVE_STATUSES)},
+        },
+        {
+            "$set": {
+                "status": JobStatus.FAILED.value,
+                "progress": 0,
+                "message": reason,
+                "error": reason,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        }
+    )
+    update_repository_status(
+        repo_owner,
+        repo_name,
+        JobStatus.FAILED,
+        0,
+        reason,
+        error=reason
+    )
+    return getattr(result, "modified_count", 0)
 
 
 def get_repository_status(repo_owner: str, repo_name: str):
@@ -179,7 +251,13 @@ def get_repository_status(repo_owner: str, repo_name: str):
             "progress": 0,
             "message": "Analysis has not started",
         }
-    for field in ("created_at", "updated_at", "completed_at"):
+    for field in (
+        "created_at",
+        "updated_at",
+        "completed_at",
+        "last_analysis",
+        "last_health_refresh",
+    ):
         if isinstance(doc.get(field), datetime):
             doc[field] = doc[field].isoformat()
     return doc
@@ -198,7 +276,21 @@ def get_job(job_id: str):
     return doc
 
 
-def run_analysis_in_background(job_id: str, repo_owner: str, repo_name: str):
+def _clear_local_repository_cache(repo_owner: str, repo_name: str) -> None:
+    from app.routers.dependencies import get_repo_cache_path
+
+    cache_path = Path(get_repo_cache_path(repo_owner, repo_name))
+    if cache_path.exists():
+        shutil.rmtree(cache_path)
+        logger.info(f"Cleared local RepoHeal cache at {cache_path}")
+
+
+def run_analysis_in_background(
+    job_id: str,
+    repo_owner: str,
+    repo_name: str,
+    force_reanalysis: bool = False
+):
     """
     Synchronous function that runs the full analysis pipeline.
     Called from FastAPI BackgroundTasks.
@@ -211,21 +303,26 @@ def run_analysis_in_background(job_id: str, repo_owner: str, repo_name: str):
     
     from app.github.installations import get_repository_installation
     from app.github.client import RepoHealGitHubClient
-    from app.intelligence.webtool_client import WebtoolClient
+    from app.intelligence.providers import create_intelligence_provider
     from app.intelligence.pipeline import MigrationPipeline
     import asyncio
 
     repo_id = f"{repo_owner}/{repo_name}"
     repo_path = None
+    job_type = "reanalyze" if force_reanalysis else "analysis"
 
     try:
+        if force_reanalysis:
+            _clear_local_repository_cache(repo_owner, repo_name)
+
         set_analysis_progress(
             job_id,
             repo_owner,
             repo_name,
-            JobStatus.RUNNING,
+            JobStatus.DOWNLOADING,
             10,
-            "Repository download started"
+            "Downloading repository",
+            job_type=job_type
         )
         logger.info(f"Background analysis started for {repo_id} (job={job_id})")
 
@@ -234,17 +331,19 @@ def run_analysis_in_background(job_id: str, repo_owner: str, repo_name: str):
             job_id,
             repo_owner,
             repo_name,
-            JobStatus.RUNNING,
+            JobStatus.EXTRACTING,
             25,
-            "Repository extracted"
+            "Repository extracted",
+            job_type=job_type
         )
         set_analysis_progress(
             job_id,
             repo_owner,
             repo_name,
-            JobStatus.RUNNING,
+            JobStatus.ANALYZING,
             50,
-            "Analyzing repository"
+            "Analyzing repository",
+            job_type=job_type
         )
         analysis = analyze_repository(repo_path)
         save_analysis_to_metadata(
@@ -256,9 +355,10 @@ def run_analysis_in_background(job_id: str, repo_owner: str, repo_name: str):
             job_id,
             repo_owner,
             repo_name,
-            JobStatus.RUNNING,
+            JobStatus.BUILDING_GRAPH,
             75,
-            "Building Neo4j graph"
+            "Building Neo4j graph",
+            job_type=job_type
         )
         graph_builder = Neo4jGraphBuilder()
         graph_builder.clear_repository_graph(repo_id)
@@ -268,9 +368,10 @@ def run_analysis_in_background(job_id: str, repo_owner: str, repo_name: str):
             job_id,
             repo_owner,
             repo_name,
-            JobStatus.RUNNING,
+            JobStatus.WRITING_METADATA,
             90,
-            "Updating repoheal.meta branch"
+            "Updating repoheal.meta branch",
+            job_type=job_type
         )
         installation = get_repository_installation(repo_owner, repo_name)
         if not installation or "id" not in installation:
@@ -293,6 +394,29 @@ def run_analysis_in_background(job_id: str, repo_owner: str, repo_name: str):
             }
         )
 
+        set_analysis_progress(
+            job_id,
+            repo_owner,
+            repo_name,
+            JobStatus.GENERATING_REPORTS,
+            95,
+            "Generating health reports and migration documents",
+            job_type=job_type
+        )
+        try:
+            async def run_pipeline():
+                intelligence_provider = create_intelligence_provider()
+                pipeline = MigrationPipeline(intelligence_provider, github_client)
+                try:
+                    report = await pipeline.run(analysis, repo_id, repo_obj)
+                    logger.info(f"Migration pipeline finished for {repo_id} with score {report.overall_health_score}")
+                finally:
+                    await intelligence_provider.close()
+
+            asyncio.run(run_pipeline())
+        except Exception as pipeline_err:
+            logger.error(f"Migration pipeline failed for {repo_id}: {pipeline_err}")
+
         update_job(
             job_id,
             JobStatus.COMPLETED,
@@ -309,24 +433,10 @@ def run_analysis_in_background(job_id: str, repo_owner: str, repo_name: str):
             JobStatus.COMPLETED,
             100,
             "Analysis complete",
-            job_id=job_id
+            job_id=job_id,
+            job_type=job_type
         )
         logger.info(f"Background analysis completed for {repo_id} (job={job_id})")
-
-        # Run Migration Pipeline
-        try:
-            async def run_pipeline():
-                webtool_client = WebtoolClient()
-                pipeline = MigrationPipeline(webtool_client, github_client)
-                try:
-                    report = await pipeline.run(analysis, repo_id, repo_obj)
-                    logger.info(f"Migration pipeline finished for {repo_id} with score {report.overall_health_score}")
-                finally:
-                    await webtool_client.close()
-
-            asyncio.run(run_pipeline())
-        except Exception as pipeline_err:
-            logger.error(f"Migration pipeline failed for {repo_id}: {pipeline_err}")
 
     except Exception as e:
         error_msg = traceback.format_exc()
@@ -337,10 +447,88 @@ def run_analysis_in_background(job_id: str, repo_owner: str, repo_name: str):
             JobStatus.FAILED,
             0,
             "Analysis failed",
-            error=str(e)
+            error=str(e),
+            job_type=job_type
         )
         logger.error(f"Background analysis failed for {repo_id} (job={job_id}): {error_msg}")
 
     finally:
         if repo_path:
             cleanup_repository(repo_path)
+
+
+def run_health_refresh_in_background(job_id: str, repo_owner: str, repo_name: str):
+    """Refresh migration intelligence using the latest stored analysis snapshot."""
+    from app.routers.dependencies import load_cached_analysis
+    from app.github.installations import get_repository_installation
+    from app.github.client import RepoHealGitHubClient
+    from app.intelligence.providers import create_intelligence_provider
+    from app.intelligence.pipeline import MigrationPipeline
+    import asyncio
+
+    repo_id = f"{repo_owner}/{repo_name}"
+    job_type = "health_refresh"
+
+    try:
+        set_analysis_progress(
+            job_id,
+            repo_owner,
+            repo_name,
+            JobStatus.GENERATING_REPORTS,
+            50,
+            "Refreshing migration intelligence",
+            job_type=job_type
+        )
+        analysis = load_cached_analysis(repo_owner, repo_name)
+        if not analysis or not analysis.get("dependency_graph"):
+            raise ValueError("No cached analysis snapshot found for health refresh")
+
+        installation = get_repository_installation(repo_owner, repo_name)
+        if not installation or "id" not in installation:
+            raise PermissionError(f"RepoHeal is not installed on {repo_id}")
+
+        github_client = RepoHealGitHubClient(installation["id"])
+        repo_obj = github_client.get_repo(repo_id)
+
+        async def run_pipeline():
+            intelligence_provider = create_intelligence_provider()
+            pipeline = MigrationPipeline(intelligence_provider, github_client)
+            try:
+                return await pipeline.run(analysis, repo_id, repo_obj)
+            finally:
+                await intelligence_provider.close()
+
+        report = asyncio.run(run_pipeline())
+        update_job(
+            job_id,
+            JobStatus.COMPLETED,
+            result={
+                "repository": repo_id,
+                "status": "health_refreshed",
+                "overall_health_score": report.overall_health_score,
+            },
+            progress=100,
+            message="Health refresh complete"
+        )
+        update_repository_status(
+            repo_owner,
+            repo_name,
+            JobStatus.COMPLETED,
+            100,
+            "Health refresh complete",
+            job_id=job_id,
+            job_type=job_type
+        )
+    except Exception as e:
+        error_msg = traceback.format_exc()
+        set_analysis_progress(
+            job_id,
+            repo_owner,
+            repo_name,
+            JobStatus.FAILED,
+            0,
+            "Health refresh failed",
+            error=str(e),
+            job_type=job_type
+        )
+        logger.error(f"Health refresh failed for {repo_id} (job={job_id}): {error_msg}")

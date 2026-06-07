@@ -65,6 +65,9 @@ def build_dashboard_repositories(github_token: str):
             "repo": repo_name,
             "private": repo_private,
             "analyze_url": f"/analyze/{owner_login}/{repo_name}",
+            "reanalyze_url": f"/reanalyze/{owner_login}/{repo_name}",
+            "health_refresh_url": f"/health-refresh/{owner_login}/{repo_name}",
+            "status_url": f"/status/{owner_login}/{repo_name}",
             "visualize_url": f"/visualize/{owner_login}/{repo_name}",
             "workspace_url": f"/workspace/{owner_login}/{repo_name}"
         })

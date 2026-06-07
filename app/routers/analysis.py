@@ -6,15 +6,20 @@ from app.auth.jwt_manager import verify_session_token
 from app.auth.authorization import verify_repository_access
 from app.routers.dependencies import get_session_data, ensure_repoheal_installed
 from app.utils.rate_limit import limiter
-from app.worker.task_registry import create_job, get_job, run_analysis_in_background
+from app.worker.task_registry import (
+    create_job,
+    get_job,
+    run_analysis_in_background,
+    run_health_refresh_in_background,
+)
 from typing import Dict, Any
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/analyze", tags=["analysis"])
+router = APIRouter(tags=["analysis"])
 
-@router.get("/{repo_owner}/{repo_name}", response_model=AnalysisResponse)
+@router.get("/analyze/{repo_owner}/{repo_name}", response_model=AnalysisResponse)
 @limiter.limit("10/minute")
 async def analyze_repository_endpoint(
     request: Request,
@@ -59,7 +64,88 @@ async def analyze_repository_endpoint(
         logger.error(f"Analysis failed to queue for {repo_id}: {e}")
         raise AnalysisError(message=str(e))
 
-@router.get("/jobs/{job_id}", response_model=Dict[str, Any])
+@router.post("/reanalyze/{repo_owner}/{repo_name}")
+@limiter.limit("5/minute")
+async def reanalyze_repository_endpoint(
+    request: Request,
+    repo_owner: str,
+    repo_name: str,
+    background_tasks: BackgroundTasks,
+    user=Depends(verify_session_token)
+):
+    session_data = get_session_data(user)
+    ensure_repoheal_installed(repo_owner, repo_name)
+    verify_repository_access(
+        github_token=session_data["github_token"],
+        repo_owner=repo_owner,
+        repo_name=repo_name
+    )
+
+    job_id = create_job(
+        repo_owner,
+        repo_name,
+        force=True,
+        job_type="reanalyze"
+    )
+    if job_id:
+        background_tasks.add_task(
+            run_analysis_in_background,
+            job_id,
+            repo_owner,
+            repo_name,
+            True
+        )
+        logger.info(f"Full reanalysis job {job_id} dispatched for {repo_owner}/{repo_name}")
+
+    return {
+        "status": "queued",
+        "message": "Full repository reanalysis scheduled",
+        "job_id": job_id,
+        "deduplicated": job_id is None
+    }
+
+
+@router.post("/health-refresh/{repo_owner}/{repo_name}")
+@limiter.limit("5/minute")
+async def health_refresh_repository_endpoint(
+    request: Request,
+    repo_owner: str,
+    repo_name: str,
+    background_tasks: BackgroundTasks,
+    user=Depends(verify_session_token)
+):
+    session_data = get_session_data(user)
+    ensure_repoheal_installed(repo_owner, repo_name)
+    verify_repository_access(
+        github_token=session_data["github_token"],
+        repo_owner=repo_owner,
+        repo_name=repo_name
+    )
+
+    job_id = create_job(
+        repo_owner,
+        repo_name,
+        force=True,
+        job_type="health_refresh"
+    )
+    if job_id:
+        background_tasks.add_task(
+            run_health_refresh_in_background,
+            job_id,
+            repo_owner,
+            repo_name
+        )
+        logger.info(f"Health refresh job {job_id} dispatched for {repo_owner}/{repo_name}")
+
+    return {
+        "status": "queued",
+        "message": "Health refresh scheduled",
+        "job_id": job_id,
+        "deduplicated": job_id is None
+    }
+
+
+@router.get("/analyze/jobs/{job_id}", response_model=Dict[str, Any])
 async def get_job_status(job_id: str):
     job = get_job(job_id)
     if not job:

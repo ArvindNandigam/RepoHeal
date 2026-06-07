@@ -234,6 +234,12 @@
       border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
+    .button.tertiary {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
     .repo-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -272,6 +278,36 @@
       border-radius: 999px;
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .pill.status {
+      color: #06121c;
+      background: var(--accent);
+      border-color: transparent;
+      font-weight: 800;
+    }
+
+    .repo-status {
+      display: grid;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .repo-progress {
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+
+    .repo-progress span {
+      display: block;
+      height: 100%;
+      width: var(--progress-width, 0%);
+      border-radius: inherit;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
     }
 
     .repo-actions {
@@ -426,6 +462,57 @@
       });
     }
 
+    function prettyStatus(value) {
+      return String(value || "not_started")
+        .split("_")
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+    }
+
+    function formatDate(value) {
+      if (!value) return "Not available";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+    }
+
+    async function postRepositoryAction(url, repoName) {
+      const response = await fetch(url, {
+        method: "POST",
+        credentials: "same-origin"
+      });
+      if (!response.ok) {
+        throw new Error(`${repoName}: action returned ${response.status}`);
+      }
+      return response.json();
+    }
+
+    async function refreshRepositoryStatus(repo) {
+      const card = repoGrid.querySelector(`[data-repo-name="${CSS.escape(repo.name)}"]`);
+      if (!card) return;
+
+      const statusBadge = card.querySelector("[data-status-badge]");
+      const statusMessage = card.querySelector("[data-status-message]");
+      const progressBar = card.querySelector("[data-progress-bar]");
+      const lastAnalysis = card.querySelector("[data-last-analysis]");
+      const lastHealthRefresh = card.querySelector("[data-last-health-refresh]");
+      const lastCommit = card.querySelector("[data-last-commit]");
+
+      try {
+        const response = await fetch(repo.status_url, { credentials: "same-origin" });
+        if (!response.ok) throw new Error(`Status returned ${response.status}`);
+        const status = await response.json();
+        statusBadge.textContent = prettyStatus(status.status);
+        statusMessage.textContent = `${status.message || "Analysis status available"} (${Number(status.progress || 0)}%)`;
+        progressBar.style.setProperty("--progress-width", `${Math.max(0, Math.min(100, Number(status.progress || 0)))}%`);
+        lastAnalysis.textContent = formatDate(status.last_analysis || status.completed_at);
+        lastHealthRefresh.textContent = formatDate(status.last_health_refresh);
+        lastCommit.textContent = status.last_commit_analyzed || "Not available";
+      } catch (error) {
+        statusBadge.textContent = "Unknown";
+        statusMessage.textContent = error.message;
+      }
+    }
+
     function render(items) {
       repoGrid.innerHTML = "";
 
@@ -441,22 +528,46 @@
       for (const repo of items) {
         const card = document.createElement("article");
         card.className = "repo-card";
+        card.dataset.repoName = repo.name;
         card.innerHTML = `
           <div>
             <div class="repo-meta">
               <span class="pill">${repo.owner}</span>
               <span class="pill">${repo.private ? "Private" : "Public"}</span>
+              <span class="pill status" data-status-badge>Loading</span>
             </div>
             <h2>${repo.name}</h2>
           </div>
-          <div class="repo-meta">
-            <span>${repo.private ? "Access restricted" : "Visible to the user"}</span>
+          <div class="repo-status">
+            <span data-status-message>${repo.private ? "Access restricted" : "Visible to the user"}</span>
+            <div class="repo-progress"><span data-progress-bar></span></div>
+            <span>Last analysis: <strong data-last-analysis>Loading</strong></span>
+            <span>Last health refresh: <strong data-last-health-refresh>Loading</strong></span>
+            <span>Last commit analyzed: <strong data-last-commit>Loading</strong></span>
           </div>
           <div class="repo-actions">
-            <a class="button" href="${repo.visualize_url}">Visualize Semantic Graph</a>
+            <button class="button" type="button" data-action="analyze">Analyze</button>
+            <button class="button secondary" type="button" data-action="reanalyze">Refresh Analysis</button>
+            <button class="button tertiary" type="button" data-action="health">Refresh Health Report</button>
+            <a class="button secondary" href="${repo.visualize_url}">Visualize Graph</a>
           </div>
         `;
+
+        card.querySelector('[data-action="analyze"]').addEventListener("click", async () => {
+          await fetch(repo.analyze_url, { credentials: "same-origin" });
+          await refreshRepositoryStatus(repo);
+        });
+        card.querySelector('[data-action="reanalyze"]').addEventListener("click", async () => {
+          await postRepositoryAction(repo.reanalyze_url, repo.name);
+          await refreshRepositoryStatus(repo);
+        });
+        card.querySelector('[data-action="health"]').addEventListener("click", async () => {
+          await postRepositoryAction(repo.health_refresh_url, repo.name);
+          await refreshRepositoryStatus(repo);
+        });
+
         repoGrid.appendChild(card);
+        refreshRepositoryStatus(repo);
       }
     }
 
