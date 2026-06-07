@@ -265,6 +265,76 @@ def test_graph_endpoint_falls_back_to_metadata_branch_when_cache_is_empty(monkey
     assert response["statistics"]["metadata_stats"]["source"] == "repoheal.meta"
 
 
+def test_status_requires_visual_graph_before_completed(monkeypatch):
+    class FakeResult:
+        def single(self):
+            return {"file_count": 12, "package_count": 4}
+
+    class FakeSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def run(self, query, **kwargs):
+            return FakeResult()
+
+    monkeypatch.setattr(
+        graph,
+        "get_session_data",
+        lambda user: {"github_token": "token"}
+    )
+    monkeypatch.setattr(
+        graph,
+        "ensure_repoheal_installed",
+        lambda repo_owner, repo_name: {"id": 123}
+    )
+    monkeypatch.setattr(
+        graph,
+        "verify_repository_access",
+        lambda **kwargs: True
+    )
+    monkeypatch.setattr(
+        graph,
+        "get_analysis_status",
+        lambda repo_owner, repo_name: {
+            "status": "completed",
+            "progress": 100,
+            "message": "Analysis complete"
+        }
+    )
+    monkeypatch.setattr(
+        graph,
+        "load_cached_analysis",
+        lambda repo_owner, repo_name: {"imports": {"files": {}}}
+    )
+    monkeypatch.setattr(
+        graph,
+        "_build_metadata_graph",
+        lambda repo_id, installation_id: None
+    )
+    monkeypatch.setattr(
+        graph.neo4j_connection,
+        "get_session",
+        lambda: FakeSession()
+    )
+
+    response = asyncio.run(
+        graph.get_repository_status(
+            MagicMock(),
+            "owner",
+            "repo",
+            user={"session_id": "session", "github_login": "user"}
+        )
+    )
+
+    assert response["status"] == "not_started"
+    assert response["message"] == "Graph snapshot missing; analysis must be rerun"
+    assert response["files"] == 12
+    assert response["packages"] == 4
+
+
 def test_neo4j_visualizer_includes_repository_root(monkeypatch):
     class FakeNode(dict):
         def __init__(self, labels, values):

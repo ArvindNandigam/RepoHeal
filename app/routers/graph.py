@@ -158,7 +158,7 @@ async def get_repository_status(
     user=Depends(verify_session_token)
 ):
     session_data = get_session_data(user)
-    ensure_repoheal_installed(repo_owner, repo_name)
+    installation = ensure_repoheal_installed(repo_owner, repo_name)
     verify_repository_access(
         github_token=session_data["github_token"],
         repo_owner=repo_owner,
@@ -182,6 +182,20 @@ async def get_repository_status(
                 "message": analysis_status["message"]
             }
 
+        analysis = load_cached_analysis(repo_owner, repo_name)
+        visual_graph = (
+            _build_cached_graph(repo_id, analysis)
+            or _build_metadata_graph(repo_id, installation["id"])
+        )
+        missing_graph_response = {
+            "repository": repo_id,
+            "status": "not_started",
+            "progress": 0,
+            "message": "Graph snapshot missing; analysis must be rerun",
+            "files": 0,
+            "packages": 0
+        }
+
         with neo4j_connection.get_session() as session:
             result = session.run(
                 """
@@ -195,37 +209,25 @@ async def get_repository_status(
             record = result.single()
 
             if not record:
+                if not visual_graph:
+                    return missing_graph_response
+
                 return {
                     "repository": repo_id,
-                    "status": analysis_status["status"],
-                    "progress": analysis_status["progress"],
-                    "message": analysis_status["message"]
+                    "status": "completed",
+                    "progress": 100,
+                    "message": "Analysis complete",
+                    "files": 0,
+                    "packages": 0
                 }
 
             file_count = record["file_count"]
             package_count = record["package_count"]
-            if (
-                analysis_status["status"] == "not_started"
-                and file_count == 0
-                and package_count == 0
-            ):
+            if not visual_graph:
                 return {
-                    "repository": repo_id,
-                    "status": "not_started",
-                    "progress": 0,
-                    "message": "Analysis has not started",
-                    "files": 0,
-                    "packages": 0
-                }
-
-            if file_count == 0 and package_count == 0:
-                return {
-                    "repository": repo_id,
-                    "status": analysis_status["status"],
-                    "progress": analysis_status["progress"],
-                    "message": analysis_status["message"],
-                    "files": 0,
-                    "packages": 0
+                    **missing_graph_response,
+                    "files": file_count,
+                    "packages": package_count
                 }
 
             return {
