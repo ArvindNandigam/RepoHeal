@@ -32,18 +32,21 @@ def ensure_temp_directory():
 
 def get_repository_archive_url(
     repo_owner,
-    repo_name
+    repo_name,
+    ref=None
 ):
+    ref_suffix = f"/{ref}" if ref else ""
 
     return (
         f"https://api.github.com/repos/"
-        f"{repo_owner}/{repo_name}/zipball"
+        f"{repo_owner}/{repo_name}/zipball{ref_suffix}"
     )
 
 
 def download_repository_snapshot(
     repo_owner,
-    repo_name
+    repo_name,
+    ref=None
 ):
 
     """
@@ -98,7 +101,8 @@ def download_repository_snapshot(
 
     zip_url = get_repository_archive_url(
         repo_owner,
-        repo_name
+        repo_name,
+        ref=ref
     )
 
     headers = {

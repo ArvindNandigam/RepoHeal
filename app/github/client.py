@@ -222,10 +222,6 @@ class RepoHealGitHubClient:
     def bootstrap_metadata_branch(self, repo):
 
         repo_full_name = repo.full_name
-        workspace_url = (
-            f"{REPOHEAL_BASE_URL}/workspace/{repo.owner.login}/{repo.name}"
-        )
-
         self.ensure_branch(
             repo,
             REPOHEAL_METADATA_BRANCH
@@ -238,9 +234,7 @@ class RepoHealGitHubClient:
             "- graph snapshots\n"
             "- session archives\n"
             "- RepoHeal reports\n\n"
-            "Do not modify manually.\n\n"
-            "Open RepoHeal:\n\n"
-            f"{workspace_url}\n"
+            "Do not modify manually.\n"
         )
 
         metadata = self._load_metadata_manifest(repo)
@@ -252,10 +246,10 @@ class RepoHealGitHubClient:
             "schema_version": max(metadata.get("schema_version", 1), 2),
             "repository": repo_full_name,
             "branch": REPOHEAL_METADATA_BRANCH,
-            "workspace_url": workspace_url,
             "created_at": created_at,
             "status": "active",
         })
+        metadata.pop("workspace_url", None)
         metadata.setdefault("artifacts", [])
         metadata.setdefault("last_analysis", metadata.get("latest_analysis_at"))
         metadata.setdefault("last_health_refresh", None)
@@ -263,6 +257,9 @@ class RepoHealGitHubClient:
         metadata.setdefault("latest_analysis", None)
         metadata.setdefault("latest_report", None)
         metadata.setdefault("latest_migration", None)
+        metadata.setdefault("analyses", {})
+        metadata.setdefault("health_reports", {})
+        metadata.setdefault("comparisons", [])
         metadata.pop("uninstalled_at", None)
         metadata_json = json.dumps(metadata, indent=2, default=str) + "\n"
 
@@ -283,6 +280,9 @@ class RepoHealGitHubClient:
         )
 
         for placeholder_path in (
+            "repoheal.meta/analyses/.gitkeep",
+            "repoheal.meta/health_reports/.gitkeep",
+            "repoheal.meta/comparisons/.gitkeep",
             "repoheal.meta/snapshots/.gitkeep",
             "repoheal.meta/sessions/.gitkeep",
             "repoheal.meta/reports/.gitkeep"

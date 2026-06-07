@@ -24,6 +24,5 @@ async def workspace_landing_page(
         "repo_owner": repo_owner,
         "repo_name": repo_name,
         "user": user["github_login"],
-        "workspace_url": f"/workspace/{repo_owner}/{repo_name}",
         "status": "ready"
     }

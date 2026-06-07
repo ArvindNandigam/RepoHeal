@@ -69,6 +69,7 @@ def build_dashboard_repositories(github_token: str):
             "health_refresh_url": f"/health-refresh/{owner_login}/{repo_name}",
             "status_url": f"/status/{owner_login}/{repo_name}",
             "visualize_url": f"/visualize/{owner_login}/{repo_name}",
-            "workspace_url": f"/workspace/{owner_login}/{repo_name}"
+            "reports_url": f"/reports/{owner_login}/{repo_name}",
+            "compare_url": f"/compare/{owner_login}/{repo_name}"
         })
     return dashboard_repositories

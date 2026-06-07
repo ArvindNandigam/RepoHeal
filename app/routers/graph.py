@@ -55,6 +55,36 @@ def _status_metadata(status: dict) -> dict:
         "last_analysis": status.get("last_analysis"),
         "last_health_refresh": status.get("last_health_refresh"),
         "last_commit_analyzed": status.get("last_commit_analyzed"),
+        "current_head": status.get("current_head"),
+        "selected_branch": status.get("selected_branch"),
+        "code_state_status": status.get("code_state_status"),
+    }
+
+
+def _code_state_metadata(repo_id: str, installation_id: int, status: dict) -> dict:
+    selected_branch = status.get("selected_branch")
+    current_head = status.get("current_head")
+    last_commit = status.get("last_commit_analyzed") or status.get("target_commit_sha")
+
+    try:
+        github_client = RepoHealGitHubClient(installation_id)
+        repo = github_client.get_repo(repo_id)
+        selected_branch = selected_branch or repo.default_branch
+        current_head = repo.get_branch(selected_branch).commit.sha
+    except Exception as exc:
+        logger.warning(f"Could not refresh current HEAD for {repo_id}: {exc}")
+
+    code_state_status = None
+    if current_head and last_commit:
+        code_state_status = "up_to_date" if current_head == last_commit else "outdated"
+
+    return {
+        "last_analysis": status.get("last_analysis"),
+        "last_health_refresh": status.get("last_health_refresh"),
+        "last_commit_analyzed": last_commit,
+        "current_head": current_head,
+        "selected_branch": selected_branch,
+        "code_state_status": code_state_status,
     }
 
 
@@ -192,7 +222,7 @@ async def get_repository_status(
                 "status": analysis_status["status"],
                 "progress": analysis_status["progress"],
                 "message": analysis_status["message"],
-                **_status_metadata(analysis_status)
+                **_code_state_metadata(repo_id, installation["id"], analysis_status)
             }
 
         analysis = load_cached_analysis(repo_owner, repo_name)
@@ -207,7 +237,7 @@ async def get_repository_status(
             "message": "Graph snapshot missing; analysis must be rerun",
             "files": 0,
             "packages": 0,
-            **_status_metadata(analysis_status)
+            **_code_state_metadata(repo_id, installation["id"], analysis_status)
         }
 
         with neo4j_connection.get_session() as session:
@@ -233,7 +263,7 @@ async def get_repository_status(
                     "message": "Analysis complete",
                     "files": 0,
                     "packages": 0,
-                    **_status_metadata(analysis_status)
+                    **_code_state_metadata(repo_id, installation["id"], analysis_status)
                 }
 
             file_count = record["file_count"]
@@ -252,7 +282,7 @@ async def get_repository_status(
                 "message": "Analysis complete",
                 "files": file_count,
                 "packages": package_count,
-                **_status_metadata(analysis_status)
+                **_code_state_metadata(repo_id, installation["id"], analysis_status)
             }
     except Exception as e:
         logger.error(f"Status endpoint failed for {repo_id}: {e}")

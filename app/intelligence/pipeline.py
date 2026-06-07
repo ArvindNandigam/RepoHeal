@@ -26,7 +26,14 @@ class MigrationPipeline:
         self.metadata_manager = MetadataBranchManager(github_client)
         self.changes_manager = ChangesBranchManager(github_client)
     
-    async def run(self, analysis: Dict[str, Any], repo_id: str, repo: Any) -> HealthReport:
+    async def run(
+        self,
+        analysis: Dict[str, Any],
+        repo_id: str,
+        repo: Any,
+        source_branch: str | None = None,
+        commit_sha: str | None = None
+    ) -> HealthReport:
         logger.info(f"Starting migration pipeline for {repo_id}")
         
         # 1. Correlate
@@ -50,7 +57,15 @@ class MigrationPipeline:
         
         # 6. Metadata Branch
         snapshot_id = uuid.uuid4().hex[:10]
-        self.metadata_manager.save_migration_artifacts(repo, document, report, snapshot_id, analysis)
+        self.metadata_manager.save_migration_artifacts(
+            repo,
+            document,
+            report,
+            snapshot_id,
+            analysis,
+            source_branch=source_branch,
+            commit_sha=commit_sha
+        )
         
         logger.info(f"Completed migration pipeline for {repo_id}")
         return report

@@ -11,7 +11,8 @@ class RepositoryConfig(BaseModel):
     health_refresh_url: str
     status_url: str
     visualize_url: str
-    workspace_url: str
+    reports_url: str
+    compare_url: str
 
 class DashboardResponse(BaseModel):
     user: str
@@ -21,8 +22,12 @@ class WorkspaceResponse(BaseModel):
     repo_owner: str
     repo_name: str
     user: str
-    workspace_url: str
     status: str
+
+class AnalysisTarget(BaseModel):
+    mode: str = "latest"
+    branch: Optional[str] = None
+    commit_sha: Optional[str] = None
 
 class AnalysisResponse(BaseModel):
     repository: str
@@ -42,6 +47,20 @@ class RepositoryStatus(BaseModel):
     last_analysis: Optional[str] = None
     last_health_refresh: Optional[str] = None
     last_commit_analyzed: Optional[str] = None
+    current_head: Optional[str] = None
+    selected_branch: Optional[str] = None
+    code_state_status: Optional[str] = None
+
+class CompareAnalysesRequest(BaseModel):
+    branch_a: str
+    commit_a: str
+    branch_b: str
+    commit_b: str
+
+class CompareAnalysesResponse(BaseModel):
+    repository: str
+    comparison_path: str
+    comparison: Dict[str, Any]
 
 class GraphResponse(BaseModel):
     repository: str

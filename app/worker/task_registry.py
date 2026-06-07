@@ -41,7 +41,10 @@ def create_job(
     skip_if_recent: bool = False,
     recent_hours: int = 24,
     force: bool = False,
-    job_type: str = "analysis"
+    job_type: str = "analysis",
+    target_mode: str = "latest",
+    target_branch: str | None = None,
+    target_commit_sha: str | None = None
 ) -> str | None:
     """Register a new job in MongoDB and return its ID."""
     db = get_mongo_db()
@@ -71,6 +74,9 @@ def create_job(
         "repo_owner": repo_owner,
         "repo_name": repo_name,
         "job_type": job_type,
+        "target_mode": target_mode,
+        "selected_branch": target_branch,
+        "target_commit_sha": target_commit_sha,
         "status": JobStatus.QUEUED.value,
         "progress": 0,
         "message": _queued_message(job_type),
@@ -87,17 +93,15 @@ def create_job(
         0,
         _queued_message(job_type),
         job_id=job_id,
-        job_type=job_type
+        job_type=job_type,
+        selected_branch=target_branch,
+        target_commit_sha=target_commit_sha
     )
     return job_id
 
 
 def _queued_message(job_type: str) -> str:
-    if job_type == "health_refresh":
-        return "Health refresh queued"
-    if job_type == "reanalyze":
-        return "Full repository reanalysis queued"
-    return "Repository analysis queued"
+    return "Queued"
 
 
 def update_job(
@@ -133,7 +137,10 @@ def update_repository_status(
     message: str,
     job_id: str | None = None,
     error: str | None = None,
-    job_type: str | None = None
+    job_type: str | None = None,
+    selected_branch: str | None = None,
+    target_commit_sha: str | None = None,
+    current_head: str | None = None
 ):
     """Persist the latest repository-level analysis state."""
     db = get_mongo_db()
@@ -151,6 +158,12 @@ def update_repository_status(
         update["job_type"] = job_type
     if job_id:
         update["job_id"] = job_id
+    if selected_branch:
+        update["selected_branch"] = selected_branch
+    if target_commit_sha:
+        update["target_commit_sha"] = target_commit_sha
+    if current_head:
+        update["current_head"] = current_head
     if error is not None:
         update["error"] = error
     if status == JobStatus.COMPLETED:
@@ -159,6 +172,8 @@ def update_repository_status(
             update["last_health_refresh"] = now
         else:
             update["last_analysis"] = now
+            if target_commit_sha:
+                update["last_commit_analyzed"] = target_commit_sha
 
     operation = {
         "$set": update,
@@ -182,7 +197,10 @@ def set_analysis_progress(
     progress: int,
     message: str,
     error: str | None = None,
-    job_type: str | None = None
+    job_type: str | None = None,
+    selected_branch: str | None = None,
+    target_commit_sha: str | None = None,
+    current_head: str | None = None
 ):
     update_job(
         job_id,
@@ -199,7 +217,10 @@ def set_analysis_progress(
         message,
         job_id=job_id,
         error=error,
-        job_type=job_type
+        job_type=job_type,
+        selected_branch=selected_branch,
+        target_commit_sha=target_commit_sha,
+        current_head=current_head
     )
 
 
@@ -260,7 +281,32 @@ def get_repository_status(repo_owner: str, repo_name: str):
     ):
         if isinstance(doc.get(field), datetime):
             doc[field] = doc[field].isoformat()
+    current_head = doc.get("current_head")
+    last_commit = doc.get("last_commit_analyzed") or doc.get("target_commit_sha")
+    if current_head and last_commit:
+        doc["code_state_status"] = (
+            "up_to_date" if current_head == last_commit else "outdated"
+        )
     return doc
+
+
+def resolve_repository_target(repo, target_branch: str | None, target_commit_sha: str | None) -> dict:
+    """Resolve a user-selected branch/commit to a GitHub archive ref and commit."""
+    selected_branch = target_branch or getattr(repo, "default_branch", None) or "main"
+    current_head = None
+    try:
+        current_head = repo.get_branch(selected_branch).commit.sha
+    except Exception as exc:
+        logger.warning(f"Could not resolve HEAD for {repo.full_name}:{selected_branch}: {exc}")
+
+    commit_sha = target_commit_sha or current_head
+    archive_ref = target_commit_sha or selected_branch
+    return {
+        "selected_branch": selected_branch,
+        "commit_sha": commit_sha,
+        "current_head": current_head,
+        "archive_ref": archive_ref,
+    }
 
 
 def get_job(job_id: str):
@@ -289,7 +335,9 @@ def run_analysis_in_background(
     job_id: str,
     repo_owner: str,
     repo_name: str,
-    force_reanalysis: bool = False
+    force_reanalysis: bool = False,
+    target_branch: str | None = None,
+    target_commit_sha: str | None = None
 ):
     """
     Synchronous function that runs the full analysis pipeline.
@@ -310,10 +358,24 @@ def run_analysis_in_background(
     repo_id = f"{repo_owner}/{repo_name}"
     repo_path = None
     job_type = "reanalyze" if force_reanalysis else "analysis"
+    selected_branch = target_branch
+    commit_sha = target_commit_sha
+    current_head = None
 
     try:
         if force_reanalysis:
             _clear_local_repository_cache(repo_owner, repo_name)
+
+        installation = get_repository_installation(repo_owner, repo_name)
+        if not installation or "id" not in installation:
+            raise PermissionError(f"RepoHeal is not installed on {repo_id}")
+
+        github_client = RepoHealGitHubClient(installation["id"])
+        repo_obj = github_client.get_repo(repo_id)
+        target = resolve_repository_target(repo_obj, target_branch, target_commit_sha)
+        selected_branch = target["selected_branch"]
+        commit_sha = target["commit_sha"]
+        current_head = target["current_head"]
 
         set_analysis_progress(
             job_id,
@@ -321,20 +383,30 @@ def run_analysis_in_background(
             repo_name,
             JobStatus.DOWNLOADING,
             10,
-            "Downloading repository",
-            job_type=job_type
+            "Queued",
+            job_type=job_type,
+            selected_branch=selected_branch,
+            target_commit_sha=commit_sha,
+            current_head=current_head
         )
         logger.info(f"Background analysis started for {repo_id} (job={job_id})")
 
-        repo_path = download_repository_snapshot(repo_owner, repo_name)
+        repo_path = download_repository_snapshot(
+            repo_owner,
+            repo_name,
+            ref=target["archive_ref"]
+        )
         set_analysis_progress(
             job_id,
             repo_owner,
             repo_name,
             JobStatus.EXTRACTING,
             25,
-            "Repository extracted",
-            job_type=job_type
+            "Analyzing Repository",
+            job_type=job_type,
+            selected_branch=selected_branch,
+            target_commit_sha=commit_sha,
+            current_head=current_head
         )
         set_analysis_progress(
             job_id,
@@ -342,10 +414,15 @@ def run_analysis_in_background(
             repo_name,
             JobStatus.ANALYZING,
             50,
-            "Analyzing repository",
-            job_type=job_type
+            "Building Dependency Graph",
+            job_type=job_type,
+            selected_branch=selected_branch,
+            target_commit_sha=commit_sha,
+            current_head=current_head
         )
         analysis = analyze_repository(repo_path)
+        analysis["branch"] = selected_branch
+        analysis["commit_sha"] = commit_sha
         save_analysis_to_metadata(
             str(get_repo_cache_path(repo_owner, repo_name)),
             analysis
@@ -357,8 +434,11 @@ def run_analysis_in_background(
             repo_name,
             JobStatus.BUILDING_GRAPH,
             75,
-            "Building Neo4j graph",
-            job_type=job_type
+            "Generating Reports",
+            job_type=job_type,
+            selected_branch=selected_branch,
+            target_commit_sha=commit_sha,
+            current_head=current_head
         )
         graph_builder = Neo4jGraphBuilder()
         graph_builder.clear_repository_graph(repo_id)
@@ -370,15 +450,12 @@ def run_analysis_in_background(
             repo_name,
             JobStatus.WRITING_METADATA,
             90,
-            "Updating repoheal.meta branch",
-            job_type=job_type
+            "Updating Metadata",
+            job_type=job_type,
+            selected_branch=selected_branch,
+            target_commit_sha=commit_sha,
+            current_head=current_head
         )
-        installation = get_repository_installation(repo_owner, repo_name)
-        if not installation or "id" not in installation:
-            raise PermissionError(f"RepoHeal is not installed on {repo_id}")
-
-        github_client = RepoHealGitHubClient(installation["id"])
-        repo_obj = github_client.get_repo(repo_id)
 
         from app.github.metadata_branch import MetadataBranchManager
         from app.visualization.graph_api import GraphVisualizer
@@ -391,7 +468,9 @@ def run_analysis_in_background(
             {
                 **visualizer.to_cytoscape_format(repo_id),
                 "statistics": visualizer.get_statistics()
-            }
+            },
+            source_branch=selected_branch,
+            commit_sha=commit_sha
         )
 
         set_analysis_progress(
@@ -400,15 +479,24 @@ def run_analysis_in_background(
             repo_name,
             JobStatus.GENERATING_REPORTS,
             95,
-            "Generating health reports and migration documents",
-            job_type=job_type
+            "Updating Metadata",
+            job_type=job_type,
+            selected_branch=selected_branch,
+            target_commit_sha=commit_sha,
+            current_head=current_head
         )
         try:
             async def run_pipeline():
                 intelligence_provider = create_intelligence_provider()
                 pipeline = MigrationPipeline(intelligence_provider, github_client)
                 try:
-                    report = await pipeline.run(analysis, repo_id, repo_obj)
+                    report = await pipeline.run(
+                        analysis,
+                        repo_id,
+                        repo_obj,
+                        source_branch=selected_branch,
+                        commit_sha=commit_sha
+                    )
                     logger.info(f"Migration pipeline finished for {repo_id} with score {report.overall_health_score}")
                 finally:
                     await intelligence_provider.close()
@@ -425,16 +513,19 @@ def run_analysis_in_background(
                 "status": "analyzed",
             },
             progress=100,
-            message="Analysis complete"
+            message="Completed"
         )
         update_repository_status(
             repo_owner,
             repo_name,
             JobStatus.COMPLETED,
             100,
-            "Analysis complete",
+            "Completed",
             job_id=job_id,
-            job_type=job_type
+            job_type=job_type,
+            selected_branch=selected_branch,
+            target_commit_sha=commit_sha,
+            current_head=current_head
         )
         logger.info(f"Background analysis completed for {repo_id} (job={job_id})")
 
@@ -448,7 +539,10 @@ def run_analysis_in_background(
             0,
             "Analysis failed",
             error=str(e),
-            job_type=job_type
+            job_type=job_type,
+            selected_branch=selected_branch,
+            target_commit_sha=commit_sha,
+            current_head=current_head
         )
         logger.error(f"Background analysis failed for {repo_id} (job={job_id}): {error_msg}")
 
@@ -457,7 +551,13 @@ def run_analysis_in_background(
             cleanup_repository(repo_path)
 
 
-def run_health_refresh_in_background(job_id: str, repo_owner: str, repo_name: str):
+def run_health_refresh_in_background(
+    job_id: str,
+    repo_owner: str,
+    repo_name: str,
+    target_branch: str | None = None,
+    target_commit_sha: str | None = None
+):
     """Refresh migration intelligence using the latest stored analysis snapshot."""
     from app.routers.dependencies import load_cached_analysis
     from app.github.installations import get_repository_installation
@@ -468,33 +568,61 @@ def run_health_refresh_in_background(job_id: str, repo_owner: str, repo_name: st
 
     repo_id = f"{repo_owner}/{repo_name}"
     job_type = "health_refresh"
+    selected_branch = target_branch
+    commit_sha = target_commit_sha
+    current_head = None
 
     try:
-        set_analysis_progress(
-            job_id,
-            repo_owner,
-            repo_name,
-            JobStatus.GENERATING_REPORTS,
-            50,
-            "Refreshing migration intelligence",
-            job_type=job_type
-        )
-        analysis = load_cached_analysis(repo_owner, repo_name)
-        if not analysis or not analysis.get("dependency_graph"):
-            raise ValueError("No cached analysis snapshot found for health refresh")
-
         installation = get_repository_installation(repo_owner, repo_name)
         if not installation or "id" not in installation:
             raise PermissionError(f"RepoHeal is not installed on {repo_id}")
 
         github_client = RepoHealGitHubClient(installation["id"])
         repo_obj = github_client.get_repo(repo_id)
+        target = resolve_repository_target(repo_obj, target_branch, target_commit_sha)
+        selected_branch = target["selected_branch"]
+        commit_sha = target["commit_sha"]
+        current_head = target["current_head"]
+
+        set_analysis_progress(
+            job_id,
+            repo_owner,
+            repo_name,
+            JobStatus.GENERATING_REPORTS,
+            50,
+            "Generating Reports",
+            job_type=job_type,
+            selected_branch=selected_branch,
+            target_commit_sha=commit_sha,
+            current_head=current_head
+        )
+
+        from app.github.metadata_branch import MetadataBranchManager
+        metadata_manager = MetadataBranchManager(github_client)
+        record = None
+        if commit_sha:
+            record = metadata_manager.load_analysis_record(
+                repo_obj,
+                selected_branch,
+                commit_sha
+            )
+        analysis = (record or {}).get("analysis") or load_cached_analysis(repo_owner, repo_name)
+        if not analysis or not analysis.get("dependency_graph"):
+            raise ValueError("No analysis snapshot found for health refresh")
+        analysis["branch"] = selected_branch
+        analysis["commit_sha"] = commit_sha
 
         async def run_pipeline():
             intelligence_provider = create_intelligence_provider()
             pipeline = MigrationPipeline(intelligence_provider, github_client)
             try:
-                return await pipeline.run(analysis, repo_id, repo_obj)
+                return await pipeline.run(
+                    analysis,
+                    repo_id,
+                    repo_obj,
+                    source_branch=selected_branch,
+                    commit_sha=commit_sha
+                )
             finally:
                 await intelligence_provider.close()
 
@@ -508,16 +636,19 @@ def run_health_refresh_in_background(job_id: str, repo_owner: str, repo_name: st
                 "overall_health_score": report.overall_health_score,
             },
             progress=100,
-            message="Health refresh complete"
+            message="Completed"
         )
         update_repository_status(
             repo_owner,
             repo_name,
             JobStatus.COMPLETED,
             100,
-            "Health refresh complete",
+            "Completed",
             job_id=job_id,
-            job_type=job_type
+            job_type=job_type,
+            selected_branch=selected_branch,
+            target_commit_sha=commit_sha,
+            current_head=current_head
         )
     except Exception as e:
         error_msg = traceback.format_exc()
@@ -529,6 +660,9 @@ def run_health_refresh_in_background(job_id: str, repo_owner: str, repo_name: st
             0,
             "Health refresh failed",
             error=str(e),
-            job_type=job_type
+            job_type=job_type,
+            selected_branch=selected_branch,
+            target_commit_sha=commit_sha,
+            current_head=current_head
         )
         logger.error(f"Health refresh failed for {repo_id} (job={job_id}): {error_msg}")
