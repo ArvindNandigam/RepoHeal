@@ -36,13 +36,21 @@ async def analyze_repository_endpoint(
 
     try:
         job_id = create_job(repo_owner, repo_name)
-        background_tasks.add_task(run_analysis_in_background, job_id, repo_owner, repo_name)
-        logger.info(f"Analysis job {job_id} dispatched for: {repo_id}")
+        if job_id:
+            background_tasks.add_task(
+                run_analysis_in_background,
+                job_id,
+                repo_owner,
+                repo_name
+            )
+            logger.info(f"Analysis job {job_id} dispatched for: {repo_id}")
+        else:
+            logger.info(f"Analysis already queued or running for: {repo_id}")
 
         return AnalysisResponse(
             repository=repo_id,
             status="queued",
-            analysis={"job_id": job_id},
+            analysis={"job_id": job_id, "deduplicated": job_id is None},
             graph_url=f"/graph/{repo_owner}/{repo_name}",
             visualize_url=f"/visualize/{repo_owner}/{repo_name}",
             timestamp=datetime.utcnow().isoformat()

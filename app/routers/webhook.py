@@ -1,5 +1,5 @@
 from datetime import datetime
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, BackgroundTasks, Request
 from app.errors.exceptions import AuthenticationError, ExternalServiceError
 from app.github.webhooks import verify_github_signature
 from app.github.client import RepoHealGitHubClient
@@ -8,13 +8,14 @@ from app.github.installed_repositories import (
     remove_installed_repositories
 )
 from app.utils.logger import get_logger
+from app.worker.task_registry import create_job, run_analysis_in_background
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 
 @router.post("/github")
-async def github_webhook(request: Request):
+async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     try:
         await verify_github_signature(request)
     except Exception as e:
@@ -36,13 +37,26 @@ async def github_webhook(request: Request):
         bootstrap_client = RepoHealGitHubClient(installation_id)
         installation_repositories = bootstrap_client.list_installation_repositories()
         upsert_installed_repositories(installation_id, installation_repositories)
-        bootstrapped_repositories = bootstrap_client.bootstrap_installation_metadata(installation_repositories)
+        background_tasks.add_task(
+            bootstrap_installation_metadata,
+            installation_id,
+            installation_repositories
+        )
+        queued_repositories = queue_repository_analyses(
+            background_tasks,
+            installation_repositories
+        )
 
         return {
             "received": True,
             "event": event_type,
             "action": event_action,
-            "bootstrapped_repositories": bootstrapped_repositories,
+            "bootstrapped_repositories": [
+                repository.get("full_name")
+                for repository in installation_repositories
+                if repository.get("full_name")
+            ],
+            "queued_repositories": queued_repositories,
             "timestamp": datetime.utcnow().isoformat()
         }
 
@@ -57,6 +71,12 @@ async def github_webhook(request: Request):
 
         if repositories_added:
             upsert_installed_repositories(installation_id, repositories_added)
+            background_tasks.add_task(
+                bootstrap_installation_metadata,
+                installation_id,
+                repositories_added
+            )
+            queue_repository_analyses(background_tasks, repositories_added)
 
         if repositories_removed:
             remove_installed_repositories(
@@ -94,3 +114,46 @@ async def github_webhook(request: Request):
         "event": event_type,
         "timestamp": datetime.utcnow().isoformat()
     }
+
+
+def bootstrap_installation_metadata(
+    installation_id: int,
+    repositories: list[dict]
+):
+    try:
+        RepoHealGitHubClient(installation_id).bootstrap_installation_metadata(
+            repositories
+        )
+    except Exception as exc:
+        logger.error(
+            f"Metadata bootstrap failed for installation {installation_id}: {exc}"
+        )
+
+
+def queue_repository_analyses(
+    background_tasks: BackgroundTasks,
+    repositories: list[dict]
+) -> list[str]:
+    """Queue installation-triggered analyses and skip recent or active work."""
+    queued = []
+    for repository in repositories:
+        full_name = repository.get("full_name")
+        if not full_name or "/" not in full_name:
+            continue
+
+        repo_owner, repo_name = full_name.split("/", 1)
+        job_id = create_job(repo_owner, repo_name, skip_if_recent=True)
+        if not job_id:
+            logger.info(f"Skipped recent or active analysis for {full_name}")
+            continue
+
+        background_tasks.add_task(
+            run_analysis_in_background,
+            job_id,
+            repo_owner,
+            repo_name
+        )
+        queued.append(full_name)
+        logger.info(f"Queued analysis for {full_name}")
+
+    return queued

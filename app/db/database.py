@@ -44,6 +44,15 @@ def _ensure_indexes(db):
         # Jobs: lookup by job_id, auto-expire old jobs after 24h
         db.jobs.create_index("job_id", unique=True)
         db.jobs.create_index("expires_at", expireAfterSeconds=0)
+        db.jobs.create_index(
+            [("repo_owner", 1), ("repo_name", 1), ("created_at", -1)]
+        )
+
+        # Repository status persists independently from expiring job records.
+        db.repository_analysis_status.create_index(
+            [("repo_owner", 1), ("repo_name", 1)],
+            unique=True
+        )
 
         logger.info("MongoDB indexes ensured")
     except Exception as e:

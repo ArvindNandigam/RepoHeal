@@ -32,6 +32,8 @@ class AnalysisResponse(BaseModel):
 class RepositoryStatus(BaseModel):
     repository: str
     status: str
+    progress: int = 0
+    message: str = "Analysis has not started"
     files: Optional[int] = None
     packages: Optional[int] = None
 
@@ -44,6 +46,7 @@ class GraphResponse(BaseModel):
 class GraphBuildingResponse(BaseModel):
     repository: str
     status: str
+    progress: int
     message: str
 
 class WebhookResponse(BaseModel):
@@ -51,6 +54,7 @@ class WebhookResponse(BaseModel):
     event: Optional[str] = None
     action: Optional[str] = None
     bootstrapped_repositories: Optional[List[str]] = None
+    queued_repositories: Optional[List[str]] = None
     added: Optional[int] = None
     removed: Optional[int] = None
     timestamp: str

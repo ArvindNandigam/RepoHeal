@@ -1,5 +1,4 @@
 from typing import Union
-from app.routers import analysis
 from fastapi import APIRouter, Depends, Request
 from app.errors.exceptions import GraphError, RepositoryNotFoundError
 from app.models.schemas import GraphResponse, GraphBuildingResponse, RepositoryStatus
@@ -12,10 +11,10 @@ from app.routers.dependencies import (
 )
 
 from app.visualization.graph_api import GraphVisualizer
-from app.visualization.neo4j_graph_api import Neo4jGraphVisualizer
 from app.graph.connection import neo4j_connection
 from app.utils.logger import get_logger
 from app.utils.rate_limit import limiter
+from app.worker.task_registry import get_repository_status as get_analysis_status
 
 logger = get_logger(__name__)
 
@@ -41,6 +40,15 @@ async def get_graph_visualization(
     logger.info(f"Graph visualization requested for: {repo_id}")
 
     try:
+        analysis_status = get_analysis_status(repo_owner, repo_name)
+        if analysis_status["status"] in {"queued", "running", "failed"}:
+            return {
+                "repository": repo_id,
+                "status": "building",
+                "progress": analysis_status["progress"],
+                "message": analysis_status["message"]
+            }
+
         analysis = load_cached_analysis(
             repo_owner,
             repo_name
@@ -50,14 +58,16 @@ async def get_graph_visualization(
             return {
                 "repository": repo_id,
                 "status": "building",
-                "message": "Analysis in progress"
+                "progress": analysis_status["progress"],
+                "message": analysis_status["message"]
             }
 
         if not analysis.get("imports", {}).get("files"):
             return {
                 "repository": repo_id,
                 "status": "building",
-                "message": "Analysis in progress"
+                "progress": analysis_status["progress"],
+                "message": analysis_status["message"]
             }
 
         visualizer = GraphVisualizer(analysis)
@@ -83,6 +93,7 @@ async def get_repository_status(
     user=Depends(verify_session_token)
 ):
     session_data = get_session_data(user)
+    ensure_repoheal_installed(repo_owner, repo_name)
     verify_repository_access(
         github_token=session_data["github_token"],
         repo_owner=repo_owner,
@@ -93,6 +104,16 @@ async def get_repository_status(
     logger.info(f"Status requested for: {repo_id}")
 
     try:
+        analysis_status = get_analysis_status(repo_owner, repo_name)
+        if analysis_status["status"] != "completed":
+            if analysis_status["status"] != "not_started":
+                return {
+                    "repository": repo_id,
+                    "status": analysis_status["status"],
+                    "progress": analysis_status["progress"],
+                    "message": analysis_status["message"]
+                }
+
         with neo4j_connection.get_session() as session:
             result = session.run(
                 """
@@ -108,14 +129,34 @@ async def get_repository_status(
             if not record:
                 return {
                     "repository": repo_id,
-                    "status": "not_analyzed"
+                    "status": analysis_status["status"],
+                    "progress": analysis_status["progress"],
+                    "message": analysis_status["message"]
+                }
+
+            file_count = record["file_count"]
+            package_count = record["package_count"]
+            if (
+                analysis_status["status"] == "not_started"
+                and file_count == 0
+                and package_count == 0
+            ):
+                return {
+                    "repository": repo_id,
+                    "status": "not_started",
+                    "progress": 0,
+                    "message": "Analysis has not started",
+                    "files": 0,
+                    "packages": 0
                 }
 
             return {
                 "repository": repo_id,
-                "status": "analyzed",
-                "files": record["file_count"],
-                "packages": record["package_count"]
+                "status": "completed",
+                "progress": 100,
+                "message": "Analysis complete",
+                "files": file_count,
+                "packages": package_count
             }
     except Exception as e:
         logger.error(f"Status endpoint failed for {repo_id}: {e}")
