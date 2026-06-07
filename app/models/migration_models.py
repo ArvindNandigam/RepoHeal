@@ -6,6 +6,7 @@ class SymbolRelationship(BaseModel):
     target: str
     status: str
     confidence: Optional[float] = None
+    evidence_links: List[str] = Field(default_factory=list)
 
 class VersionDistance(BaseModel):
     installed: str
@@ -15,6 +16,12 @@ class VersionDistance(BaseModel):
     major_diff: int
     minor_diff: int
     patch_diff: int
+    deprecated_major_diff: Optional[int] = None
+    deprecated_minor_diff: Optional[int] = None
+    deprecated_patch_diff: Optional[int] = None
+    removed_major_diff: Optional[int] = None
+    removed_minor_diff: Optional[int] = None
+    removed_patch_diff: Optional[int] = None
 
 class SymbolAssessment(BaseModel):
     symbol: str
@@ -103,5 +110,6 @@ class HealthReport(BaseModel):
     deprecated_apis: List[SymbolAssessment] = Field(default_factory=list)
     breaking_changes: List[SymbolAssessment] = Field(default_factory=list)
     migration_paths: List[MigrationPath] = Field(default_factory=list)
+    impact_reports: List[ImpactReport] = Field(default_factory=list)
     risk_assessment: List[RiskAssessment] = Field(default_factory=list)
     recommended_actions: List[RecommendedAction] = Field(default_factory=list)

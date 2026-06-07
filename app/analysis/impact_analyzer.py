@@ -18,7 +18,13 @@ class ImpactAnalyzer:
         reports = []
         for assessment in assessments:
             if assessment.status in ("deprecated", "at_risk", "breaking"):
-                report = self._analyze_symbol(assessment.symbol, files, call_graph, total_files)
+                report = self._analyze_symbol(assessment, files, call_graph, total_files)
+                assessment.files_using = [file.path for file in report.affected_files]
+                assessment.functions_using = [
+                    function.name
+                    for function in report.affected_functions
+                    if function.call_chain_depth == 1
+                ]
                 reports.append(report)
         return reports
     
@@ -41,21 +47,29 @@ class ImpactAnalyzer:
                 reverse_graph[callee].append(caller)
         return reverse_graph
 
-    def _analyze_symbol(self, symbol: str, files: Dict[str, Any], call_graph: Dict[str, List[str]], total_files: int) -> ImpactReport:
+    def _analyze_symbol(self, assessment: SymbolAssessment, files: Dict[str, Any], call_graph: Dict[str, List[str]], total_files: int) -> ImpactReport:
+        symbol = assessment.symbol
         affected_files_dict: Dict[str, List[int]] = defaultdict(list)
         affected_functions_dict: Dict[str, AffectedFunction] = {}
         affected_classes: Set[str] = set()
+        function_locations: Dict[str, str] = {}
         
         symbol_parts = symbol.split(".")
         symbol_base = symbol_parts[-1] if symbol_parts else symbol
         
         direct_callers = set()
+
+        for file_path, data in files.items():
+            for func in data.get("functions", []):
+                fname = func.get("name")
+                if fname:
+                    function_locations.setdefault(fname, file_path)
         
         # First pass: find direct impacts
         for file_path, data in files.items():
             for api in data.get("apis", []):
                 api_name = api.get("name", "")
-                if symbol_base in api_name.split("."):
+                if self._matches_symbol(api_name, api.get("package"), assessment.library, symbol, symbol_base):
                     line = api.get("line")
                     if line:
                         affected_files_dict[file_path].append(line)
@@ -75,7 +89,7 @@ class ImpactAnalyzer:
             for cls in data.get("classes", []):
                 bases = cls.get("bases", [])
                 for base in bases:
-                    if symbol_base in base.split("."):
+                    if self._matches_symbol(base, None, assessment.library, symbol, symbol_base):
                         affected_classes.add(cls.get("name"))
                         line = cls.get("line_start")
                         if line:
@@ -106,9 +120,10 @@ class ImpactAnalyzer:
                     visited.add(parent)
                     queue.append((parent, depth + 1))
                     if parent not in affected_functions_dict:
+                        parent_file_path = function_locations.get(parent, "unknown")
                         affected_functions_dict[parent] = AffectedFunction(
                             name=parent,
-                            file_path="unknown",
+                            file_path=parent_file_path,
                             call_chain_depth=depth + 1
                         )
                         
@@ -127,3 +142,26 @@ class ImpactAnalyzer:
             impact_breadth=impact_breadth,
             impact_depth=max_depth
         )
+
+    def _matches_symbol(
+        self,
+        candidate: str,
+        candidate_package: str | None,
+        library: str,
+        symbol: str,
+        symbol_base: str
+    ) -> bool:
+        if not candidate:
+            return False
+
+        candidate_parts = candidate.split(".")
+        if candidate == symbol or candidate.endswith(f".{symbol}"):
+            return True
+
+        if symbol_base not in candidate_parts:
+            return False
+
+        if candidate_package and library:
+            return candidate_package == library
+
+        return True
