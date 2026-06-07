@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timezone
 from typing import Dict, Any
 
@@ -24,7 +25,13 @@ class MetadataBranchManager:
         graph: Dict[str, Any]
     ) -> None:
         """Synchronize the durable latest-analysis files in one commit."""
-        analyzed_at = datetime.now(timezone.utc).isoformat()
+        analyzed_at_dt = datetime.now(timezone.utc)
+        analyzed_at = analyzed_at_dt.isoformat()
+        snapshot_id = analyzed_at_dt.strftime("%Y%m%dT%H%M%SZ")
+        graph_snapshot_path = (
+            f"{self.base_path}/snapshots/"
+            f"data_{self._safe_name(repo_id)}_{snapshot_id}.json"
+        )
         manifest = self._load_manifest(repo)
         manifest.update({
             "schema_version": max(manifest.get("schema_version", 1), 2),
@@ -34,6 +41,7 @@ class MetadataBranchManager:
             "latest_files": {
                 "analysis": f"{self.base_path}/snapshots/latest_analysis.json",
                 "graph": f"{self.base_path}/snapshots/latest_graph.json",
+                "graph_snapshot": graph_snapshot_path,
                 "packages": f"{self.base_path}/snapshots/latest_packages.json",
                 "imports": f"{self.base_path}/snapshots/latest_imports.json",
                 "dependency_risk_report": (
@@ -42,6 +50,11 @@ class MetadataBranchManager:
             }
         })
 
+        graph_payload = {
+            "repository": repo_id,
+            "analyzed_at": analyzed_at,
+            **graph
+        }
         files_to_commit = {
             f"{self.base_path}/metadata.json": self._json(manifest),
             f"{self.base_path}/snapshots/latest_analysis.json": self._json({
@@ -49,11 +62,8 @@ class MetadataBranchManager:
                 "analyzed_at": analyzed_at,
                 "analysis": analysis
             }),
-            f"{self.base_path}/snapshots/latest_graph.json": self._json({
-                "repository": repo_id,
-                "analyzed_at": analyzed_at,
-                **graph
-            }),
+            f"{self.base_path}/snapshots/latest_graph.json": self._json(graph_payload),
+            graph_snapshot_path: self._json(graph_payload),
             f"{self.base_path}/snapshots/latest_packages.json": self._json({
                 **analysis.get("dependencies", {}),
                 "packages": analysis.get("dependency_graph", {})
@@ -91,6 +101,31 @@ class MetadataBranchManager:
                     f"Update {path} for {repo_id}"
                 )
         logger.info(f"Synchronized latest analysis metadata for {repo_id}")
+
+    def load_latest_graph(self, repo) -> Dict[str, Any] | None:
+        """Load the latest durable Cytoscape graph from the metadata branch."""
+        manifest = self._load_manifest(repo)
+        graph_path = (
+            manifest
+            .get("latest_files", {})
+            .get("graph")
+        )
+        candidate_paths = [
+            graph_path,
+            f"{self.base_path}/snapshots/latest_graph.json"
+        ]
+
+        for path in candidate_paths:
+            if not path:
+                continue
+
+            try:
+                contents = repo.get_contents(path, ref=self.branch_name)
+                return json.loads(contents.decoded_content.decode("utf-8"))
+            except Exception:
+                continue
+
+        return None
 
     def save_migration_artifacts(self, repo, document: MigrationDocument, report: HealthReport, snapshot_id: str, analysis: Dict[str, Any]) -> None:
         """Batch commit migration document, health report, and analysis snapshot to the metadata branch."""
@@ -161,3 +196,7 @@ class MetadataBranchManager:
     @staticmethod
     def _json(value: Any) -> str:
         return json.dumps(value, indent=2, default=str) + "\n"
+
+    @staticmethod
+    def _safe_name(value: str) -> str:
+        return re.sub(r"[^a-zA-Z0-9_.-]", "_", value)

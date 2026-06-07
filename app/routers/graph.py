@@ -11,6 +11,8 @@ from app.routers.dependencies import (
     load_cached_analysis
 )
 
+from app.github.client import RepoHealGitHubClient
+from app.github.metadata_branch import MetadataBranchManager
 from app.visualization.graph_api import GraphVisualizer
 from app.graph.connection import neo4j_connection
 from app.utils.logger import get_logger
@@ -40,6 +42,47 @@ def _is_stale_finalizing_status(status: dict) -> bool:
     return parsed <= datetime.now(timezone.utc) - timedelta(minutes=5)
 
 
+def _graph_has_nodes(graph: dict | None) -> bool:
+    return bool(graph and graph.get("nodes"))
+
+
+def _build_cached_graph(repo_id: str, analysis: dict | None) -> dict | None:
+    if not analysis or not analysis.get("imports", {}).get("files"):
+        return None
+
+    visualizer = GraphVisualizer(analysis)
+    graph = visualizer.to_cytoscape_format(repo_id)
+
+    if not _graph_has_nodes(graph):
+        return None
+
+    return {
+        **graph,
+        "statistics": visualizer.get_statistics()
+    }
+
+
+def _build_metadata_graph(repo_id: str, installation_id: int) -> dict | None:
+    try:
+        github_client = RepoHealGitHubClient(installation_id)
+        repo = github_client.get_repo(repo_id)
+        graph = MetadataBranchManager(github_client).load_latest_graph(repo)
+    except Exception as exc:
+        logger.warning(
+            f"Could not load metadata branch graph for {repo_id}: {exc}"
+        )
+        return None
+
+    if not _graph_has_nodes(graph):
+        return None
+
+    return {
+        "nodes": graph.get("nodes", []),
+        "edges": graph.get("edges", []),
+        "statistics": graph.get("statistics", {})
+    }
+
+
 @router.get("/graph/{repo_owner}/{repo_name}", response_model=Union[GraphResponse, GraphBuildingResponse])
 @limiter.limit("30/minute")
 async def get_graph_visualization(
@@ -49,7 +92,7 @@ async def get_graph_visualization(
     user=Depends(verify_session_token)
 ):
     session_data = get_session_data(user)
-    ensure_repoheal_installed(repo_owner, repo_name)
+    installation = ensure_repoheal_installed(repo_owner, repo_name)
     verify_repository_access(
         github_token=session_data["github_token"],
         repo_owner=repo_owner,
@@ -77,29 +120,28 @@ async def get_graph_visualization(
             repo_name
         )
 
-        if not analysis:
+        cached_graph = _build_cached_graph(repo_id, analysis)
+        if cached_graph:
             return {
                 "repository": repo_id,
-                "status": "building",
-                "progress": analysis_status["progress"],
-                "message": analysis_status["message"]
+                **cached_graph
             }
 
-        if not analysis.get("imports", {}).get("files"):
+        metadata_graph = _build_metadata_graph(repo_id, installation["id"])
+        if metadata_graph:
             return {
                 "repository": repo_id,
-                "status": "building",
-                "progress": analysis_status["progress"],
-                "message": analysis_status["message"]
+                **metadata_graph
             }
 
-        visualizer = GraphVisualizer(analysis)
-        graph = visualizer.to_cytoscape_format(repo_id)
-
+        logger.warning(
+            f"No Cytoscape graph data found for {repo_id} in cache or metadata branch"
+        )
         return {
             "repository": repo_id,
-            **graph,
-            "statistics": visualizer.get_statistics()
+            "status": "building",
+            "progress": analysis_status["progress"],
+            "message": analysis_status["message"]
         }
     except RepositoryNotFoundError:
         raise

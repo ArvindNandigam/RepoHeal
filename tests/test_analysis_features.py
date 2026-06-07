@@ -23,6 +23,7 @@ sys.modules.setdefault("neo4j", neo4j_module)
 from app.github.metadata_branch import MetadataBranchManager
 from app.intelligence.correlator import MigrationCorrelator
 from app.routers import graph, webhook
+from app.visualization import neo4j_graph_api
 from app.visualization.page_renderer import build_graph_page
 from app.worker import task_registry
 
@@ -163,10 +164,19 @@ def test_latest_analysis_batch_contains_required_files():
         "repoheal.meta/snapshots/latest_imports.json",
         "repoheal.meta/reports/dependency_risk_report.json",
     }
-    assert set(client.files) == required_paths
+    assert required_paths.issubset(set(client.files))
+    assert any(
+        path.startswith("repoheal.meta/snapshots/data_owner_repo_")
+        and path.endswith(".json")
+        for path in client.files
+    )
 
     manifest = json.loads(client.files["repoheal.meta/metadata.json"])
     assert manifest["repository"] == "owner/repo"
+    assert manifest["latest_files"]["graph"] == "repoheal.meta/snapshots/latest_graph.json"
+    assert manifest["latest_files"]["graph_snapshot"].startswith(
+        "repoheal.meta/snapshots/data_owner_repo_"
+    )
     assert datetime.fromisoformat(manifest["latest_analysis_at"]).tzinfo == timezone.utc
 
 
@@ -197,6 +207,101 @@ def test_stale_finalizing_analysis_can_serve_completed_graph():
 
     assert graph._is_stale_finalizing_status(old_status) is True
     assert graph._is_stale_finalizing_status(fresh_status) is False
+
+
+def test_graph_endpoint_falls_back_to_metadata_branch_when_cache_is_empty(monkeypatch):
+    monkeypatch.setattr(
+        graph,
+        "get_session_data",
+        lambda user: {"github_token": "token"}
+    )
+    monkeypatch.setattr(
+        graph,
+        "ensure_repoheal_installed",
+        lambda repo_owner, repo_name: {"id": 123}
+    )
+    monkeypatch.setattr(
+        graph,
+        "verify_repository_access",
+        lambda **kwargs: True
+    )
+    monkeypatch.setattr(
+        graph,
+        "get_analysis_status",
+        lambda repo_owner, repo_name: {
+            "status": "completed",
+            "progress": 100,
+            "message": "Analysis complete"
+        }
+    )
+    monkeypatch.setattr(
+        graph,
+        "load_cached_analysis",
+        lambda repo_owner, repo_name: {"imports": {"files": {}}}
+    )
+    monkeypatch.setattr(
+        graph,
+        "_build_metadata_graph",
+        lambda repo_id, installation_id: {
+            "nodes": [
+                {"data": {"id": repo_id, "label": repo_id, "type": "repository"}}
+            ],
+            "edges": [],
+            "statistics": {"metadata_stats": {"source": "repoheal.meta"}}
+        }
+    )
+
+    response = asyncio.run(
+        graph.get_graph_visualization(
+            MagicMock(),
+            "owner",
+            "repo",
+            user={"session_id": "session", "github_login": "user"}
+        )
+    )
+
+    assert response["repository"] == "owner/repo"
+    assert response["nodes"]
+    assert response["statistics"]["metadata_stats"]["source"] == "repoheal.meta"
+
+
+def test_neo4j_visualizer_includes_repository_root(monkeypatch):
+    class FakeNode(dict):
+        def __init__(self, labels, values):
+            super().__init__(values)
+            self.labels = labels
+
+    class FakeSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def run(self, query, **kwargs):
+            if "MATCH (n)" in query:
+                return [
+                    {
+                        "n": FakeNode(
+                            {"Repository"},
+                            {"id": "owner/repo"}
+                        )
+                    }
+                ]
+            return []
+
+    monkeypatch.setattr(
+        neo4j_graph_api.neo4j_connection,
+        "get_session",
+        lambda: FakeSession()
+    )
+
+    payload = neo4j_graph_api.Neo4jGraphVisualizer.to_cytoscape_format(
+        "owner/repo"
+    )
+
+    assert payload["nodes"][0]["data"]["id"] == "owner/repo"
+    assert payload["nodes"][0]["data"]["type"] == "repository"
 
 
 def test_correlator_uses_bulk_and_filters_false_libraries():

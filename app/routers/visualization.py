@@ -4,6 +4,8 @@ from fastapi.responses import HTMLResponse
 from app.auth.jwt_manager import verify_session_token
 from app.auth.authorization import verify_repository_access
 from app.routers.dependencies import get_session_data, ensure_repoheal_installed, load_cached_analysis
+from app.github.client import RepoHealGitHubClient
+from app.github.metadata_branch import MetadataBranchManager
 from app.visualization.graph_api import GraphVisualizer
 from app.visualization.page_renderer import build_graph_page
 from app.utils.logger import get_logger
@@ -27,7 +29,7 @@ async def visualize_repository_export_png(
     user=Depends(verify_session_token)
 ):
     session_data = get_session_data(user)
-    ensure_repoheal_installed(repo_owner, repo_name)
+    installation = ensure_repoheal_installed(repo_owner, repo_name)
     verify_repository_access(
         github_token=session_data["github_token"],
         repo_owner=repo_owner,
@@ -40,11 +42,20 @@ async def visualize_repository_export_png(
 
     try:
         analysis = load_cached_analysis(repo_owner, repo_name)
-        if not analysis["imports"]["files"]:
-            raise RepositoryNotFoundError(message="No cached analysis found. Run /analyze first.")
+        graph = None
 
-        visualizer = GraphVisualizer(analysis)
-        graph = visualizer.to_cytoscape_format(repo_id)
+        if analysis and analysis.get("imports", {}).get("files"):
+            visualizer = GraphVisualizer(analysis)
+            graph = visualizer.to_cytoscape_format(repo_id)
+
+        if not graph or not graph.get("nodes"):
+            github_client = RepoHealGitHubClient(installation["id"])
+            repo = github_client.get_repo(repo_id)
+            graph = MetadataBranchManager(github_client).load_latest_graph(repo)
+
+        if not graph or not graph.get("nodes"):
+            raise RepositoryNotFoundError(message="No graph data found. Run /analyze first.")
+
         png = await render_graph_png(graph)
         return Response(content=png, media_type="image/png")
     except RepositoryNotFoundError:
