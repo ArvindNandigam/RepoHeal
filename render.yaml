@@ -4,3 +4,8 @@ services:
     runtime: python
     buildCommand: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
     startCommand: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+    envVars:
+      - key: WEBTOOL_API_URL
+        value: https://restrictedwebtool.onrender.com
+      - key: INTERNAL_API_KEY
+        sync: false

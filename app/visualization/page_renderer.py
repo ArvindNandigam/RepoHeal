@@ -198,10 +198,67 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
 
     .error { color: #ff7b7b; }
 
+    .build-state {
+      display: grid;
+      gap: 10px;
+      min-width: min(420px, calc(100vw - 420px));
+    }
+
+    .build-animation {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .build-block {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      background: var(--accent);
+      animation: buildPulse 1.2s ease-in-out infinite;
+    }
+
+    .build-block:nth-child(2) { animation-delay: 0.15s; }
+    .build-block:nth-child(3) { animation-delay: 0.3s; }
+    .build-block:nth-child(4) { animation-delay: 0.45s; }
+
+    .build-track {
+      height: 6px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .build-track span {
+      display: block;
+      width: 36%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      animation: buildTrack 1.5s ease-in-out infinite;
+    }
+
+    .build-note {
+      color: #ffd98a;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    @keyframes buildPulse {
+      0%, 100% { opacity: 0.35; transform: translateY(0); }
+      50% { opacity: 1; transform: translateY(-5px); }
+    }
+
+    @keyframes buildTrack {
+      from { transform: translateX(-110%); }
+      to { transform: translateX(300%); }
+    }
+
     @media (max-width: 960px) {
       .shell { grid-template-columns: 1fr; }
 
       #graph { min-height: 70vh; }
+      .build-state { min-width: 0; }
     }
   </style>
   <script src="https://unpkg.com/cytoscape@3.31.2/dist/cytoscape.min.js"></script>
@@ -326,6 +383,76 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
         overlay.innerHTML = message;
       };
 
+      const setBuildingStatus = (message, progress = 0) => {
+        setStatus(`
+          <div class="build-state">
+            <div class="build-animation" aria-hidden="true">
+              <span class="build-block"></span>
+              <span class="build-block"></span>
+              <span class="build-block"></span>
+              <span class="build-block"></span>
+            </div>
+            <strong>${escapeHtml(message)}</strong>
+            <div class="build-track"><span></span></div>
+            <span>${Number(progress || 0)}% complete</span>
+            <span class="build-note">Please keep this page open. Refreshing is unnecessary and may interrupt progress updates while RepoHeal builds the graph.</span>
+          </div>
+        `);
+      };
+
+      const sleep = (milliseconds) => new Promise((resolve) => {
+        window.setTimeout(resolve, milliseconds);
+      });
+
+      const fetchJson = async (url, label) => {
+        const response = await fetch(url, {
+          credentials: "same-origin"
+        });
+
+        if (!response.ok) {
+          throw new Error(`${label} returned ${response.status}`);
+        }
+
+        return response.json();
+      };
+
+      const waitForAnalysis = async () => {
+        let status = await fetchJson(
+          `/status/${repoOwner}/${repoName}`,
+          "Status API"
+        );
+
+        if (status.status === "not_started" || status.status === "failed") {
+          statusLabel.textContent = "Queueing analysis";
+          setBuildingStatus(`Queueing analysis for ${repoOwner}/${repoName}`, 0);
+          await fetchJson(
+            `/analyze/${repoOwner}/${repoName}`,
+            "Analyze API"
+          );
+          status = await fetchJson(
+            `/status/${repoOwner}/${repoName}`,
+            "Status API"
+          );
+        }
+
+        while (status.status !== "completed") {
+          if (status.status === "failed") {
+            throw new Error(status.message || "Repository analysis failed");
+          }
+
+          const progress = Number(status.progress || 0);
+          const message = status.message || "Analysis in progress";
+          statusLabel.textContent = `${message} (${progress}%)`;
+          setBuildingStatus(message, progress);
+
+          await sleep(3000);
+          status = await fetchJson(
+            `/status/${repoOwner}/${repoName}`,
+            "Status API"
+          );
+        }
+      };
+
       const hideDetailedNodes = () => {
         if (!cy) {
           return;
@@ -399,29 +526,24 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
       };
 
       try {
-        statusLabel.textContent = "Analyzing";
-        setStatus(`Running analysis for <strong>${repoOwner}/${repoName}</strong>...`);
-
-        const analyzeResponse = await fetch(`/analyze/${repoOwner}/${repoName}`, {
-          credentials: "same-origin"
-        });
-
-        if (!analyzeResponse.ok) {
-          throw new Error(`Analyze API returned ${analyzeResponse.status}`);
-        }
+        statusLabel.textContent = "Checking analysis";
+        setBuildingStatus(`Checking analysis status for ${repoOwner}/${repoName}`, 0);
+        await waitForAnalysis();
 
         statusLabel.textContent = "Loading graph";
         setStatus(`Fetching graph data from <strong>/graph/${repoOwner}/${repoName}</strong>.`);
 
-        const response = await fetch(`/graph/${repoOwner}/${repoName}`, {
-          credentials: "same-origin"
-        });
-
-        if (!response.ok) {
-          throw new Error(`Graph API returned ${response.status}`);
+        const payload = await fetchJson(
+          `/graph/${repoOwner}/${repoName}`,
+          "Graph API"
+        );
+        if (payload.status === "building") {
+          throw new Error(payload.message || "Graph is still building");
+        }
+        if (!Array.isArray(payload.nodes) || payload.nodes.length === 0) {
+          throw new Error("Graph API returned no nodes");
         }
 
-        const payload = await response.json();
         const elements = [
           ...(payload.nodes || []),
           ...(payload.edges || [])

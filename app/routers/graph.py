@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from typing import Union
 from fastapi import APIRouter, Depends, Request
 from app.errors.exceptions import GraphError, RepositoryNotFoundError
@@ -20,6 +21,25 @@ logger = get_logger(__name__)
 
 router = APIRouter(tags=["graph"])
 
+
+def _is_stale_finalizing_status(status: dict) -> bool:
+    if status.get("status") != "running" or status.get("progress", 0) < 90:
+        return False
+
+    updated_at = status.get("updated_at")
+    if not updated_at:
+        return False
+
+    try:
+        parsed = datetime.fromisoformat(updated_at)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return False
+
+    return parsed <= datetime.now(timezone.utc) - timedelta(minutes=5)
+
+
 @router.get("/graph/{repo_owner}/{repo_name}", response_model=Union[GraphResponse, GraphBuildingResponse])
 @limiter.limit("30/minute")
 async def get_graph_visualization(
@@ -41,7 +61,10 @@ async def get_graph_visualization(
 
     try:
         analysis_status = get_analysis_status(repo_owner, repo_name)
-        if analysis_status["status"] in {"queued", "running", "failed"}:
+        if (
+            analysis_status["status"] in {"queued", "running", "failed"}
+            and not _is_stale_finalizing_status(analysis_status)
+        ):
             return {
                 "repository": repo_id,
                 "status": "building",
@@ -105,14 +128,17 @@ async def get_repository_status(
 
     try:
         analysis_status = get_analysis_status(repo_owner, repo_name)
-        if analysis_status["status"] != "completed":
-            if analysis_status["status"] != "not_started":
-                return {
-                    "repository": repo_id,
-                    "status": analysis_status["status"],
-                    "progress": analysis_status["progress"],
-                    "message": analysis_status["message"]
-                }
+        should_check_graph = (
+            analysis_status["status"] in {"completed", "not_started"}
+            or _is_stale_finalizing_status(analysis_status)
+        )
+        if not should_check_graph:
+            return {
+                "repository": repo_id,
+                "status": analysis_status["status"],
+                "progress": analysis_status["progress"],
+                "message": analysis_status["message"]
+            }
 
         with neo4j_connection.get_session() as session:
             result = session.run(
@@ -146,6 +172,16 @@ async def get_repository_status(
                     "status": "not_started",
                     "progress": 0,
                     "message": "Analysis has not started",
+                    "files": 0,
+                    "packages": 0
+                }
+
+            if file_count == 0 and package_count == 0:
+                return {
+                    "repository": repo_id,
+                    "status": analysis_status["status"],
+                    "progress": analysis_status["progress"],
+                    "message": analysis_status["message"],
                     "files": 0,
                     "packages": 0
                 }

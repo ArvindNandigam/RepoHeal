@@ -1,4 +1,4 @@
-import asyncio
+import sys
 from typing import Dict, List, Any
 from datetime import datetime, timezone
 import packaging.version
@@ -24,68 +24,99 @@ class MigrationCorrelator:
     async def correlate(self, analysis: Dict[str, Any], repo_id: str) -> CorrelationResult:
         fingerprints = analysis.get("fingerprints", {})
         dependency_graph = analysis.get("dependency_graph", {})
-        
+
         assessments: List[SymbolAssessment] = []
         errors: List[str] = []
-        libraries_checked = 0
         total_symbols = 0
-        
+        requests = []
+        fingerprint_data = {}
+
         for library, fp_data in fingerprints.items():
             symbols = fp_data.get("symbols", [])
-            installed_version = fp_data.get("version", "unknown")
-            latest_version = dependency_graph.get(library, {}).get("latest_version", "unknown")
-            
-            if not symbols:
+            if (
+                not symbols
+                or library not in dependency_graph
+                or library in sys.stdlib_module_names
+            ):
                 continue
-                
-            libraries_checked += 1
+
+            unique_symbols = sorted(set(symbols))
+            requests.append({
+                "library": library,
+                "symbols": unique_symbols,
+            })
+            fingerprint_data[library] = fp_data
             total_symbols += len(symbols)
-            
+
+        libraries_checked = len(requests)
+        for offset in range(0, len(requests), 25):
+            batch = requests[offset:offset + 25]
             try:
-                # Query Restricted Webtool
-                response = await self.client.get_symbol_intelligence(library, symbols)
-                results = response.get("results", [])
-                
-                # We can also update latest_version if webtool has better data
-                wt_latest = response.get("latest_version")
+                response = await self.client.get_bulk_intelligence(batch)
+            except Exception as e:
+                batch_names = ", ".join(item["library"] for item in batch)
+                logger.error(f"Error fetching bulk intelligence for {batch_names}: {e}")
+                errors.append(f"{batch_names}: {str(e)}")
+                continue
+
+            for library_response in response.get("results", []):
+                library = library_response.get("library")
+                if not library or library_response.get("status") == "failed":
+                    errors.append(
+                        f"{library or 'unknown'}: "
+                        f"{library_response.get('reason', 'source_unavailable')}"
+                    )
+                    continue
+
+                fp_data = fingerprint_data.get(library, {})
+                installed_version = fp_data.get("version", "unknown")
+                latest_version = dependency_graph.get(
+                    library, {}
+                ).get("latest_version", "unknown")
+                wt_latest = library_response.get("latest_version")
                 if wt_latest and wt_latest != "unknown":
                     latest_version = wt_latest
 
-                for res in results:
-                    symbol_name = res.get("symbol")
-                    relationships_data = res.get("relationships", [])
-                    
-                    relationships = []
-                    for rel_data in relationships_data:
-                        relationships.append(
-                            SymbolRelationship(
-                                relation=rel_data.get("relation"),
-                                target=rel_data.get("target"),
-                                status=rel_data.get("status"),
-                                confidence=rel_data.get("confidence")
+                for result in library_response.get("results", []):
+                    symbol_name = result.get("symbol")
+                    if not symbol_name:
+                        continue
+
+                    relationships = [
+                        SymbolRelationship(
+                            relation=relationship.get("relation"),
+                            target=(
+                                relationship.get("target")
+                                or relationship.get("to")
+                            ),
+                            status=relationship.get("status"),
+                            confidence=relationship.get("confidence")
+                        )
+                        for relationship in result.get("relationships", [])
+                        if relationship.get("relation")
+                        and (relationship.get("target") or relationship.get("to"))
+                        and relationship.get("status")
+                    ]
+                    status = self._determine_status(
+                        relationships,
+                        installed_version
+                    )
+                    assessments.append(
+                        SymbolAssessment(
+                            symbol=symbol_name,
+                            library=library,
+                            installed_version=installed_version,
+                            latest_version=latest_version,
+                            status=status,
+                            relationships=relationships,
+                            version_distance=self._calculate_version_distance(
+                                installed_version,
+                                latest_version,
+                                relationships
                             )
                         )
-                    
-                    status = self._determine_status(relationships, installed_version)
-                    version_distance = self._calculate_version_distance(
-                        installed_version, latest_version, relationships
                     )
-                    
-                    assessment = SymbolAssessment(
-                        symbol=symbol_name,
-                        library=library,
-                        installed_version=installed_version,
-                        latest_version=latest_version,
-                        status=status,
-                        relationships=relationships,
-                        version_distance=version_distance
-                    )
-                    assessments.append(assessment)
-                    
-            except Exception as e:
-                logger.error(f"Error fetching intelligence for {library}: {e}")
-                errors.append(f"{library}: {str(e)}")
-                
+
         return CorrelationResult(
             repository=repo_id,
             timestamp=datetime.now(timezone.utc).isoformat(),

@@ -293,21 +293,6 @@ def run_analysis_in_background(job_id: str, repo_owner: str, repo_name: str):
             }
         )
 
-        # Run Migration Pipeline
-        try:
-            async def run_pipeline():
-                webtool_client = WebtoolClient()
-                pipeline = MigrationPipeline(webtool_client, github_client)
-                try:
-                    report = await pipeline.run(analysis, repo_id, repo_obj)
-                    logger.info(f"Migration pipeline finished for {repo_id} with score {report.overall_health_score}")
-                finally:
-                    await webtool_client.close()
-
-            asyncio.run(run_pipeline())
-        except Exception as pipeline_err:
-            logger.error(f"Migration pipeline failed for {repo_id}: {pipeline_err}")
-
         update_job(
             job_id,
             JobStatus.COMPLETED,
@@ -327,6 +312,21 @@ def run_analysis_in_background(job_id: str, repo_owner: str, repo_name: str):
             job_id=job_id
         )
         logger.info(f"Background analysis completed for {repo_id} (job={job_id})")
+
+        # Run Migration Pipeline
+        try:
+            async def run_pipeline():
+                webtool_client = WebtoolClient()
+                pipeline = MigrationPipeline(webtool_client, github_client)
+                try:
+                    report = await pipeline.run(analysis, repo_id, repo_obj)
+                    logger.info(f"Migration pipeline finished for {repo_id} with score {report.overall_health_score}")
+                finally:
+                    await webtool_client.close()
+
+            asyncio.run(run_pipeline())
+        except Exception as pipeline_err:
+            logger.error(f"Migration pipeline failed for {repo_id}: {pipeline_err}")
 
     except Exception as e:
         error_msg = traceback.format_exc()

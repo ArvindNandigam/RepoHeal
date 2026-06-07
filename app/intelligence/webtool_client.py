@@ -21,7 +21,10 @@ class WebtoolClient:
         
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
-            headers={"X-API-Key": self.api_key},
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "X-API-Key": self.api_key,
+            },
             limits=limits,
             timeout=timeout,
         )
@@ -70,9 +73,25 @@ class WebtoolClient:
                 return response.json()
                 
             except (httpx.RequestError, httpx.HTTPStatusError) as e:
+                if (
+                    isinstance(e, httpx.HTTPStatusError)
+                    and e.response.status_code == 429
+                    and attempt < max_retries - 1
+                ):
+                    retry_after = e.response.headers.get("Retry-After")
+                    try:
+                        delay = max(float(retry_after), base_delay)
+                    except (TypeError, ValueError):
+                        delay = base_delay * (2 ** attempt)
+                    logger.warning(
+                        f"Rate limited on {endpoint}; retrying in {delay}s"
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
                 self._record_failure()
-                
-                # Don't retry client errors
+
+                # Don't retry other client errors.
                 if isinstance(e, httpx.HTTPStatusError) and 400 <= e.response.status_code < 500:
                     logger.error(f"Client error on {endpoint}: {e}")
                     raise

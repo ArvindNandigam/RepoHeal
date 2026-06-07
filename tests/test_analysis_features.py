@@ -2,7 +2,8 @@ import json
 import os
 import sys
 import types
-from datetime import datetime, timezone
+import asyncio
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 os.environ.setdefault("ENVIRONMENT", "development")
@@ -20,7 +21,9 @@ neo4j_module.GraphDatabase = MagicMock()
 sys.modules.setdefault("neo4j", neo4j_module)
 
 from app.github.metadata_branch import MetadataBranchManager
-from app.routers import webhook
+from app.intelligence.correlator import MigrationCorrelator
+from app.routers import graph, webhook
+from app.visualization.page_renderer import build_graph_page
 from app.worker import task_registry
 
 
@@ -165,3 +168,90 @@ def test_latest_analysis_batch_contains_required_files():
     manifest = json.loads(client.files["repoheal.meta/metadata.json"])
     assert manifest["repository"] == "owner/repo"
     assert datetime.fromisoformat(manifest["latest_analysis_at"]).tzinfo == timezone.utc
+
+
+def test_graph_page_polls_status_before_loading_graph():
+    page = build_graph_page("owner", "repo", "user")
+
+    assert "while (status.status !== \"completed\")" in page
+    assert page.index("await waitForAnalysis();") < page.index(
+        "`/graph/${repoOwner}/${repoName}`"
+    )
+    assert "Graph API returned no nodes" in page
+    assert "Please keep this page open" in page
+    assert "@keyframes buildPulse" in page
+
+
+def test_stale_finalizing_analysis_can_serve_completed_graph():
+    old_status = {
+        "status": "running",
+        "progress": 90,
+        "updated_at": (
+            datetime.now(timezone.utc) - timedelta(minutes=6)
+        ).isoformat()
+    }
+    fresh_status = {
+        **old_status,
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+
+    assert graph._is_stale_finalizing_status(old_status) is True
+    assert graph._is_stale_finalizing_status(fresh_status) is False
+
+
+def test_correlator_uses_bulk_and_filters_false_libraries():
+    class FakeWebtoolClient:
+        def __init__(self):
+            self.calls = []
+
+        async def get_bulk_intelligence(self, libraries):
+            self.calls.append(libraries)
+            return {
+                "results": [
+                    {
+                        "library": "numpy",
+                        "latest_version": "2.0.0",
+                        "results": [
+                            {
+                                "symbol": "numpy.array",
+                                "relationships": []
+                            }
+                        ]
+                    },
+                    {
+                        "library": "torch",
+                        "latest_version": "3.0.0",
+                        "results": [
+                            {
+                                "symbol": "torch.load",
+                                "relationships": []
+                            }
+                        ]
+                    }
+                ]
+            }
+
+    client = FakeWebtoolClient()
+    result = asyncio.run(
+        MigrationCorrelator(client).correlate(
+            {
+                "fingerprints": {
+                    "numpy": {"version": "1.0.0", "symbols": ["numpy.array"]},
+                    "torch": {"version": "2.0.0", "symbols": ["torch.load"]},
+                    "os": {"version": "unknown", "symbols": ["os.path"]},
+                    "df": {"version": "unknown", "symbols": ["df.merge"]},
+                },
+                "dependency_graph": {
+                    "numpy": {"latest_version": "2.0.0"},
+                    "torch": {"latest_version": "3.0.0"},
+                    "os": {"latest_version": "unknown"},
+                }
+            },
+            "owner/repo"
+        )
+    )
+
+    assert len(client.calls) == 1
+    assert [item["library"] for item in client.calls[0]] == ["numpy", "torch"]
+    assert result.libraries_checked == 2
+    assert len(result.assessments) == 2
