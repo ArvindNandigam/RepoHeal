@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from app.auth.jwt_manager import verify_session_token
-from app.auth.session_store import get_session_data
+from app.routers.dependencies import get_session_data
 from app.errors.exceptions import AnalysisError
 from app.github.client import RepoHealGitHubClient
 from app.github.metadata_branch import MetadataBranchManager
