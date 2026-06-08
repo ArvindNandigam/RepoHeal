@@ -1,5 +1,5 @@
 import jwt
-from fastapi import APIRouter, Request, Body
+from fastapi import APIRouter, Request, Body, Depends
 from fastapi.responses import RedirectResponse, JSONResponse
 from app.auth.session_store import session_store
 from app.auth.github_oauth import router as github_oauth_router
