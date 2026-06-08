@@ -18,3 +18,5 @@ pytest==8.2.1
 ruff==0.4.5
 mypy==1.10.0
 httpx>=0.28.0
+astor==0.8.1
+pydantic==2.13.4
