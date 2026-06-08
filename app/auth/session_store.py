@@ -55,10 +55,18 @@ class SessionStore:
                 "github_token": stored_github_token,
                 "created_at": datetime.now(timezone.utc),
                 "expires_at": expires_at,
+                "timezone": "UTC",
             }},
             upsert=True
         )
         logger.info(f"Session created for {github_login}")
+
+    def update_timezone(self, session_id: str, timezone: str) -> None:
+        db = get_mongo_db()
+        db.sessions.update_one(
+            {"session_id": session_id},
+            {"$set": {"timezone": timezone}}
+        )
 
     def get_session(self, session_id: str):
         db = get_mongo_db()
@@ -85,6 +93,7 @@ class SessionStore:
             "github_token": self._decrypt_token(doc["github_token"]) if doc.get("github_token") else None,
             "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else None,
             "expires_at": doc.get("expires_at").isoformat() if doc.get("expires_at") else None,
+            "timezone": doc.get("timezone", "UTC"),
         }
 
     def delete_session(self, session_id: str):

@@ -14,7 +14,8 @@ async def dashboard_data(user=Depends(verify_session_token)):
     dashboard_repositories = build_dashboard_repositories(session_data["github_token"])
     return {
         "user": user["github_login"],
-        "repositories": dashboard_repositories
+        "repositories": dashboard_repositories,
+        "timezone": user.get("timezone", "UTC")
     }
 
 @router.get("", response_class=HTMLResponse)

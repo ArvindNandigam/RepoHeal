@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RepoHeal Reports Hub</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1113;
+      --panel: #1c1f22;
+      --border: rgba(255, 255, 255, 0.1);
+      --text: #f4f6f8;
+      --muted: #a8b0b8;
+      --accent: #42d6a4;
+      --warning: #f4c95d;
+      --danger: #f97066;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; }
+    .container { max-width: 1200px; margin: 0 auto; display: grid; gap: 24px; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+    .header { display: flex; justify-content: space-between; align-items: center; }
+    h1, h2, h3 { margin: 0; }
+    .section-title { font-size: 14px; text-transform: uppercase; letter-spacing: 0.2em; color: var(--accent); margin-bottom: 16px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .stat { display: grid; gap: 6px; }
+    .stat span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; }
+    .stat strong { font-size: 28px; }
+    .btn { display: inline-flex; align-items: center; padding: 10px 16px; border-radius: 999px; text-decoration: none; font-weight: 700; color: #021019; background: linear-gradient(135deg, var(--accent), var(--warning)); border: 0; cursor: pointer; }
+    .btn.ghost { color: var(--text); background: rgba(255,255,255,0.08); border: 1px solid var(--border); }
+    .pill { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; background: rgba(255,255,255,0.06); border: 1px solid var(--border); text-decoration: none; color: var(--text); }
+    .search { width: 100%; padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: var(--text); outline: none; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 12px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; font-size: 13px; }
+    .score-high { color: var(--accent); }
+    .score-med { color: var(--warning); }
+    .score-low { color: var(--danger); }
+    .empty-state { padding: 32px; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: 12px; }
+    .loading-state { padding: 32px; text-align: center; color: var(--muted); }
+    .hidden { display: none !important; }
+    @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1 id="repoTitle">Reports Hub</h1>
+        <p id="repoMeta" style="color: var(--muted); margin-top: 6px;"></p>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <a href="/dashboard" class="btn ghost">Dashboard</a>
+        <a id="healthPageLink" class="btn ghost">Health Report</a>
+      </div>
+    </div>
+
+    <div id="loadingState" class="loading-state">Loading reports data...</div>
+
+    <div id="summaryCards" class="panel grid-2 hidden">
+      <div class="stat"><span>Health Score</span><strong id="healthScore" class="score-high">--</strong></div>
+      <div class="stat"><span>Risk Level</span><strong id="riskLevel">--</strong></div>
+      <div class="stat"><span>Migrations</span><strong id="migrationCount">--</strong></div>
+      <div class="stat"><span>Analyses</span><strong id="analysisCount">--</strong></div>
+    </div>
+
+    <div class="panel">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div class="section-title" style="margin: 0;">Analysis History</div>
+        <a id="historyLink" class="pill" href="#">View Full Timeline →</a>
+      </div>
+      <table id="historyTable">
+        <thead><tr><th>Timestamp</th><th>Branch</th><th>Commit</th><th>Health Score</th><th>Actions</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="historyEmpty" class="empty-state hidden">No analysis history available.</div>
+    </div>
+
+    <div class="panel">
+      <div class="section-title">Migration Documents</div>
+      <table id="migrationTable">
+        <thead><tr><th>Title</th><th>Timestamp</th><th>Branch</th><th>Commit</th><th>Risk Score</th><th>Status</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="migrationEmpty" class="empty-state hidden">No migration documents available.</div>
+    </div>
+  </div>
+
+  <script>
+    async function loadHub() {
+      const pathParts = window.location.pathname.split("/");
+      const repoOwner = pathParts[2];
+      const repoName = pathParts[3];
+      const repoFull = `${repoOwner}/${repoName}`;
+
+      document.getElementById("repoTitle").textContent = `Reports: ${repoFull}`;
+      document.getElementById("healthPageLink").href = `/reports/${repoOwner}/${repoName}/health-page`;
+
+      try {
+        const [historyRes, healthRes, migrationsRes] = await Promise.all([
+          fetch(`/reports/${repoOwner}/${repoName}/history`),
+          fetch(`/reports/${repoOwner}/${repoName}/health`).catch(() => null),
+          fetch(`/migrations/${repoOwner}/${repoName}`).catch(() => null)
+        ]);
+
+        const history = await historyRes.json();
+        const health = healthRes && healthRes.ok ? await healthRes.json() : null;
+        const migrations = migrationsRes && migrationsRes.ok ? await migrationsRes.json() : null;
+
+        document.getElementById("loadingState").classList.add("hidden");
+        document.getElementById("summaryCards").classList.remove("hidden");
+
+        const score = health ? health.overall_health_score : (history.timeline?.[0]?.health_score);
+        const scoreEl = document.getElementById("healthScore");
+        if (score != null) {
+          scoreEl.textContent = `${score}/100`;
+          scoreEl.className = score > 70 ? "score-high" : score > 40 ? "score-med" : "score-low";
+        }
+        document.getElementById("riskLevel").textContent = health ? (health.overall_risk_level || "N/A").toUpperCase() : "N/A";
+        document.getElementById("migrationCount").textContent = migrations?.migrations?.length || 0;
+        document.getElementById("analysisCount").textContent = history.timeline?.length || 0;
+
+        const migList = migrations?.migrations || [];
+        const tbody = document.querySelector("#migrationTable tbody");
+        const migEmpty = document.getElementById("migrationEmpty");
+        if (migList.length === 0) {
+          migEmpty.classList.remove("hidden");
+        } else {
+          migList.slice().reverse().forEach(m => {
+            const row = tbody.insertRow();
+            const ts = new Date(m.timestamp).toLocaleString();
+            const scoreColor = (m.risk_score || 0) > 70 ? "score-low" : (m.risk_score || 0) > 30 ? "score-med" : "score-high";
+            row.innerHTML = `<td><a href="/reports/${repoOwner}/${repoName}/migration-page?analysis_id=${m.analysis_id}" style="color: var(--accent);">${m.migration_id || m.analysis_id}</a></td><td>${ts}</td><td>--</td><td>--</td><td class="${scoreColor}">${m.risk_score || "N/A"}</td><td>${m.status || "completed"}</td>`;
+          });
+        }
+
+        const timeline = history.timeline || [];
+        const htbody = document.querySelector("#historyTable tbody");
+        const hEmpty = document.getElementById("historyEmpty");
+        if (timeline.length === 0) {
+          hEmpty.classList.remove("hidden");
+        } else {
+          timeline.slice(0, 10).forEach(a => {
+            const row = htbody.insertRow();
+            const ts = new Date(a.timestamp).toLocaleString();
+            const sc = a.health_score;
+            const scoreStr = sc != null ? `${sc}/100` : "N/A";
+            const scoreCls = sc > 70 ? "score-high" : sc > 40 ? "score-med" : "score-low";
+            row.innerHTML = `<td>${ts}</td><td><span class="pill">${a.branch}</span></td><td><code>${(a.commit || "").slice(0, 7)}</code></td><td class="${scoreCls}">${scoreStr}</td><td><a class="pill" href="/reports/${repoOwner}/${repoName}/health-page?analysis_id=${a.analysis_id}">View</a></td>`;
+          });
+        }
+
+        document.getElementById("historyLink").href = `/reports/${repoOwner}/${repoName}/history-page`;
+        document.getElementById("repoMeta").textContent = `Default branch: ${history.default_branch || "main"} | ${timeline.length} analyses`;
+      } catch (err) {
+        document.getElementById("loadingState").textContent = `Error: ${err.message}`;
+      }
+    }
+    loadHub();
+  </script>
+</body>
+</html>

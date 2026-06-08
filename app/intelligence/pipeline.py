@@ -31,6 +31,7 @@ class MigrationPipeline:
         analysis: Dict[str, Any],
         repo_id: str,
         repo: Any,
+        analysis_id: str | None = None,
         source_branch: str | None = None,
         commit_sha: str | None = None
     ) -> HealthReport:
@@ -56,12 +57,14 @@ class MigrationPipeline:
         document = self.document_generator.generate(report)
         
         # 6. Metadata Branch
-        snapshot_id = uuid.uuid4().hex[:10]
+        # Use provided analysis_id or fallback to a short hash if missing
+        final_analysis_id = analysis_id or analysis.get("analysis_id") or uuid.uuid4().hex[:10]
+        
         self.metadata_manager.save_migration_artifacts(
             repo,
             document,
             report,
-            snapshot_id,
+            final_analysis_id,
             analysis,
             source_branch=source_branch,
             commit_sha=commit_sha

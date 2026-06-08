@@ -1,8 +1,9 @@
 import jwt
-from fastapi import APIRouter, Request
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Request, Body
+from fastapi.responses import RedirectResponse, JSONResponse
 from app.auth.session_store import session_store
 from app.auth.github_oauth import router as github_oauth_router
+from app.auth.jwt_manager import verify_session_token
 from app.utils.logger import get_logger
 from app.config import settings
 
@@ -34,3 +35,8 @@ async def logout(request: Request):
     response.delete_cookie("repoheal_session")
     logger.info("User logged out")
     return response
+
+@router.post("/timezone")
+async def update_timezone(timezone: str = Body(..., embed=True), user=Depends(verify_session_token)):
+    session_store.update_timezone(user["session_id"], timezone)
+    return {"status": "ok", "timezone": timezone}

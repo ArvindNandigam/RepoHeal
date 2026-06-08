@@ -422,7 +422,7 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
           "Status API"
         );
 
-        if (status.status === "not_started" || status.status === "failed") {
+        if (status.status === "queued" || status.status === "failed") {
           statusLabel.textContent = "Queueing analysis";
           setBuildingStatus(`Queueing analysis for ${repoOwner}/${repoName}`, 0);
           await fetchJson(

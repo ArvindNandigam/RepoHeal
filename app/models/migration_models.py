@@ -33,6 +33,13 @@ class SymbolAssessment(BaseModel):
     version_distance: Optional[VersionDistance] = None
     files_using: List[str] = Field(default_factory=list)
     functions_using: List[str] = Field(default_factory=list)
+    confidence: Optional[float] = None
+
+    def compute_confidence(self) -> Optional[float]:
+        confs = [r.confidence for r in self.relationships if r.confidence is not None]
+        if confs:
+            return sum(confs) / len(confs)
+        return None
 
 class CorrelationResult(BaseModel):
     repository: str
@@ -93,6 +100,7 @@ class RecommendedAction(BaseModel):
     priority: Literal["critical", "high", "medium", "low"]
     action_type: str
     description: str
+    confidence: Optional[float] = None
 
 class ExecutiveSummary(BaseModel):
     overall_health_score: int

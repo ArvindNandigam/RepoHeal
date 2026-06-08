@@ -237,6 +237,33 @@
       border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
+    /* Modal Styles */
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(8px);
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .modal.open { display: flex; }
+
+    .modal-content {
+      width: 100%;
+      max-width: 500px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px;
+      display: grid;
+      gap: 24px;
+      box-shadow: 0 40px 100px rgba(0, 0, 0, 0.5);
+    }
+
     .repo-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -438,7 +465,7 @@
         </p>
         <div class="toolbar">
           <input id="repoSearch" class="search" type="search" placeholder="Search repositories by name or owner">
-          <a class="button secondary" href="/logout" title="Use your app logout route if available">Open account</a>
+          <button class="button secondary" type="button" id="openSettings">Settings</button>
           <a class="button secondary" href="/logout">Logout</a>
           <a class="button" href="/visualize/{{ github_user }}/Repohealdemo">Open sample graph</a>
         </div>
@@ -485,6 +512,18 @@
       </div>
     </section>
 
+    <section id="migrationSection" class="panel" style="padding: 22px; display: grid; gap: 18px;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <p class="eyebrow" style="margin-bottom: 8px;">Migration Documents</p>
+          <div class="lede" style="margin: 0;">Recently generated migration documents across all repositories.</div>
+        </div>
+        <button class="button secondary" type="button" id="refreshMigrations" style="padding: 8px 14px; font-size: 12px;">Refresh</button>
+      </div>
+      <div id="migrationDocsList" style="max-height: 200px; overflow-y: auto; display: grid; gap: 8px;"></div>
+      <div id="migrationDocsEmpty" class="empty-state hidden">No migration documents yet. Run an analysis with health refresh to generate them.</div>
+    </section>
+
     <section class="panel" style="padding: 22px; display: grid; gap: 18px;">
       <div class="toolbar">
         <div>
@@ -500,6 +539,26 @@
     </section>
   </main>
 
+  <div id="settingsModal" class="modal">
+    <div class="modal-content">
+      <h2 style="margin: 0;">Settings</h2>
+      <div class="field">
+        <span>Timezone Override</span>
+        <select id="timezoneSelect">
+          <option value="auto">Auto (Browser Local)</option>
+          <option value="UTC">UTC</option>
+          <option value="America/New_York">Eastern Time (ET)</option>
+          <option value="Europe/London">London (GMT/BST)</option>
+          <option value="Asia/Tokyo">Tokyo (JST)</option>
+        </select>
+      </div>
+      <div class="repo-actions" style="margin-top: 10px;">
+        <button class="button" id="saveSettings">Save Changes</button>
+        <button class="button secondary" id="closeSettings">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const searchInput = document.getElementById("repoSearch");
     const repoGrid = document.getElementById("repoGrid");
@@ -513,7 +572,14 @@
     const progressSegments = Array.from(document.querySelectorAll("#progressBar .progress-segment"));
     const progressLabels = Array.from(document.querySelectorAll("#progressLabels span"));
 
+    const settingsModal = document.getElementById("settingsModal");
+    const openSettingsBtn = document.getElementById("openSettings");
+    const closeSettingsBtn = document.getElementById("closeSettings");
+    const saveSettingsBtn = document.getElementById("saveSettings");
+    const timezoneSelect = document.getElementById("timezoneSelect");
+
     let repositories = [];
+    let userTimezone = "auto";
     const progressSteps = [
       "Connecting to dashboard API",
       "Loading installed repositories",
@@ -549,7 +615,21 @@
     function formatDate(value) {
       if (!value) return "Not available";
       const date = new Date(value);
-      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+      if (Number.isNaN(date.getTime())) return String(value);
+      
+      const options = {
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false
+      };
+      
+      if (userTimezone !== "auto" && userTimezone !== "UTC") {
+        options.timeZone = userTimezone;
+      } else if (userTimezone === "UTC") {
+        options.timeZone = "UTC";
+      }
+      
+      return date.toLocaleString(undefined, options);
     }
 
     function shortSha(value) {
@@ -563,7 +643,7 @@
     }
 
     function isRunningStatus(value) {
-      return ["queued", "downloading", "extracting", "analyzing", "building_graph", "writing_metadata", "generating_reports"].includes(value);
+      return ["queued", "analyzing", "generating_graph", "generating_reports", "generating_migrations", "updating_metadata"].includes(value);
     }
 
     function setStatusBadge(badge, status) {
@@ -615,12 +695,79 @@
       }
       return response.json();
     }
+const eventSources = new Map();
 
-    async function refreshRepositoryStatus(repo) {
-      const card = repoGrid.querySelector(`[data-repo-name="${CSS.escape(repo.name)}"]`);
-      if (!card) return;
+function setupSSE(repo) {
+  if (eventSources.has(repo.name)) return;
 
-      const statusBadge = card.querySelector("[data-status-badge]");
+  const source = new EventSource(`/sse/status/${repo.owner}/${repo.name}`);
+  source.addEventListener("analysis", (event) => {
+    const data = JSON.parse(event.data);
+    const card = repoGrid.querySelector(`[data-repo-name="${CSS.escape(repo.name)}"]`);
+    if (card) {
+      updateCardFromStatus(card, data);
+    }
+  });
+  source.addEventListener("migration", (event) => {
+    const data = JSON.parse(event.data);
+    const badge = document.querySelector(`[data-repo-name="${CSS.escape(repo.name)}"] [data-status-badge]`);
+    if (badge) {
+      badge.textContent = `Migration: ${data.status || "completed"}`;
+      badge.classList.add("running");
+    }
+  });
+  source.addEventListener("pr", (event) => {
+    const data = JSON.parse(event.data);
+    const card = repoGrid.querySelector(`[data-repo-name="${CSS.escape(repo.name)}"]`);
+    if (card) {
+      const actionsDiv = card.querySelector(".repo-actions");
+      if (actionsDiv && data.pr_url) {
+        const existingPr = actionsDiv.querySelector("[data-pr-link]");
+        if (!existingPr) {
+          const prLink = document.createElement("a");
+          prLink.className = "button tertiary";
+          prLink.dataset.prLink = "";
+          prLink.href = data.pr_url;
+          prLink.target = "_blank";
+          prLink.textContent = `PR #${data.pr_number} (${data.status})`;
+          actionsDiv.appendChild(prLink);
+        }
+      }
+    }
+  });
+  source.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    const card = repoGrid.querySelector(`[data-repo-name="${CSS.escape(repo.name)}"]`);
+    if (card) {
+      updateCardFromStatus(card, data);
+    }
+  };
+  eventSources.set(repo.name, source);
+}
+
+function updateCardFromStatus(card, status) {
+  const statusBadge = card.querySelector("[data-status-badge]");
+  const statusMessage = card.querySelector("[data-status-message]");
+  const progressBar = card.querySelector("[data-progress-bar]");
+
+  setStatusBadge(statusBadge, status);
+  statusMessage.textContent = `${status.message || "Analysis status available"} (${Number(status.progress || 0)}%)`;
+  progressBar.style.setProperty("--progress-width", `${Math.max(0, Math.min(100, Number(status.progress || 0)))}%`);
+
+  if (status.last_analysis) {
+    card.querySelector("[data-last-analysis]").textContent = formatDate(status.last_analysis);
+  }
+}
+
+async function refreshRepositoryStatus(repo) {
+  const card = repoGrid.querySelector(`[data-repo-name="${CSS.escape(repo.name)}"]`);
+  if (!card) return;
+
+  setupSSE(repo); // Start listening for live updates
+
+  const statusBadge = card.querySelector("[data-status-badge]");
+...
+
       const statusMessage = card.querySelector("[data-status-message]");
       const progressBar = card.querySelector("[data-progress-bar]");
       const lastAnalysis = card.querySelector("[data-last-analysis]");
@@ -641,6 +788,30 @@
         lastCommit.textContent = shortSha(status.last_commit_analyzed);
         currentHead.textContent = shortSha(status.current_head);
         codeState.textContent = codeStateLabel(status.code_state_status);
+
+        // Fetch health badge
+        try {
+          const healthRes = await fetch(`/reports/${repo.owner}/${repo.repo}/health`, { credentials: "same-origin" });
+          if (healthRes.ok) {
+            const healthData = await healthRes.json();
+            const healthBadge = card.querySelector("[data-health-badge]");
+            const riskBadge = card.querySelector("[data-risk-badge]");
+            if (healthBadge && healthData.overall_health_score != null) {
+              const score = healthData.overall_health_score;
+              healthBadge.style.display = "inline-flex";
+              healthBadge.textContent = `Health: ${score}/100`;
+              healthBadge.style.background = score > 70 ? "rgba(66,214,164,0.2)" : score > 40 ? "rgba(244,201,93,0.2)" : "rgba(249,112,102,0.2)";
+              healthBadge.style.color = score > 70 ? "var(--accent)" : score > 40 ? "var(--warning)" : "var(--danger)";
+            }
+            if (riskBadge) {
+              const risk = healthData.overall_risk_level || "unknown";
+              riskBadge.style.display = "inline-flex";
+              riskBadge.textContent = `Risk: ${risk.toUpperCase()}`;
+              riskBadge.style.background = risk === "low" ? "rgba(66,214,164,0.2)" : risk === "medium" ? "rgba(244,201,93,0.2)" : "rgba(249,112,102,0.2)";
+              riskBadge.style.color = risk === "low" ? "var(--accent)" : risk === "medium" ? "var(--warning)" : "var(--danger)";
+            }
+          }
+        } catch (e) {}
       } catch (error) {
         statusBadge.textContent = "Unknown";
         statusMessage.textContent = error.message;
@@ -675,6 +846,10 @@
           <div class="repo-status">
             <span data-status-message>${repo.private ? "Access restricted" : "Visible to the user"}</span>
             <div class="repo-progress"><span data-progress-bar></span></div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <span class="pill" data-health-badge style="display: none;">Health: --</span>
+              <span class="pill" data-risk-badge style="display: none;">Risk: --</span>
+            </div>
             <span>Last analysis: <strong data-last-analysis>Loading</strong></span>
             <span>Last health refresh: <strong data-last-health-refresh>Loading</strong></span>
             <span>Current HEAD: <strong data-current-head>Loading</strong></span>
@@ -708,9 +883,12 @@
             </details>
             <button class="button secondary" type="button" data-action="reanalyze">Refresh Analysis</button>
             <button class="button tertiary" type="button" data-action="health">Refresh Health Report</button>
-            <a class="button secondary" href="${repo.visualize_url}">Visualize Graph</a>
-            <a class="button secondary" href="${repo.reports_url}">View Reports</a>
-            <button class="button tertiary" type="button" data-action="compare">Compare Analyses</button>
+            <a class="button secondary" href="${repo.visualize_url}">Graph</a>
+            <a class="button secondary" href="${repo.reports_hub_url}">Reports Hub</a>
+            <a class="button tertiary" href="/reports/${repo.owner}/${repo.repo}/health-page">Health</a>
+            <a class="button tertiary" href="/reports/${repo.owner}/${repo.repo}/migration-page">Migration</a>
+            <button class="button tertiary" type="button" data-action="compare">Compare</button>
+            <a class="button tertiary" href="${repo.history_url}">History</a>
           </div>
         `;
 
@@ -808,7 +986,72 @@
     }
 
     searchInput.addEventListener("input", applyFilter);
-    loadDashboard();
+
+    openSettingsBtn.addEventListener("click", () => {
+      timezoneSelect.value = localStorage.getItem("repoheal_timezone") || "auto";
+      settingsModal.classList.add("open");
+    });
+
+    closeSettingsBtn.addEventListener("click", () => {
+      settingsModal.classList.remove("open");
+    });
+
+    saveSettingsBtn.addEventListener("click", async () => {
+      userTimezone = timezoneSelect.value;
+      localStorage.setItem("repoheal_timezone", userTimezone);
+      try {
+        await fetch("/auth/timezone", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ timezone: userTimezone }),
+          credentials: "same-origin"
+        });
+      } catch (e) {}
+      settingsModal.classList.remove("open");
+      render(repositories);
+    });
+
+    // Load persisted settings
+    userTimezone = localStorage.getItem("repoheal_timezone") || "auto";
+
+    async function loadMigrationDocs() {
+      const list = document.getElementById("migrationDocsList");
+      const empty = document.getElementById("migrationDocsEmpty");
+      list.innerHTML = "";
+      let total = 0;
+
+      for (const repo of repositories) {
+        try {
+          const res = await fetch(`/migrations/${repo.owner}/${repo.repo}`);
+          if (!res.ok) continue;
+          const data = await res.json();
+          const migs = data.migrations || [];
+          migs.slice(-3).forEach(m => {
+            total++;
+            const item = document.createElement("div");
+            item.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid var(--border);";
+            const ts = m.timestamp ? new Date(m.timestamp).toLocaleString() : "N/A";
+            const risk = m.risk_score != null ? m.risk_score : "?";
+            item.innerHTML = `<span><strong>${repo.name}</strong> · <span style="color: var(--muted);">${ts}</span></span>
+              <span style="display: flex; gap: 8px; align-items: center;">
+                <span style="color: ${risk > 70 ? 'var(--danger)' : risk > 30 ? 'var(--warning)' : 'var(--accent)'};">Risk: ${risk}</span>
+                <a class="pill" href="/reports/${repo.owner}/${repo.repo}/migration-page?analysis_id=${m.analysis_id}">View</a>
+                <a class="pill" href="/reports/${repo.owner}/${repo.repo}/migration-review?migration_id=${m.migration_id || m.analysis_id}&repo_owner=${repo.owner}&repo_name=${repo.repo}">Review</a>
+              </span>`;
+            list.appendChild(item);
+          });
+        } catch (e) {}
+      }
+
+      empty.classList.toggle("hidden", total > 0);
+      if (total === 0) {
+        list.innerHTML = "";
+      }
+    }
+
+    document.getElementById("refreshMigrations").addEventListener("click", loadMigrationDocs);
+
+    loadDashboard().then(() => loadMigrationDocs());
   </script>
 </body>
 </html>

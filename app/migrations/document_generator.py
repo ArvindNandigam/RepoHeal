@@ -31,6 +31,8 @@ class MigrationDocumentGenerator:
         return "\n\n---\n\n".join(sections) + "\n"
 
     def _render_header(self, report: HealthReport) -> str:
+        confidences = [a.confidence for a in report.recommended_actions if isinstance(a.confidence, float)]
+        avg_conf = f"{sum(confidences) / len(confidences):.2f}" if confidences else "N/A"
         return (
             "# RepoHeal Migration Document\n\n"
             "**Immutable**: this document is an append-only migration record and "
@@ -38,5 +40,6 @@ class MigrationDocumentGenerator:
             f"**Repository**: {report.repository}\n"
             f"**Generated**: {report.generated_at}\n"
             f"**Overall Risk Level**: {report.overall_risk_level.upper()}\n"
-            f"**Health Score**: {report.overall_health_score}/100"
+            f"**Health Score**: {report.overall_health_score}/100\n"
+            f"**Average Confidence**: {avg_conf}"
         )

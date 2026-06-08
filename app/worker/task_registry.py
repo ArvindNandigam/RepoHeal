@@ -12,26 +12,25 @@ logger = get_logger(__name__)
 
 
 class JobStatus(str, Enum):
-    NOT_STARTED = "not_started"
-    QUEUED = "queued"
-    DOWNLOADING = "downloading"
-    EXTRACTING = "extracting"
-    ANALYZING = "analyzing"
-    BUILDING_GRAPH = "building_graph"
-    WRITING_METADATA = "writing_metadata"
-    GENERATING_REPORTS = "generating_reports"
-    COMPLETED = "completed"
+    QUEUED = "queued"                          # 0%
+    ANALYZING = "analyzing"                    # 10-50%
+    GENERATING_GRAPH = "generating_graph"      # 75%
+    GENERATING_REPORTS = "generating_reports"  # 85%
+    GENERATING_MIGRATIONS = "generating_migrations"  # 95%
+    UPDATING_METADATA = "updating_metadata"    # 90%
+    COMPLETED = "completed"                    # 100%
     FAILED = "failed"
+    OUTDATED = "outdated"
+    UP_TO_DATE = "up_to_date"
 
 
 ACTIVE_STATUSES = {
     JobStatus.QUEUED.value,
-    JobStatus.DOWNLOADING.value,
-    JobStatus.EXTRACTING.value,
     JobStatus.ANALYZING.value,
-    JobStatus.BUILDING_GRAPH.value,
-    JobStatus.WRITING_METADATA.value,
+    JobStatus.GENERATING_GRAPH.value,
     JobStatus.GENERATING_REPORTS.value,
+    JobStatus.GENERATING_MIGRATIONS.value,
+    JobStatus.UPDATING_METADATA.value,
 }
 
 
@@ -110,7 +109,9 @@ def update_job(
     result=None,
     error=None,
     progress: int | None = None,
-    message: str | None = None
+    message: str | None = None,
+    analysis_id: str | None = None,
+    repository_snapshot_id: str | None = None
 ):
     """Update job status in MongoDB."""
     db = get_mongo_db()
@@ -126,6 +127,11 @@ def update_job(
         update["progress"] = progress
     if message is not None:
         update["message"] = message
+    if analysis_id is not None:
+        update["analysis_id"] = analysis_id
+    if repository_snapshot_id is not None:
+        update["repository_snapshot_id"] = repository_snapshot_id
+        
     db.jobs.update_one({"job_id": job_id}, {"$set": update})
 
 
@@ -140,7 +146,9 @@ def update_repository_status(
     job_type: str | None = None,
     selected_branch: str | None = None,
     target_commit_sha: str | None = None,
-    current_head: str | None = None
+    current_head: str | None = None,
+    analysis_id: str | None = None,
+    repository_snapshot_id: str | None = None
 ):
     """Persist the latest repository-level analysis state."""
     db = get_mongo_db()
@@ -164,6 +172,10 @@ def update_repository_status(
         update["target_commit_sha"] = target_commit_sha
     if current_head:
         update["current_head"] = current_head
+    if analysis_id:
+        update["analysis_id"] = analysis_id
+    if repository_snapshot_id:
+        update["repository_snapshot_id"] = repository_snapshot_id
     if error is not None:
         update["error"] = error
     if status == JobStatus.COMPLETED:
@@ -200,14 +212,18 @@ def set_analysis_progress(
     job_type: str | None = None,
     selected_branch: str | None = None,
     target_commit_sha: str | None = None,
-    current_head: str | None = None
+    current_head: str | None = None,
+    analysis_id: str | None = None,
+    repository_snapshot_id: str | None = None
 ):
     update_job(
         job_id,
         status,
         error=error,
         progress=progress,
-        message=message
+        message=message,
+        analysis_id=analysis_id,
+        repository_snapshot_id=repository_snapshot_id
     )
     update_repository_status(
         repo_owner,
@@ -220,7 +236,9 @@ def set_analysis_progress(
         job_type=job_type,
         selected_branch=selected_branch,
         target_commit_sha=target_commit_sha,
-        current_head=current_head
+        current_head=current_head,
+        analysis_id=analysis_id,
+        repository_snapshot_id=repository_snapshot_id
     )
 
 
@@ -268,7 +286,7 @@ def get_repository_status(repo_owner: str, repo_name: str):
     if not doc:
         return {
             "repository": f"{repo_owner}/{repo_name}",
-            "status": JobStatus.NOT_STARTED.value,
+            "status": JobStatus.QUEUED.value,
             "progress": 0,
             "message": "Analysis has not started",
         }
@@ -381,9 +399,9 @@ def run_analysis_in_background(
             job_id,
             repo_owner,
             repo_name,
-            JobStatus.DOWNLOADING,
+            JobStatus.ANALYZING,
             10,
-            "Queued",
+            "Downloading repository snapshot",
             job_type=job_type,
             selected_branch=selected_branch,
             target_commit_sha=commit_sha,
@@ -400,9 +418,9 @@ def run_analysis_in_background(
             job_id,
             repo_owner,
             repo_name,
-            JobStatus.EXTRACTING,
-            25,
-            "Analyzing Repository",
+            JobStatus.ANALYZING,
+            30,
+            "Extracting imports and dependencies",
             job_type=job_type,
             selected_branch=selected_branch,
             target_commit_sha=commit_sha,
@@ -414,7 +432,7 @@ def run_analysis_in_background(
             repo_name,
             JobStatus.ANALYZING,
             50,
-            "Building Dependency Graph",
+            "Analyzing repository structure",
             job_type=job_type,
             selected_branch=selected_branch,
             target_commit_sha=commit_sha,
@@ -432,9 +450,9 @@ def run_analysis_in_background(
             job_id,
             repo_owner,
             repo_name,
-            JobStatus.BUILDING_GRAPH,
+            JobStatus.GENERATING_GRAPH,
             75,
-            "Generating Reports",
+            "Building Neo4j knowledge graph",
             job_type=job_type,
             selected_branch=selected_branch,
             target_commit_sha=commit_sha,
@@ -448,9 +466,9 @@ def run_analysis_in_background(
             job_id,
             repo_owner,
             repo_name,
-            JobStatus.WRITING_METADATA,
+            JobStatus.UPDATING_METADATA,
             90,
-            "Updating Metadata",
+            "Writing analysis metadata to repoheal.meta",
             job_type=job_type,
             selected_branch=selected_branch,
             target_commit_sha=commit_sha,
@@ -460,8 +478,13 @@ def run_analysis_in_background(
         from app.github.metadata_branch import MetadataBranchManager
         from app.visualization.graph_api import GraphVisualizer
 
+        metadata_manager = MetadataBranchManager(github_client)
+        analysis_id, snapshot_id, _ = metadata_manager.generate_ids(repo_id, selected_branch, commit_sha)
+        analysis["analysis_id"] = analysis_id
+        analysis["repository_snapshot_id"] = snapshot_id
+
         visualizer = GraphVisualizer(analysis)
-        MetadataBranchManager(github_client).save_latest_analysis(
+        metadata_manager.save_latest_analysis(
             repo_obj,
             repo_id,
             analysis,
@@ -477,13 +500,15 @@ def run_analysis_in_background(
             job_id,
             repo_owner,
             repo_name,
-            JobStatus.GENERATING_REPORTS,
+            JobStatus.GENERATING_MIGRATIONS,
             95,
-            "Updating Metadata",
+            "Correlating intelligence and generating migration documents",
             job_type=job_type,
             selected_branch=selected_branch,
             target_commit_sha=commit_sha,
-            current_head=current_head
+            current_head=current_head,
+            analysis_id=analysis_id,
+            repository_snapshot_id=snapshot_id
         )
         try:
             async def run_pipeline():
@@ -494,6 +519,7 @@ def run_analysis_in_background(
                         analysis,
                         repo_id,
                         repo_obj,
+                        analysis_id=analysis_id,
                         source_branch=selected_branch,
                         commit_sha=commit_sha
                     )
@@ -511,9 +537,13 @@ def run_analysis_in_background(
             result={
                 "repository": repo_id,
                 "status": "analyzed",
+                "analysis_id": analysis_id,
+                "repository_snapshot_id": snapshot_id
             },
             progress=100,
-            message="Completed"
+            message="Completed",
+            analysis_id=analysis_id,
+            repository_snapshot_id=snapshot_id
         )
         update_repository_status(
             repo_owner,
@@ -525,7 +555,9 @@ def run_analysis_in_background(
             job_type=job_type,
             selected_branch=selected_branch,
             target_commit_sha=commit_sha,
-            current_head=current_head
+            current_head=current_head,
+            analysis_id=analysis_id,
+            repository_snapshot_id=snapshot_id
         )
         logger.info(f"Background analysis completed for {repo_id} (job={job_id})")
 
@@ -590,7 +622,7 @@ def run_health_refresh_in_background(
             repo_name,
             JobStatus.GENERATING_REPORTS,
             50,
-            "Generating Reports",
+            "Generating health reports and migration documents",
             job_type=job_type,
             selected_branch=selected_branch,
             target_commit_sha=commit_sha,

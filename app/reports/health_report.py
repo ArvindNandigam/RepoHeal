@@ -86,6 +86,8 @@ class HealthReportGenerator:
 
             migration_path = path_by_symbol.get(r.symbol)
             target = f" with `{migration_path.target}`" if migration_path else ""
+            symbol_assessment = next((a for a in correlation.assessments if a.symbol == r.symbol), None)
+            action_confidence = symbol_assessment.compute_confidence() if symbol_assessment else None
                 
             actions.append(RecommendedAction(
                 symbol=r.symbol,
@@ -94,7 +96,8 @@ class HealthReportGenerator:
                 description=(
                     f"Migrate {r.symbol}{target} to avoid potential breakage. "
                     f"Impacted files: {r.factors.affected_file_count}"
-                )
+                ),
+                confidence=action_confidence
             ))
             
         return HealthReport(
@@ -242,8 +245,9 @@ class HealthReportGenerator:
             return "\n".join(lines + ["", "No actions recommended."])
 
         for action in report.recommended_actions:
+            conf = f" (confidence: {action.confidence:.2f})" if isinstance(action.confidence, float) else ""
             lines.append(
-                f"- [{action.priority.upper()}] `{action.symbol}`: "
+                f"- [{action.priority.upper()}] `{action.symbol}`{conf}: "
                 f"{action.description}"
             )
         return "\n".join(lines)

@@ -1,6 +1,41 @@
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 
+class AnalysisTargetMetadata(BaseModel):
+    analysis_id: str
+    repository_snapshot_id: str
+    repository: str
+    branch: str
+    commit_sha: str
+    short_commit: str
+    analysis_timestamp: str
+    analysis_version: str = "1.0"
+    schema_version: str = "2.0"
+
+class ComparisonMetadata(BaseModel):
+    comparison_id: str
+    repository: str
+    left_analysis_id: str
+    right_analysis_id: str
+    left_branch: str
+    left_commit: str
+    right_branch: str
+    right_commit: str
+    created_at: str
+
+class PRMetadata(BaseModel):
+    analysis_id: str
+    migration_id: Optional[str] = None
+    comparison_id: Optional[str] = None
+    repository_snapshot_id: str
+    commit_sha: str
+    branch: str
+    pr_number: int
+    pr_url: str
+    changes_branch: str
+    created_at: str
+    status: str = "open"
+
 class RepositoryConfig(BaseModel):
     name: str
     owner: str
@@ -12,11 +47,14 @@ class RepositoryConfig(BaseModel):
     status_url: str
     visualize_url: str
     reports_url: str
+    reports_hub_url: str = ""
+    history_url: str = ""
     compare_url: str
 
 class DashboardResponse(BaseModel):
     user: str
     repositories: List[RepositoryConfig]
+    timezone: Optional[str] = "UTC"
 
 class WorkspaceResponse(BaseModel):
     repo_owner: str
@@ -50,6 +88,8 @@ class RepositoryStatus(BaseModel):
     current_head: Optional[str] = None
     selected_branch: Optional[str] = None
     code_state_status: Optional[str] = None
+    analysis_id: Optional[str] = None
+    repository_snapshot_id: Optional[str] = None
 
 class CompareAnalysesRequest(BaseModel):
     branch_a: str
@@ -91,3 +131,44 @@ class HealthResponse(BaseModel):
     authentication: Optional[str] = None
     documentation: Optional[str] = None
     login_url: Optional[str] = None
+
+class UpgradeSpec(BaseModel):
+    library: str
+    from_version: str
+    to_version: str
+
+class SimulateUpgradeRequest(BaseModel):
+    upgrades: List[UpgradeSpec]
+
+class SimulatedUpgradeResult(BaseModel):
+    library: str
+    from_version: str
+    to_version: str
+    symbol_count: int
+    impacted_files: List[str]
+    breaking_apis: List[str]
+    auto_fixable_count: int
+    manual_review_count: int
+    risk_score: float
+    risk_level: str
+    confidence: Optional[float] = None
+
+class SimulateUpgradeResponse(BaseModel):
+    repository: str
+    generated_at: str
+    analysis_id: str
+    upgrades: List[SimulatedUpgradeResult]
+    overall_risk_score: float
+    overall_risk_level: str
+
+class RebuildGraphRequest(BaseModel):
+    analysis_id: Optional[str] = None
+    branch: Optional[str] = None
+    commit: Optional[str] = None
+
+class RebuildGraphResponse(BaseModel):
+    repository: str
+    status: str
+    nodes_created: int
+    edges_created: int
+    message: str

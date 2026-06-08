@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RepoHeal Migration Review</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1113;
+      --panel: #1c1f22;
+      --border: rgba(255, 255, 255, 0.1);
+      --text: #f4f6f8;
+      --muted: #a8b0b8;
+      --accent: #42d6a4;
+      --warning: #f4c95d;
+      --danger: #f97066;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; }
+    .container { max-width: 1000px; margin: 0 auto; display: grid; gap: 24px; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+    .header { display: flex; justify-content: space-between; align-items: center; }
+    h1, h2, h3 { margin: 0; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; padding: 10px 20px; border-radius: 999px; text-decoration: none; font-weight: 700; border: 0; cursor: pointer; color: #021019; background: linear-gradient(135deg, var(--accent), var(--warning)); }
+    .btn.ghost { color: var(--text); background: rgba(255,255,255,0.08); border: 1px solid var(--border); }
+    .btn.danger { background: var(--danger); color: #240d0b; }
+    .btn.warning { background: var(--warning); color: #201604; }
+    .btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
+    .badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .badge.risk-low { background: rgba(66, 214, 164, 0.2); color: var(--accent); }
+    .badge.risk-med { background: rgba(244, 201, 93, 0.2); color: var(--warning); }
+    .badge.risk-high { background: rgba(249, 112, 102, 0.2); color: var(--danger); }
+    .badge.status { background: rgba(255,255,255,0.06); border: 1px solid var(--border); }
+    .section-title { font-size: 14px; text-transform: uppercase; letter-spacing: 0.2em; color: var(--accent); margin-bottom: 12px; }
+    .empty-state { padding: 32px; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: 12px; }
+    .loading-state { padding: 32px; text-align: center; color: var(--muted); }
+    .hidden { display: none !important; }
+    pre { background: rgba(0,0,0,0.3); padding: 16px; border-radius: 8px; overflow-x: auto; font-family: monospace; font-size: 13px; line-height: 1.5; }
+    .markdown-body { line-height: 1.6; }
+    .markdown-body code { background: rgba(255,255,255,0.05); padding: 2px 4px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1 id="migrationTitle">Migration Review</h1>
+        <p id="migrationMeta" style="color: var(--muted); margin-top: 6px;"></p>
+      </div>
+      <a href="/dashboard" class="btn ghost">Back to Dashboard</a>
+    </div>
+
+    <div id="loadingState" class="loading-state">Loading migration details...</div>
+
+    <div id="migrationContent" class="hidden">
+      <div class="panel" style="display: flex; gap: 20px; flex-wrap: wrap;">
+        <div>
+          <span style="color: var(--muted); font-size: 12px;">Risk Score</span><br>
+          <strong id="riskScore" style="font-size: 28px;">--</strong>
+        </div>
+        <div>
+          <span style="color: var(--muted); font-size: 12px;">Status</span><br>
+          <strong id="migrationStatus" class="badge status">--</strong>
+        </div>
+        <div>
+          <span style="color: var(--muted); font-size: 12px;">Analysis</span><br>
+          <strong id="analysisId" style="font-size: 14px;">--</strong>
+        </div>
+        <div>
+          <span style="color: var(--muted); font-size: 12px;">Created</span><br>
+          <strong id="createdAt" style="font-size: 14px;">--</strong>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="section-title">Migration Document</div>
+        <div id="docContent" class="markdown-body">Loading...</div>
+      </div>
+
+      <div class="panel">
+        <div class="section-title">Actions</div>
+        <div id="actionButtons" class="btn-group">
+          <button class="btn" data-action="approve" id="approveBtn">Approve & Create PR</button>
+          <button class="btn danger" data-action="reject" id="rejectBtn">Reject</button>
+          <button class="btn warning" data-action="defer" id="deferBtn">Defer</button>
+        </div>
+        <div id="actionResult" class="hidden" style="margin-top: 12px; padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.05);"></div>
+      </div>
+    </div>
+
+    <div id="errorState" class="empty-state hidden">Migration not found.</div>
+  </div>
+
+  <script>
+    async function loadReview() {
+      const params = new URLSearchParams(window.location.search);
+      const migrationId = params.get("migration_id") || params.get("analysis_id");
+      const repoOwner = params.get("repo_owner");
+      const repoName = params.get("repo_name");
+
+      if (!migrationId || !repoOwner || !repoName) {
+        document.getElementById("loadingState").classList.add("hidden");
+        document.getElementById("errorState").classList.remove("hidden");
+        document.getElementById("errorState").textContent = "Missing migration_id, repo_owner, or repo_name query parameters.";
+        return;
+      }
+
+      document.getElementById("migrationTitle").textContent = `Migration: ${migrationId.slice(0, 30)}`;
+      document.getElementById("migrationMeta").textContent = `${repoOwner}/${repoName}`;
+
+      try {
+        const res = await fetch(`/migrations/detail/${migrationId}?repo_owner=${repoOwner}&repo_name=${repoName}`);
+        if (!res.ok) throw new Error("Not found");
+        const data = await res.json();
+
+        document.getElementById("loadingState").classList.add("hidden");
+        document.getElementById("migrationContent").classList.remove("hidden");
+
+        const risk = data.risk_score || 0;
+        const riskEl = document.getElementById("riskScore");
+        riskEl.textContent = risk;
+        riskEl.className = risk > 70 ? "badge risk-high" : risk > 30 ? "badge risk-med" : "badge risk-low";
+
+        document.getElementById("migrationStatus").textContent = data.status || "completed";
+        document.getElementById("analysisId").textContent = data.analysis_id || migrationId;
+        document.getElementById("createdAt").textContent = data.timestamp ? new Date(data.timestamp).toLocaleString() : "N/A";
+
+        if (data.content) {
+          const docDiv = document.getElementById("docContent");
+          if (typeof marked !== "undefined") {
+            docDiv.innerHTML = marked.parse(data.content);
+          } else {
+            docDiv.textContent = data.content.substring(0, 2000) + "...";
+          }
+        } else {
+          document.getElementById("docContent").textContent = "No document content available.";
+        }
+
+        const status = data.status || "completed";
+        if (status !== "pending_review" && status !== "completed") {
+          document.getElementById("actionButtons").innerHTML = `<div style="color: var(--muted);">This migration has been ${status}.</div>`;
+        }
+      } catch (err) {
+        document.getElementById("loadingState").classList.add("hidden");
+        document.getElementById("errorState").classList.remove("hidden");
+        document.getElementById("errorState").textContent = `Error: ${err.message}`;
+      }
+    }
+
+    document.addEventListener("click", async (e) => {
+      const btn = e.target.closest("[data-action]");
+      if (!btn) return;
+
+      const params = new URLSearchParams(window.location.search);
+      const migrationId = params.get("migration_id") || params.get("analysis_id");
+      const repoOwner = params.get("repo_owner");
+      const repoName = params.get("repo_name");
+      const action = btn.dataset.action;
+
+      if (!migrationId || !repoOwner || !repoName) return;
+
+      const resultDiv = document.getElementById("actionResult");
+      resultDiv.classList.remove("hidden");
+      resultDiv.textContent = `${action} in progress...`;
+
+      try {
+        const res = await fetch(`/migrations/${migrationId}/${action}?repo_owner=${repoOwner}&repo_name=${repoName}`, { method: "POST" });
+        const data = await res.json();
+        const isSuccess = data.status === action;
+        resultDiv.innerHTML = isSuccess
+          ? `<strong>✓ Migration ${action} successfully.</strong>${data.pr_created ? ' PR has been created.' : data.pr ? ' PR created.' : ''}`
+          : `<strong>✗ Action failed.</strong> ${data.error || 'Unexpected response.'}`;
+        resultDiv.style.background = isSuccess ? "rgba(66, 214, 164, 0.1)" : "rgba(249, 112, 102, 0.1)";
+
+        document.getElementById("migrationStatus").textContent = action;
+        if (data.pr_url) {
+          resultDiv.innerHTML += ` <a href="${data.pr_url}" target="_blank" class="btn ghost" style="padding: 6px 12px; font-size: 12px;">View PR</a>`;
+        }
+      } catch (err) {
+        resultDiv.innerHTML = `<strong>Error:</strong> ${err.message}`;
+      }
+    });
+
+    loadReview();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</body>
+</html>

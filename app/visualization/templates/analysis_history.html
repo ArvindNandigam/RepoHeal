@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RepoHeal Analysis History</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1113;
+      --panel: #1c1f22;
+      --border: rgba(255, 255, 255, 0.1);
+      --text: #f4f6f8;
+      --muted: #a8b0b8;
+      --accent: #42d6a4;
+      --warning: #f4c95d;
+      --danger: #f97066;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; }
+    .container { max-width: 1000px; margin: 0 auto; display: grid; gap: 24px; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+    .header { display: flex; justify-content: space-between; align-items: center; }
+    h1, h2 { margin: 0; }
+    .btn { display: inline-flex; align-items: center; padding: 10px 16px; border-radius: 999px; text-decoration: none; font-weight: 700; color: var(--text); background: rgba(255,255,255,0.08); border: 1px solid var(--border); cursor: pointer; }
+    .badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .badge.head { background: rgba(66, 214, 164, 0.2); color: var(--accent); }
+    .badge.analyzed { background: rgba(244, 201, 93, 0.2); color: var(--warning); }
+    .badge.outdated { background: rgba(249, 112, 102, 0.2); color: var(--danger); }
+    .badge.up-to-date { background: rgba(66, 214, 164, 0.2); color: var(--accent); }
+    .timeline-item { display: grid; grid-template-columns: 120px 1fr; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--border); }
+    .timeline-item:last-child { border-bottom: none; }
+    .timeline-time { color: var(--muted); font-size: 13px; }
+    .timeline-content { display: grid; gap: 8px; }
+    .timeline-meta { display: flex; gap: 8px; flex-wrap: wrap; }
+    .score-high { color: var(--accent); font-weight: 700; }
+    .score-med { color: var(--warning); font-weight: 700; }
+    .score-low { color: var(--danger); font-weight: 700; }
+    .empty-state { padding: 32px; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: 12px; }
+    .loading-state { padding: 32px; text-align: center; color: var(--muted); }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1 id="repoTitle">Analysis Timeline</h1>
+        <p id="repoMeta" style="color: var(--muted); margin-top: 6px;"></p>
+      </div>
+      <a href="/dashboard" class="btn">Back to Dashboard</a>
+    </div>
+
+    <div class="panel" style="display: flex; gap: 20px; flex-wrap: wrap;">
+      <div><span style="color: var(--muted); font-size: 12px;">Analyses</span><br><strong id="totalCount" style="font-size: 24px;">--</strong></div>
+      <div><span style="color: var(--muted); font-size: 12px;">Current HEAD</span><br><strong id="currentHead" style="font-size: 16px;">--</strong></div>
+      <div><span style="color: var(--muted); font-size: 12px;">Last Analyzed</span><br><strong id="lastAnalyzed" style="font-size: 16px;">--</strong></div>
+      <div><span style="color: var(--muted); font-size: 12px;">Status</span><br><strong id="stateStatus" class="badge up-to-date">--</strong></div>
+    </div>
+
+    <div id="loadingState" class="loading-state">Loading analysis history...</div>
+
+    <div class="panel" id="timelineContainer">
+      <div id="timelineList"></div>
+      <div id="emptyState" class="empty-state hidden">No analyses found for this repository.</div>
+    </div>
+  </div>
+
+  <script>
+    async function loadHistory() {
+      const pathParts = window.location.pathname.split("/");
+      const repoOwner = pathParts[2];
+      const repoName = pathParts[3];
+      const repoFull = `${repoOwner}/${repoName}`;
+
+      document.getElementById("repoTitle").textContent = `Timeline: ${repoFull}`;
+
+      try {
+        const res = await fetch(`/reports/${repoOwner}/${repoName}/history`);
+        const data = await res.json();
+
+        document.getElementById("loadingState").classList.add("hidden");
+        document.getElementById("totalCount").textContent = data.timeline?.length || 0;
+        document.getElementById("currentHead").textContent = data.current_head ? data.current_head.slice(0, 7) : "Unknown";
+        document.getElementById("lastAnalyzed").textContent = data.last_analyzed_commit ? data.last_analyzed_commit.slice(0, 7) : "N/A";
+
+        const stateEl = document.getElementById("stateStatus");
+        if (data.current_head && data.last_analyzed_commit) {
+          const isUpToDate = data.current_head.slice(0, 7) === data.last_analyzed_commit.slice(0, 7);
+          stateEl.textContent = isUpToDate ? "Up To Date" : "Outdated";
+          stateEl.className = isUpToDate ? "badge up-to-date" : "badge outdated";
+        } else {
+          stateEl.textContent = "Unknown";
+        }
+
+        document.getElementById("repoMeta").textContent = `Default branch: ${data.default_branch || "main"}`;
+
+        const timeline = data.timeline || [];
+        const list = document.getElementById("timelineList");
+        const empty = document.getElementById("emptyState");
+
+        if (timeline.length === 0) {
+          empty.classList.remove("hidden");
+          return;
+        }
+
+        const isCurrentHead = (commit) => data.current_head && commit && data.current_head.slice(0, 7) === commit.slice(0, 7);
+        const isLastAnalyzed = (commit) => data.last_analyzed_commit && commit && data.last_analyzed_commit.slice(0, 7) === commit.slice(0, 7);
+
+        timeline.forEach(a => {
+          const item = document.createElement("div");
+          item.className = "timeline-item";
+
+          const ts = new Date(a.timestamp).toLocaleString();
+          const sc = a.health_score;
+          const scoreStr = sc != null ? `${sc}/100` : "N/A";
+          const scoreCls = sc > 70 ? "score-high" : sc > 40 ? "score-med" : "score-low";
+
+          let badges = "";
+          const commit = a.commit || "";
+          if (isCurrentHead(commit)) badges += '<span class="badge head">HEAD</span> ';
+          if (isLastAnalyzed(commit)) badges += '<span class="badge analyzed">Last Analyzed</span> ';
+
+          item.innerHTML = `
+            <div class="timeline-time">${ts}</div>
+            <div class="timeline-content">
+              <div class="timeline-meta">
+                <span class="badge" style="background: rgba(255,255,255,0.06);">${a.branch}</span>
+                <code style="color: var(--muted);">${commit.slice(0, 7)}</code>
+                <span class="${scoreCls}">${scoreStr}</span>
+                ${badges}
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <a class="btn" style="padding: 6px 12px; font-size: 12px;" href="/reports/${repoOwner}/${repoName}/health-page?analysis_id=${a.analysis_id}">Health</a>
+                <a class="btn" style="padding: 6px 12px; font-size: 12px;" href="/reports/${repoOwner}/${repoName}/migration-page?analysis_id=${a.analysis_id}">Migration</a>
+              </div>
+            </div>
+          `;
+          list.appendChild(item);
+        });
+      } catch (err) {
+        document.getElementById("loadingState").textContent = `Error: ${err.message}`;
+      }
+    }
+    loadHistory();
+  </script>
+</body>
+</html>

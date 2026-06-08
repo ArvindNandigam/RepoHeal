@@ -343,7 +343,7 @@ def test_status_requires_visual_graph_before_completed(monkeypatch):
         )
     )
 
-    assert response["status"] == "not_started"
+    assert response["status"] == "queued"
     assert response["message"] == "Graph snapshot missing; analysis must be rerun"
     assert response["files"] == 12
     assert response["packages"] == 4

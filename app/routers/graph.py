@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from typing import Union
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Body
 from app.errors.exceptions import GraphError, RepositoryNotFoundError
-from app.models.schemas import GraphResponse, GraphBuildingResponse, RepositoryStatus
+from app.models.schemas import GraphResponse, GraphBuildingResponse, RepositoryStatus, RebuildGraphRequest, RebuildGraphResponse
 from app.auth.jwt_manager import verify_session_token
 from app.auth.authorization import verify_repository_access
 from app.routers.dependencies import (
@@ -18,6 +18,7 @@ from app.graph.connection import neo4j_connection
 from app.utils.logger import get_logger
 from app.utils.rate_limit import limiter
 from app.worker.task_registry import get_repository_status as get_analysis_status
+from app.graph.rebuilder import GraphRebuilder
 
 logger = get_logger(__name__)
 
@@ -25,7 +26,7 @@ router = APIRouter(tags=["graph"])
 
 
 def _is_stale_finalizing_status(status: dict) -> bool:
-    if status.get("status") not in {"running", "writing_metadata", "generating_reports"} or status.get("progress", 0) < 90:
+    if status.get("status") not in {"generating_graph", "generating_reports", "generating_migrations", "updating_metadata"} or status.get("progress", 0) < 80:
         return False
 
     updated_at = status.get("updated_at")
@@ -47,7 +48,7 @@ def _graph_has_nodes(graph: dict | None) -> bool:
 
 
 def _is_analysis_incomplete(status: dict) -> bool:
-    return status.get("status") not in {"completed", "not_started"}
+    return status.get("status") not in {"completed", "up_to_date", "outdated"}
 
 
 def _status_metadata(status: dict) -> dict:
@@ -213,7 +214,7 @@ async def get_repository_status(
     try:
         analysis_status = get_analysis_status(repo_owner, repo_name)
         should_check_graph = (
-            analysis_status["status"] in {"completed", "not_started"}
+            analysis_status["status"] in {"completed", "queued"}
             or _is_stale_finalizing_status(analysis_status)
         )
         if not should_check_graph:
@@ -232,7 +233,7 @@ async def get_repository_status(
         )
         missing_graph_response = {
             "repository": repo_id,
-            "status": "not_started",
+            "status": "queued",
             "progress": 0,
             "message": "Graph snapshot missing; analysis must be rerun",
             "files": 0,
@@ -286,4 +287,44 @@ async def get_repository_status(
             }
     except Exception as e:
         logger.error(f"Status endpoint failed for {repo_id}: {e}")
+        raise GraphError(message=str(e))
+
+
+@router.post("/graph/rebuild/{repo_owner}/{repo_name}")
+@limiter.limit("5/minute")
+async def rebuild_graph_endpoint(
+    request: Request,
+    repo_owner: str,
+    repo_name: str,
+    rebuild: RebuildGraphRequest | None = Body(None),
+    user=Depends(verify_session_token)
+):
+    session_data = get_session_data(user)
+    installation = ensure_repoheal_installed(repo_owner, repo_name)
+    verify_repository_access(
+        github_token=session_data["github_token"],
+        repo_owner=repo_owner,
+        repo_name=repo_name
+    )
+
+    repo_id = f"{repo_owner}/{repo_name}"
+    try:
+        from app.github.client import RepoHealGitHubClient
+        github_client = RepoHealGitHubClient(installation["id"])
+        rebuilder = GraphRebuilder(github_client)
+        result = rebuilder.rebuild(
+            repo_id,
+            analysis_id=rebuild.analysis_id if rebuild else None,
+            branch=rebuild.branch if rebuild else None,
+            commit=rebuild.commit if rebuild else None
+        )
+        return RebuildGraphResponse(
+            repository=repo_id,
+            status=result["status"],
+            nodes_created=result["nodes_created"],
+            edges_created=result["edges_created"],
+            message=result["message"]
+        )
+    except Exception as e:
+        logger.error(f"Graph rebuild failed for {repo_id}: {e}")
         raise GraphError(message=str(e))

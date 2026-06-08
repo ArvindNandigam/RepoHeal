@@ -17,6 +17,17 @@ class MetadataBranchManager:
         self.branch_name = REPOHEAL_METADATA_BRANCH
         self.base_path = "repoheal.meta"
 
+    def generate_ids(self, repo_id: str, branch: str, commit_sha: str) -> tuple[str, str, str]:
+        """Generate standardized analysis_id and repository_snapshot_id."""
+        short_commit = commit_sha[:7]
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        safe_branch = self._safe_name(branch)
+        
+        analysis_id = f"{safe_branch}_{short_commit}_{timestamp}"
+        repo_snapshot_id = f"{self._safe_name(repo_id)}_{safe_branch}_{short_commit}"
+        
+        return analysis_id, repo_snapshot_id, short_commit
+
     def save_latest_analysis(
         self,
         repo,
@@ -25,40 +36,53 @@ class MetadataBranchManager:
         graph: Dict[str, Any],
         source_branch: str | None = None,
         commit_sha: str | None = None
-    ) -> None:
-        """Store an immutable analysis record and update compatibility pointers."""
+    ) -> str:
+        """Store an immutable analysis record and update manifest."""
         analyzed_at_dt = datetime.now(timezone.utc)
         analyzed_at = analyzed_at_dt.isoformat()
-        snapshot_id = analyzed_at_dt.strftime("%Y%m%dT%H%M%SZ")
+        
         source_branch = source_branch or getattr(repo, "default_branch", None) or "main"
         commit_sha = commit_sha or self._get_branch_commit_sha(repo, source_branch)
         commit_sha = commit_sha or self._get_default_commit_sha(repo)
+        
+        analysis_id, snapshot_id, short_commit = self.generate_ids(repo_id, source_branch, commit_sha)
         safe_branch = self._safe_name(source_branch)
-        safe_commit = self._safe_name(commit_sha or snapshot_id)
-        graph_snapshot_path = (
-            f"{self.base_path}/snapshots/"
-            f"data_{self._safe_name(repo_id)}_{snapshot_id}.json"
-        )
-        analysis_record_path = (
-            f"{self.base_path}/analyses/{safe_branch}/analysis_{safe_commit}.json"
-        )
+        
+        # Flattened Storage Layout: analyses/{branch}/{short_commit}/analysis.json
+        analysis_base = f"{self.base_path}/analyses/{safe_branch}/{short_commit}"
+        analysis_record_path = f"{analysis_base}/analysis_{analysis_id}.json"
+        graph_snapshot_path = f"{analysis_base}/dependency_graph_{analysis_id}.json"
+        
         manifest = self._load_manifest(repo)
+        
+        # Artifact paths for compatibility/latest pointers
         latest_analysis_path = f"{self.base_path}/snapshots/latest_analysis.json"
         latest_graph_path = f"{self.base_path}/snapshots/latest_graph.json"
         latest_packages_path = f"{self.base_path}/snapshots/latest_packages.json"
         latest_imports_path = f"{self.base_path}/snapshots/latest_imports.json"
         latest_risk_report_path = f"{self.base_path}/reports/dependency_risk_report.json"
+
+        metadata = {
+            "analysis_id": analysis_id,
+            "repository_snapshot_id": snapshot_id,
+            "repository": repo_id,
+            "branch": source_branch,
+            "commit_sha": commit_sha,
+            "short_commit": short_commit,
+            "analysis_timestamp": analyzed_at,
+            "analysis_version": "1.0",
+            "schema_version": "2.0"
+        }
+
         manifest.update({
             "schema_version": max(manifest.get("schema_version", 1), 3),
             "repository": repo_id,
-            "branch": self.branch_name,
-            "source_branch": source_branch,
-            "status": "active",
-            "last_analysis": analyzed_at,
+            "default_branch": getattr(repo, "default_branch", "main"),
+            "current_head": self._get_branch_commit_sha(repo, getattr(repo, "default_branch", "main")),
+            "last_analyzed_commit": commit_sha,
+            "latest_analysis_id": analysis_id,
             "latest_analysis_at": analyzed_at,
-            "last_commit_analyzed": commit_sha,
-            "latest_analysis": latest_analysis_path,
-            "latest_analysis_record": analysis_record_path,
+            "latest_analysis": analysis_record_path,
             "latest_files": {
                 "analysis": latest_analysis_path,
                 "analysis_record": analysis_record_path,
@@ -69,228 +93,321 @@ class MetadataBranchManager:
                 "dependency_risk_report": latest_risk_report_path
             }
         })
-        manifest.pop("workspace_url", None)
-        manifest.setdefault("last_health_refresh", None)
-        manifest.setdefault("latest_report", None)
-        manifest.setdefault("latest_migration", None)
-        manifest.setdefault("analyses", {})
-        manifest["analyses"].setdefault(source_branch, [])
-        if analysis_record_path not in manifest["analyses"][source_branch]:
-            manifest["analyses"][source_branch].append(analysis_record_path)
-        manifest.setdefault("health_reports", {})
+        
+        manifest.setdefault("analyses", [])
+        manifest["analyses"].append({
+            "analysis_id": analysis_id,
+            "snapshot_id": snapshot_id,
+            "branch": source_branch,
+            "commit": commit_sha,
+            "timestamp": analyzed_at,
+            "path": analysis_record_path
+        })
+        
+        manifest.setdefault("health_reports", [])
+        manifest.setdefault("migration_reports", [])
         manifest.setdefault("comparisons", [])
+        manifest.setdefault("pull_requests", [])
 
         graph_payload = {
-            "repository": repo_id,
-            "branch": source_branch,
-            "commit_sha": commit_sha,
-            "analyzed_at": analyzed_at,
+            **metadata,
             **graph
         }
-        analysis_record = self._build_analysis_record(
-            repo_id,
-            source_branch,
-            commit_sha,
-            analyzed_at,
-            latest_risk_report_path,
-            analysis
-        )
+        
+        analysis_payload = {
+            **metadata,
+            "analysis": analysis,
+            "graph_path": graph_snapshot_path
+        }
+
         files_to_commit = {
             f"{self.base_path}/metadata.json": self._json(manifest),
-            analysis_record_path: self._json({
-                **analysis_record,
-                "graph_path": graph_snapshot_path,
-                "analysis": analysis
-            }),
+            analysis_record_path: self._json(analysis_payload),
+            graph_snapshot_path: self._json(graph_payload),
+            
+            # Latest pointers (compat)
             latest_analysis_path: self._json({
                 "repository": repo_id,
                 "branch": source_branch,
                 "commit_sha": commit_sha,
                 "analyzed_at": analyzed_at,
+                "analysis_id": analysis_id,
                 "analysis": analysis
             }),
             latest_graph_path: self._json(graph_payload),
-            graph_snapshot_path: self._json(graph_payload),
             latest_packages_path: self._json({
                 **analysis.get("dependencies", {}),
-                "packages": analysis.get("dependency_graph", {})
+                "packages": analysis.get("dependency_graph", {}),
+                "analysis_id": analysis_id
             }),
-            latest_imports_path: self._json(
-                analysis.get("imports", {})
-            ),
+            latest_imports_path: self._json({
+                **analysis.get("imports", {}),
+                "analysis_id": analysis_id
+            }),
             latest_risk_report_path: self._json({
                 "repository": repo_id,
                 "branch": source_branch,
                 "commit_sha": commit_sha,
                 "analyzed_at": analyzed_at,
+                "analysis_id": analysis_id,
                 "issues": analysis.get("issues", {}),
                 "dependency_graph": analysis.get("dependency_graph", {})
             })
         }
 
         self.client.ensure_branch(repo, self.branch_name)
-        try:
-            self.client.batch_upsert_files(
-                repo,
-                self.branch_name,
-                files_to_commit,
-                f"Update RepoHeal analysis for {repo_id}"
-            )
-        except Exception as exc:
-            logger.warning(
-                f"Batch metadata sync failed for {repo_id}; "
-                f"falling back to individual files: {exc}"
-            )
-            for path, content in files_to_commit.items():
-                self.client.upsert_file(
-                    repo,
-                    self.branch_name,
-                    path,
-                    content,
-                    f"Update {path} for {repo_id}"
-                )
-        logger.info(f"Synchronized analysis metadata for {repo_id}@{commit_sha}")
-
-    def load_latest_graph(self, repo) -> Dict[str, Any] | None:
-        """Load the latest durable Cytoscape graph from the metadata branch."""
-        manifest = self._load_manifest(repo)
-        graph_path = (
-            manifest
-            .get("latest_files", {})
-            .get("graph")
+        self.client.batch_upsert_files(
+            repo,
+            self.branch_name,
+            files_to_commit,
+            f"Analysis {analysis_id} for {repo_id}"
         )
-        candidate_paths = [
-            graph_path,
-            f"{self.base_path}/snapshots/latest_graph.json"
-        ]
-
-        for path in candidate_paths:
-            if not path:
-                continue
-
-            try:
-                contents = repo.get_contents(path, ref=self.branch_name)
-                return json.loads(contents.decoded_content.decode("utf-8"))
-            except Exception:
-                continue
-
-        return None
+        logger.info(f"Synchronized analysis {analysis_id} for {repo_id}")
+        return analysis_id
 
     def save_migration_artifacts(
         self,
         repo,
         document: MigrationDocument,
         report: HealthReport,
-        snapshot_id: str,
+        analysis_id: str,
         analysis: Dict[str, Any],
         source_branch: str | None = None,
         commit_sha: str | None = None
-    ) -> None:
+    ) -> str:
         """Batch commit immutable health and migration artifacts."""
         
         self.client.ensure_branch(repo, self.branch_name)
         
         refreshed_at = datetime.now(timezone.utc)
-        date_str = refreshed_at.strftime("%Y%m%d")
         repo_id = getattr(repo, "full_name", report.repository)
         source_branch = source_branch or analysis.get("branch") or getattr(repo, "default_branch", None) or "main"
         commit_sha = commit_sha or analysis.get("commit_sha") or self._get_branch_commit_sha(repo, source_branch)
-        commit_sha = commit_sha or self._get_default_commit_sha(repo) or snapshot_id
+        short_commit = commit_sha[:7]
         safe_branch = self._safe_name(source_branch)
-        safe_commit = self._safe_name(commit_sha)
         
-        doc_path = f"{self.base_path}/migrations/{document.filename}"
-        migration_report_path = f"{self.base_path}/migration_reports/{document.filename}"
-        report_path = f"{self.base_path}/reports/health_report_{date_str}_{snapshot_id}.json"
-        health_record_path = (
-            f"{self.base_path}/health_reports/{safe_branch}/health_{safe_commit}.json"
-        )
-        snapshot_path = f"{self.base_path}/snapshots/analysis_{snapshot_id}.json"
-        manifest_path = f"{self.base_path}/metadata.json"
-        readme_path = f"{self.base_path}/README.md"
-
-        if self._path_exists(repo, doc_path) or self._path_exists(repo, migration_report_path):
-            raise ValueError(
-                f"Migration document already exists and is immutable: {migration_report_path}"
-            )
-
-        generator = HealthReportGenerator()
+        migration_id = f"mig_{analysis_id}"
+        analysis_base = f"{self.base_path}/analyses/{safe_branch}/{short_commit}"
+        
+        health_report_path = f"{analysis_base}/health_report_{analysis_id}.json"
+        migration_report_path = f"{analysis_base}/migration_report_{analysis_id}.md"
+        
+        legacy_doc_path = f"{self.base_path}/migrations/{document.filename}"
+        
         manifest = self._load_manifest(repo)
-        self._add_artifact_to_manifest(
-            manifest,
-            repo,
-            document,
-            snapshot_id,
-            doc_path,
-            report_path,
-            snapshot_path
-        )
-        manifest.update({
-            "status": "active",
-            "last_health_refresh": refreshed_at.isoformat(),
-            "latest_report": health_record_path,
-            "latest_detailed_report": report_path,
-            "latest_migration": migration_report_path,
-            "latest_analysis": manifest.get("latest_analysis", snapshot_path),
-            "last_commit_analyzed": commit_sha,
-            "source_branch": source_branch,
-        })
-        manifest.setdefault("health_reports", {})
-        manifest["health_reports"].setdefault(source_branch, [])
-        if health_record_path not in manifest["health_reports"][source_branch]:
-            manifest["health_reports"][source_branch].append(health_record_path)
         
-        files_to_commit = {
-            manifest_path: self._json(manifest),
-            doc_path: document.content,
-            migration_report_path: document.content,
-            health_record_path: self._json(
-                self._build_health_report_record(
-                    repo_id,
-                    source_branch,
-                    commit_sha,
-                    refreshed_at.isoformat(),
-                    report
-                )
-            ),
-            report_path: generator.to_json(report),
-            snapshot_path: self._json({
-                "repository": repo_id,
-                "branch": source_branch,
-                "commit_sha": commit_sha,
-                "analysis": analysis
-            })
+        health_data = {
+            "migration_id": migration_id,
+            "analysis_id": analysis_id,
+            "repository_snapshot_id": analysis.get("repository_snapshot_id", ""),
+            "generated_from_commit": commit_sha,
+            "generated_at": refreshed_at.isoformat(),
+            "health_score": getattr(report, "overall_health_score", 0),
+            "risk_score": getattr(report, "overall_health_score", 0), # Using health score as base for now
+            "report": report.model_dump()
         }
 
+        manifest.update({
+            "last_health_refresh": refreshed_at.isoformat(),
+            "latest_health_report": health_report_path,
+            "latest_migration": migration_report_path,
+        })
+        
+        manifest.setdefault("health_reports", [])
+        manifest["health_reports"].append({
+            "analysis_id": analysis_id,
+            "timestamp": refreshed_at.isoformat(),
+            "path": health_report_path
+        })
+        
+        manifest.setdefault("migration_reports", [])
+        manifest["migration_reports"].append({
+            "migration_id": migration_id,
+            "analysis_id": analysis_id,
+            "timestamp": refreshed_at.isoformat(),
+            "path": migration_report_path,
+            "risk_score": health_data["risk_score"]
+        })
+        
+        files_to_commit = {
+            f"{self.base_path}/metadata.json": self._json(manifest),
+            health_report_path: self._json(health_data),
+            migration_report_path: document.content,
+            legacy_doc_path: document.content # Backward compat
+        }
+
+        readme_path = f"{self.base_path}/README.md"
         if not self._path_exists(repo, readme_path):
             files_to_commit[readme_path] = self._readme()
         
-        # Batch write files
-        try:
-            self.client.batch_upsert_files(
-                repo, 
-                self.branch_name, 
-                files_to_commit, 
-                f"Add migration artifacts for {document.filename}"
-            )
-        except Exception as e:
-            logger.error(f"Failed to batch commit artifacts: {e}")
-            # Fallback to individual upserts if tree API fails
-            for path, content in files_to_commit.items():
-                self.client.upsert_file(repo, self.branch_name, path, content, f"Add {path}")
+        self.client.batch_upsert_files(
+            repo, 
+            self.branch_name, 
+            files_to_commit, 
+            f"Migration artifacts for {analysis_id}"
+        )
+        logger.info(f"Saved migration artifacts for {analysis_id}")
+        return migration_id
 
-    def load_latest_report(self, repo) -> Dict[str, Any] | None:
+    def save_comparison(
+        self,
+        repo,
+        repo_id: str,
+        left_analysis_id: str,
+        right_analysis_id: str,
+        comparison_data: Dict[str, Any]
+    ) -> str:
+        """Store an immutable comparison record."""
         manifest = self._load_manifest(repo)
-        for path in (
-            manifest.get("latest_report"),
-            manifest.get("latest_detailed_report"),
-        ):
-            if not path:
-                continue
-            report = self._load_json_file(repo, path)
-            if report:
-                return report
-        return None
+        
+        # Resolve branches/commits from analysis_id or manifest history
+        left_meta = next((a for a in manifest.get("analyses", []) if a["analysis_id"] == left_analysis_id), {})
+        right_meta = next((a for a in manifest.get("analyses", []) if a["analysis_id"] == right_analysis_id), {})
+        
+        left_branch = left_meta.get("branch", "unknown")
+        left_commit = left_meta.get("commit", "unknown")[:7]
+        right_branch = right_meta.get("branch", "unknown")
+        right_commit = right_meta.get("commit", "unknown")[:7]
+        
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        comparison_id = f"{left_branch}_{left_commit}_vs_{right_branch}_{right_commit}_{timestamp}"
+        comparison_path = f"{self.base_path}/comparisons/{comparison_id}.json"
+        
+        comparison_payload = {
+            "comparison_id": comparison_id,
+            "repository": repo_id,
+            "left_analysis_id": left_analysis_id,
+            "right_analysis_id": right_analysis_id,
+            "left_branch": left_branch,
+            "left_commit": left_meta.get("commit"),
+            "right_branch": right_branch,
+            "right_commit": right_meta.get("commit"),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "results": comparison_data
+        }
+        
+        manifest.setdefault("comparisons", [])
+        manifest["comparisons"].append({
+            "comparison_id": comparison_id,
+            "timestamp": comparison_payload["created_at"],
+            "path": comparison_path
+        })
+        manifest["latest_comparison"] = comparison_path
+        
+        files_to_commit = {
+            f"{self.base_path}/metadata.json": self._json(manifest),
+            comparison_path: self._json(comparison_payload),
+        }
+        
+        self.client.ensure_branch(repo, self.branch_name)
+        self.client.batch_upsert_files(
+            repo,
+            self.branch_name,
+            files_to_commit,
+            f"Comparison {comparison_id}"
+        )
+        return comparison_id
+
+    def compare_analyses(
+        self,
+        repo,
+        left_analysis_id: str,
+        right_analysis_id: str
+    ) -> Dict[str, Any]:
+        """Calculate deltas between two analysis snapshots."""
+        manifest = self._load_manifest(repo)
+
+        def load_analysis(analysis_id):
+            meta = next((a for a in manifest.get("analyses", []) if a["analysis_id"] == analysis_id), None)
+            if not meta:
+                return None
+            try:
+                content = repo.get_contents(meta["path"], ref=self.branch_name)
+                return json.loads(content.decoded_content.decode("utf-8")).get("analysis", {})
+            except:
+                return None
+
+        left_analysis = load_analysis(left_analysis_id)
+        right_analysis = load_analysis(right_analysis_id)
+
+        if not left_analysis or not right_analysis:
+            raise ValueError("One or both analyses could not be loaded")
+
+        # Calculate Deltas
+        left_health = left_analysis.get("health_score", 0) or 0
+        right_health = right_analysis.get("health_score", 0) or 0
+        health_delta = right_health - left_health
+
+        left_deps = {d["name"]: d["installed_version"] for d in left_analysis.get("dependencies", {}).get("inventory", [])} if left_analysis.get("dependencies") else {}
+        right_deps = {d["name"]: d["installed_version"] for d in right_analysis.get("dependencies", {}).get("inventory", [])} if right_analysis.get("dependencies") else {}
+
+        added_deps = [name for name in right_deps if name not in left_deps]
+        removed_deps = [name for name in left_deps if name not in right_deps]
+        changed_deps = [name for name in right_deps if name in left_deps and right_deps[name] != left_deps[name]]
+
+        # Risk score delta
+        left_risk = left_analysis.get("overall_risk_score") or left_analysis.get("risk_classification", {}).get("overall_risk_score", 0)
+        right_risk = right_analysis.get("overall_risk_score") or right_analysis.get("risk_classification", {}).get("overall_risk_score", 0)
+
+        # Breaking API delta
+        left_breaking = len(left_analysis.get("issues", {}).get("breaking_apis", left_analysis.get("issues", {}).get("breaking_changes", [])))
+        right_breaking = len(right_analysis.get("issues", {}).get("breaking_apis", right_analysis.get("issues", {}).get("breaking_changes", [])))
+
+        # Migration delta from manifest
+        def migrations_for(analysis_id):
+            return [m for m in manifest.get("migration_reports", []) if isinstance(m, dict) and m.get("analysis_id") == analysis_id]
+        left_migs = {m.get("migration_id") for m in migrations_for(left_analysis_id)}
+        right_migs = {m.get("migration_id") for m in migrations_for(right_analysis_id)}
+
+        # PR delta from manifest
+        def prs_for(analysis_id):
+            return [p for p in manifest.get("pull_requests", []) if isinstance(p, dict) and p.get("analysis_id") == analysis_id]
+        left_prs = {p.get("pr_number") for p in prs_for(left_analysis_id)}
+        right_prs = {p.get("pr_number") for p in prs_for(right_analysis_id)}
+
+        # Graph delta - node/edge counts
+        left_nodes = len(left_analysis.get("imports", {}).get("files", [])) if left_analysis.get("imports") else 0
+        right_nodes = len(right_analysis.get("imports", {}).get("files", [])) if right_analysis.get("imports") else 0
+
+        comparison_results = {
+            "health_score_delta": health_delta,
+            "dependency_delta": {
+                "added": added_deps,
+                "removed": removed_deps,
+                "changed": changed_deps
+            },
+            "risk_score_delta": {
+                "left": left_risk,
+                "right": right_risk,
+                "delta": right_risk - left_risk
+            },
+            "breaking_api_delta": {
+                "left": left_breaking,
+                "right": right_breaking,
+                "delta": right_breaking - left_breaking
+            },
+            "migration_delta": {
+                "added": sorted(right_migs - left_migs),
+                "removed": sorted(left_migs - right_migs)
+            },
+            "pr_delta": {
+                "added": sorted(right_prs - left_prs),
+                "removed": sorted(left_prs - right_prs)
+            },
+            "graph_delta": {
+                "left_node_count": left_nodes,
+                "right_node_count": right_nodes,
+                "delta": right_nodes - left_nodes
+            },
+            "issue_delta": len(right_analysis.get("issues", [])) - len(left_analysis.get("issues", [])),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+        comp_id = self.save_comparison(repo, repo.full_name, left_analysis_id, right_analysis_id, comparison_results)
+        return {
+            "comparison_id": comp_id,
+            **comparison_results
+        }
 
     def compare_analyses(
         self,
@@ -311,29 +428,53 @@ class MetadataBranchManager:
         old_dependencies = self._dependency_names(left_analysis)
         new_dependencies = self._dependency_names(right_analysis)
         compared_at = datetime.now(timezone.utc).isoformat()
+
+        left_health = left.get("health_score", 0) or 0
+        right_health = right.get("health_score", 0) or 0
+        left_risk_val = left_analysis.get("overall_risk_score") or left_analysis.get("risk_classification", {}).get("overall_risk_score", 0)
+        right_risk_val = right_analysis.get("overall_risk_score") or right_analysis.get("risk_classification", {}).get("overall_risk_score", 0)
+        left_break = self._breaking_api_count(left_analysis)
+        right_break = self._breaking_api_count(right_analysis)
+
+        left_nodes = len(left_analysis.get("imports", {}).get("files", [])) if left_analysis.get("imports") else 0
+        right_nodes = len(right_analysis.get("imports", {}).get("files", [])) if right_analysis.get("imports") else 0
+
         comparison = {
             "repository": repo_id,
             "generated_at": compared_at,
             "left": {
                 "branch": branch_a,
                 "commit_sha": commit_a,
-                "health_score": left.get("health_score"),
+                "health_score": left_health,
                 "risk_level": left.get("risk_level"),
             },
             "right": {
                 "branch": branch_b,
                 "commit_sha": commit_b,
-                "health_score": right.get("health_score"),
+                "health_score": right_health,
                 "risk_level": right.get("risk_level"),
             },
-            "dependencies_added": sorted(new_dependencies - old_dependencies),
-            "dependencies_removed": sorted(old_dependencies - new_dependencies),
-            "health_score": self._old_new(left.get("health_score"), right.get("health_score")),
-            "risk_level": self._old_new(left.get("risk_level"), right.get("risk_level")),
-            "breaking_apis": self._old_new(
-                self._breaking_api_count(left_analysis),
-                self._breaking_api_count(right_analysis)
-            ),
+            "health_score_delta": right_health - left_health,
+            "dependency_delta": {
+                "added": sorted(new_dependencies - old_dependencies),
+                "removed": sorted(old_dependencies - new_dependencies),
+                "changed": list(new_dependencies & old_dependencies),
+            },
+            "risk_score_delta": {
+                "left": left_risk_val,
+                "right": right_risk_val,
+                "delta": right_risk_val - left_risk_val
+            },
+            "breaking_api_delta": {
+                "left": left_break,
+                "right": right_break,
+                "delta": right_break - left_break
+            },
+            "graph_delta": {
+                "left_node_count": left_nodes,
+                "right_node_count": right_nodes,
+                "delta": right_nodes - left_nodes
+            },
             "migration_readiness": self._old_new(
                 self._migration_readiness(left),
                 self._migration_readiness(right)
@@ -371,11 +512,75 @@ class MetadataBranchManager:
         source_branch: str,
         commit_sha: str
     ) -> Dict[str, Any] | None:
-        path = (
-            f"{self.base_path}/analyses/"
-            f"{self._safe_name(source_branch)}/analysis_{self._safe_name(commit_sha)}.json"
-        )
-        return self._load_json_file(repo, path)
+        short_commit = commit_sha[:7]
+        safe_branch = self._safe_name(source_branch)
+        manifest = self._load_manifest(repo)
+        analyses = manifest.get("analyses", [])
+        if isinstance(analyses, list):
+            for a in analyses:
+                if a.get("branch") == source_branch and a.get("commit", "").startswith(short_commit):
+                    try:
+                        content = repo.get_contents(a["path"], ref=self.branch_name)
+                        return json.loads(content.decoded_content.decode("utf-8"))
+                    except Exception:
+                        break
+        # Try new flat path first: analyses/{branch}/{short_commit}/analysis_{analysis_id}.json
+        # We don't know the timestamp part of analysis_id, so try listing the dir or glob
+        try:
+            contents = repo.get_contents(f"{self.base_path}/analyses/{safe_branch}/{short_commit}", ref=self.branch_name)
+            if isinstance(contents, list):
+                json_files = [c for c in contents if c.name.startswith("analysis_") and c.name.endswith(".json")]
+                if json_files:
+                    newest = max(json_files, key=lambda c: c.last_modified if hasattr(c, 'last_modified') else "")
+                    return json.loads(newest.decoded_content.decode("utf-8"))
+        except Exception:
+            pass
+        # Fallback to legacy nested path
+        for legacy_attempt in (
+            f"{self.base_path}/analyses/{safe_branch}/{short_commit}/analysis_{safe_branch}_{short_commit}.json",
+            f"{self.base_path}/analyses/{safe_branch}/{short_commit}/analysis.json",
+        ):
+            result = self._load_json_file(repo, legacy_attempt)
+            if result:
+                return result
+        return None
+
+    def load_latest_report(self, repo) -> Dict[str, Any] | None:
+        manifest = self._load_manifest(repo)
+        for path in (
+            manifest.get("latest_health_report"),
+            manifest.get("latest_report"),
+            manifest.get("latest_detailed_report"),
+        ):
+            if not path:
+                continue
+            report = self._load_json_file(repo, path)
+            if report:
+                return report
+        return None
+
+    def load_latest_graph(self, repo) -> Dict[str, Any] | None:
+        manifest = self._load_manifest(repo)
+        graph_path = manifest.get("latest_files", {}).get("graph") or manifest.get("latest_graph")
+        if graph_path:
+            result = self._load_json_file(repo, graph_path)
+            if result:
+                return result
+        latest_analysis_id = manifest.get("latest_analysis_id")
+        if not latest_analysis_id:
+            return None
+        analysis_meta = None
+        for a in manifest.get("analyses", []):
+            if isinstance(a, dict) and a.get("analysis_id") == latest_analysis_id:
+                analysis_meta = a
+                break
+        if not analysis_meta:
+            return None
+        analysis_base = f"{self.base_path}/analyses/{self._safe_name(analysis_meta.get('branch', 'main'))}/{analysis_meta.get('commit', '')[:7]}"
+        graph_snapshot = self._load_json_file(repo, f"{analysis_base}/dependency_graph_{latest_analysis_id}.json")
+        if graph_snapshot:
+            return graph_snapshot
+        return None
 
     def mark_uninstalled(
         self,

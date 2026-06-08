@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RepoHeal Health Report</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1113;
+      --panel: #1c1f22;
+      --border: rgba(255, 255, 255, 0.1);
+      --text: #f4f6f8;
+      --muted: #a8b0b8;
+      --accent: #42d6a4;
+      --danger: #f97066;
+      --warning: #f4c95d;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; }
+    .container { max-width: 1000px; margin: 0 auto; display: grid; gap: 24px; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; }
+    .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
+    .stat { display: grid; gap: 6px; }
+    .stat span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; }
+    .stat strong { font-size: 28px; }
+    .score-high { color: var(--accent); }
+    .score-med { color: var(--warning); }
+    .score-low { color: var(--danger); }
+    h1, h2, h3 { margin: 0; }
+    .section-title { font-size: 14px; text-transform: uppercase; letter-spacing: 0.2em; color: var(--accent); margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { text-align: left; padding: 10px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; font-size: 13px; }
+    .pill { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; text-decoration: none; color: var(--text); background: rgba(255,255,255,0.06); border: 1px solid var(--border); }
+    .pill.critical { background: rgba(249, 112, 102, 0.2); color: #f97066; }
+    .pill.high { background: rgba(244, 201, 93, 0.2); color: #f4c95d; }
+    .pill.low { background: rgba(66, 214, 164, 0.2); color: var(--accent); }
+    .btn { display: inline-flex; align-items: center; padding: 8px 14px; border-radius: 999px; text-decoration: none; font-weight: 700; color: var(--text); background: rgba(255,255,255,0.08); border: 1px solid var(--border); cursor: pointer; font-size: 12px; }
+    .timeline-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .timeline-item:last-child { border-bottom: none; }
+    .empty-state { padding: 24px; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: 12px; line-height: 1.6; }
+    .loading-state { padding: 24px; text-align: center; color: var(--muted); }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1 id="repoName">Repository Loading...</h1>
+        <p id="reportMeta" style="color: var(--muted); margin-top: 8px;"></p>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <a href="/dashboard" class="btn">Dashboard</a>
+        <a id="reportsHubLink" class="btn" href="#">Reports Hub</a>
+      </div>
+    </div>
+
+    <div id="loadingState" class="loading-state">Loading health report...</div>
+    <div id="errorState" class="empty-state hidden">Health report not available. Run an analysis first.</div>
+
+    <div id="reportContent" class="hidden">
+      <div class="panel grid-4">
+        <div class="stat"><span>Health Score</span><strong id="healthScore">--</strong></div>
+        <div class="stat"><span>Issues</span><strong id="issueCount">--</strong></div>
+        <div class="stat"><span>Recommendations</span><strong id="recCount">--</strong></div>
+        <div class="stat"><span>Risk Level</span><strong id="riskLevel">--</strong></div>
+      </div>
+
+      <div class="panel">
+        <div class="section-title">Executive Summary</div>
+        <div id="execSummary" style="line-height: 1.6; color: var(--muted);"></div>
+      </div>
+
+      <div class="panel">
+        <div class="section-title">Issues</div>
+        <div id="issuesSection">
+          <div class="empty-state">No critical issues identified.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="section-title">Recommended Actions</div>
+        <table id="actionsTable">
+          <thead><tr><th>Priority</th><th>Symbol</th><th>Action</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div id="actionsEmpty" class="empty-state hidden">No recommended actions at this time.</div>
+      </div>
+
+      <div class="panel">
+        <div class="section-title">Dependency Inventory</div>
+        <table id="depsTable">
+          <thead><tr><th>Dependency</th><th>Version</th><th>Latest</th><th>Status</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div id="depsEmpty" class="empty-state hidden">No dependencies found.</div>
+      </div>
+
+      <div class="panel" id="migrationDocsSection">
+        <div class="section-title">Latest Migration Documents</div>
+        <div id="migrationDocsBody">
+          <div class="empty-state">No migration documents generated yet.</div>
+        </div>
+      </div>
+
+      <div class="panel" id="analysisHistorySection">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="section-title" style="margin-bottom: 0;">Analysis History</div>
+          <a id="fullHistoryLink" class="btn" href="#">View Full Timeline →</a>
+        </div>
+        <table id="historyTable">
+          <thead><tr><th>Timestamp</th><th>Branch</th><th>Commit</th><th>Score</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div id="historyEmpty" class="empty-state hidden">No analysis history available.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function loadReport() {
+      const pathParts = window.location.pathname.split("/");
+      const repoOwner = pathParts[2];
+      const repoName = pathParts[3];
+      const analysisId = new URLSearchParams(window.location.search).get("analysis_id");
+      const repoFull = `${repoOwner}/${repoName}`;
+
+      document.getElementById("reportsHubLink").href = `/reports/${repoOwner}/${repoName}/hub`;
+      document.getElementById("fullHistoryLink").href = `/reports/${repoOwner}/${repoName}/history-page`;
+
+      try {
+        const url = `/reports/${repoOwner}/${repoName}/health` + (analysisId ? `?analysis_id=${analysisId}` : "");
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          document.getElementById("loadingState").classList.add("hidden");
+          document.getElementById("errorState").classList.remove("hidden");
+          return;
+        }
+        const data = await response.json();
+
+        document.getElementById("loadingState").classList.add("hidden");
+        document.getElementById("reportContent").classList.remove("hidden");
+
+        document.getElementById("repoName").textContent = `Health Report: ${data.repository || repoFull}`;
+        document.getElementById("reportMeta").textContent = `Branch: ${data.branch || "N/A"} | Commit: ${(data.commit_sha || "").slice(0,7) || "N/A"} | Generated: ${data.generated_at ? new Date(data.generated_at).toLocaleString() : "N/A"}`;
+
+        const score = data.overall_health_score;
+        const scoreEl = document.getElementById("healthScore");
+        if (score != null) {
+          scoreEl.textContent = `${score}/100`;
+          scoreEl.className = score > 70 ? "score-high" : score > 40 ? "score-med" : "score-low";
+        } else {
+          scoreEl.textContent = "N/A";
+        }
+
+        document.getElementById("issueCount").textContent = data.executive_summary?.critical_findings_count || data.risk_assessment?.length || 0;
+        document.getElementById("recCount").textContent = data.recommended_actions?.length || 0;
+        document.getElementById("riskLevel").textContent = (data.overall_risk_level || "unknown").toUpperCase();
+
+        const summary = data.executive_summary || {};
+        const summaryEl = document.getElementById("execSummary");
+        if (summary.description || data.overall_health_score != null) {
+          summaryEl.innerHTML = `
+            <p>This repository has a health score of <strong>${score != null ? score : "N/A"}/100</strong>.</p>
+            <p>${summary.description || `We identified ${summary.deprecated_count || 0} deprecated APIs and ${summary.breaking_count || 0} potential breaking changes. ${data.recommended_actions?.length || 0} actions are recommended.`}</p>
+          `;
+        } else {
+          summaryEl.textContent = "No executive summary available.";
+        }
+
+        const actions = data.recommended_actions || [];
+        const actionsBody = document.querySelector("#actionsTable tbody");
+        const actionsEmpty = document.getElementById("actionsEmpty");
+        if (actions.length === 0) {
+          actionsEmpty.classList.remove("hidden");
+        } else {
+          actions.forEach(action => {
+            const row = actionsBody.insertRow();
+            const priority = (action.priority || "medium").toLowerCase();
+            row.innerHTML = `<td><span class="pill ${priority}">${action.priority}</span></td><td><code>${action.symbol || action.name || "N/A"}</code></td><td>${action.description || action.action || "N/A"}</td>`;
+          });
+        }
+
+        const deps = data.dependency_inventory || [];
+        const depsBody = document.querySelector("#depsTable tbody");
+        const depsEmpty = document.getElementById("depsEmpty");
+        if (deps.length === 0) {
+          depsEmpty.classList.remove("hidden");
+        } else {
+          deps.forEach(dep => {
+            const row = depsBody.insertRow();
+            row.innerHTML = `<td>${dep.name}</td><td>${dep.installed_version}</td><td>${dep.latest_version}</td><td><span class="pill">${dep.status || "unknown"}</span></td>`;
+          });
+        }
+
+        // Load migration docs
+        try {
+          const migRes = await fetch(`/migrations/${repoOwner}/${repoName}`);
+          if (migRes.ok) {
+            const migData = await migRes.json();
+            const migs = migData.migrations || [];
+            const migBody = document.getElementById("migrationDocsBody");
+            if (migs.length > 0) {
+              migBody.innerHTML = migs.slice(-5).reverse().map(m => `
+                <div class="timeline-item">
+                  <span><strong>${m.migration_id || m.analysis_id}</strong> <span style="color: var(--muted);">${m.timestamp ? new Date(m.timestamp).toLocaleString() : ""}</span></span>
+                  <span style="display: flex; gap: 8px;">
+                    <span style="color: ${(m.risk_score || 0) > 70 ? 'var(--danger)' : (m.risk_score || 0) > 30 ? 'var(--warning)' : 'var(--accent)'};">Risk: ${m.risk_score || "N/A"}</span>
+                    <a class="pill" href="/reports/${repoOwner}/${repoName}/migration-page?analysis_id=${m.analysis_id}">View</a>
+                  </span>
+                </div>
+              `).join("");
+            }
+          }
+        } catch (e) {}
+
+        // Load analysis history
+        try {
+          const histRes = await fetch(`/reports/${repoOwner}/${repoName}/history`);
+          if (histRes.ok) {
+            const histData = await histRes.json();
+            const timeline = histData.timeline || [];
+            const htbody = document.querySelector("#historyTable tbody");
+            const hEmpty = document.getElementById("historyEmpty");
+            if (timeline.length === 0) {
+              hEmpty.classList.remove("hidden");
+            } else {
+              timeline.slice(0, 5).forEach(a => {
+                const row = htbody.insertRow();
+                const ts = a.timestamp ? new Date(a.timestamp).toLocaleString() : "";
+                const sc = a.health_score;
+                const scoreStr = sc != null ? `${sc}/100` : "N/A";
+                const scCls = sc > 70 ? "score-high" : sc > 40 ? "score-med" : "score-low";
+                row.innerHTML = `<td>${ts}</td><td><span class="pill">${a.branch}</span></td><td><code>${(a.commit || "").slice(0, 7)}</code></td><td class="${scCls}">${scoreStr}</td>`;
+              });
+            }
+          }
+        } catch (e) {}
+
+      } catch (err) {
+        document.getElementById("loadingState").classList.add("hidden");
+        document.getElementById("errorState").classList.remove("hidden");
+        document.getElementById("errorState").textContent = `Error loading report: ${err.message}`;
+      }
+    }
+    loadReport();
+  </script>
+</body>
+</html>
