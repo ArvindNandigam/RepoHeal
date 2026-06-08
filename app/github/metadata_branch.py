@@ -588,36 +588,57 @@ class MetadataBranchManager:
         installation_id: int,
         uninstalled_at: str | None = None
     ) -> None:
-        """Preserve metadata artifacts and mark the repository inactive."""
+        """Preserve metadata artifacts and mark the repository inactive.
+        
+        This is intentionally best-effort: after GitHub uninstall the JWT
+        may be invalidated, so callers should handle failures gracefully.
+        """
         manifest_path = f"{self.base_path}/metadata.json"
         manifest = self._load_manifest(repo)
+        
+        # Preserve existing lists; never convert to dict
+        existing_analyses = manifest.get("analyses", [])
+        if not isinstance(existing_analyses, list):
+            existing_analyses = []
+        existing_health = manifest.get("health_reports", [])
+        if not isinstance(existing_health, list):
+            existing_health = []
+        existing_migrations = manifest.get("migration_reports", [])
+        if not isinstance(existing_migrations, list):
+            existing_migrations = []
+        existing_comparisons = manifest.get("comparisons", [])
+        if not isinstance(existing_comparisons, list):
+            existing_comparisons = []
+
+        manifest.clear()
         manifest.update({
-            "schema_version": max(manifest.get("schema_version", 1), 3),
+            "schema_version": 3,
             "repository": getattr(repo, "full_name", manifest.get("repository")),
             "branch": self.branch_name,
             "status": "uninstalled",
             "uninstalled_at": uninstalled_at or datetime.now(timezone.utc).isoformat(),
             "installation_id": installation_id,
+            "analyses": existing_analyses,
+            "health_reports": existing_health,
+            "migration_reports": existing_migrations,
+            "comparisons": existing_comparisons,
         })
-        manifest.setdefault("last_analysis", manifest.get("latest_analysis_at"))
-        manifest.setdefault("last_health_refresh", None)
-        manifest.setdefault("last_commit_analyzed", None)
-        manifest.setdefault("latest_analysis", None)
-        manifest.setdefault("latest_report", None)
-        manifest.setdefault("latest_migration", None)
-        manifest.setdefault("analyses", {})
-        manifest.setdefault("health_reports", {})
-        manifest.setdefault("comparisons", [])
-        manifest.pop("workspace_url", None)
 
-        self.client.ensure_branch(repo, self.branch_name)
-        self.client.upsert_file(
-            repo,
-            self.branch_name,
-            manifest_path,
-            self._json(manifest),
-            "Mark RepoHeal metadata as uninstalled"
-        )
+        try:
+            self.client.ensure_branch(repo, self.branch_name)
+            self.client.upsert_file(
+                repo,
+                self.branch_name,
+                manifest_path,
+                self._json(manifest),
+                "Mark RepoHeal metadata as uninstalled"
+            )
+        except Exception:
+            logger.warning(
+                f"Metadata branch uninstall marker write failed for "
+                f"{getattr(repo, 'full_name', 'unknown')} "
+                f"(JWT may be invalidated after GitHub uninstall)"
+            )
 
     def _update_manifest(self, repo, document: MigrationDocument, snapshot_id: str, doc_path: str, report_path: str, snapshot_path: str):
         manifest_path = f"{self.base_path}/metadata.json"
