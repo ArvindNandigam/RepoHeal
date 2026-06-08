@@ -708,9 +708,15 @@ class MetadataBranchManager:
         manifest = dict(manifest or {})
         manifest["schema_version"] = max(manifest.get("schema_version", 1), 3)
         manifest.setdefault("artifacts", [])
-        manifest.setdefault("analyses", {})
-        manifest.setdefault("health_reports", {})
+        # Force analyses and health_reports to lists; convert from legacy dict if needed
+        analyses = manifest.get("analyses")
+        if not isinstance(analyses, list):
+            manifest["analyses"] = list(analyses.values()) if isinstance(analyses, dict) else []
+        health = manifest.get("health_reports")
+        if not isinstance(health, list):
+            manifest["health_reports"] = list(health.values()) if isinstance(health, dict) else []
         manifest.setdefault("comparisons", [])
+        manifest.setdefault("migration_reports", [])
         manifest.setdefault("latest_report", manifest.get("latest_detailed_report"))
         manifest.pop("workspace_url", None)
         return manifest
