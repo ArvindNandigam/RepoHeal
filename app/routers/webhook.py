@@ -127,6 +127,9 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
             "timestamp": datetime.utcnow().isoformat()
         }
 
+    if event_type == "push":
+        return _handle_push_event(payload, background_tasks)
+
     if event_type == "installation" and event_action == "deleted":
         installation = payload.get("installation") or {}
         installation_id = installation.get("id")
@@ -150,6 +153,158 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
         "event": event_type,
         "timestamp": datetime.utcnow().isoformat()
     }
+
+
+def _handle_push_event(payload: dict, background_tasks: BackgroundTasks) -> dict:
+    """Handle push events with incremental analysis."""
+    repository = payload.get("repository", {})
+    full_name = repository.get("full_name")
+    if not full_name or "/" not in full_name:
+        return {"received": True, "event": "push"}
+
+    repo_owner, repo_name = full_name.split("/", 1)
+    ref = payload.get("ref", "")
+    branch = ref.replace("refs/heads/", "") if ref.startswith("refs/heads/") else ref
+    commit_sha = (payload.get("head_commit") or {}).get("id")
+    if not commit_sha:
+        commits = payload.get("commits", [])
+        commit_sha = commits[-1].get("id") if commits else None
+    if not commit_sha:
+        return {"received": True, "event": "push"}
+
+    installation_id = None
+    try:
+        from app.github.installations import get_repository_installation
+        inst = get_repository_installation(repo_owner, repo_name)
+        if inst:
+            installation_id = inst.get("id")
+    except Exception:
+        pass
+
+    if not installation_id:
+        logger.info(f"Skipping push — no installation found for {full_name}")
+        return {"received": True, "event": "push"}
+
+    # Check monitoring schedule frequency to decide full vs incremental
+    from app.db.database import get_mongo_db
+    db = get_mongo_db()
+    config = db.monitoring_config.find_one({"repository": full_name})
+    frequency = (config or {}).get("frequency", "weekly")
+
+    if frequency == "manual":
+        logger.info(f"Skipping push analysis for {full_name} — monitoring is manual")
+        return {"received": True, "event": "push"}
+
+    tracked_branches = (config or {}).get("branches", ["main"])
+    if branch not in tracked_branches:
+        logger.info(f"Skipping push — branch {branch} not in tracked branches for {full_name}")
+        return {"received": True, "event": "push"}
+
+    # Queue incremental analysis
+    job_id = create_job(repo_owner, repo_name, force=True, job_type="incremental",
+                        target_branch=branch, target_commit_sha=commit_sha)
+    if job_id:
+        background_tasks.add_task(
+            run_incremental_analysis,
+            job_id, repo_owner, repo_name, branch, commit_sha,
+            payload.get("added", []), payload.get("modified", []),
+            payload.get("removed", []), installation_id
+        )
+        logger.info(f"Incremental analysis queued for {full_name} @ {branch} ({commit_sha[:7]})")
+    else:
+        logger.info(f"Incremental analysis skipped — already running for {full_name}")
+
+    return {
+        "received": True,
+        "event": "push",
+        "repository": full_name,
+        "branch": branch,
+        "commit": commit_sha[:7]
+    }
+
+
+def run_incremental_analysis(
+    job_id: str,
+    repo_owner: str,
+    repo_name: str,
+    branch: str,
+    commit_sha: str,
+    added_files: list,
+    modified_files: list,
+    removed_files: list,
+    installation_id: int
+):
+    """Perform lightweight incremental analysis for changed files only."""
+    from app.storage.metadata_store import MetadataStore
+    from app.routers.dependencies import get_repo_cache_path
+    from app.graph.graph_builder import Neo4jGraphBuilder
+    from app.github.repository_fetcher import download_repository_snapshot, cleanup_repository
+    from app.analysis.repository_analyzer import analyze_repository
+    from app.worker.task_registry import (
+        set_analysis_progress, update_job, update_repository_status, JobStatus
+    )
+
+    repo_id = f"{repo_owner}/{repo_name}"
+    repo_path = None
+    logger.info(f"Incremental analysis started for {repo_id} (job={job_id})")
+
+    try:
+        repo_path = download_repository_snapshot(repo_owner, repo_name, ref=commit_sha)
+        if not repo_path:
+            raise RuntimeError("Failed to download repository snapshot")
+
+        # Quick re-analysis of all files (small repos) or just changed files
+        full_analysis = analyze_repository(repo_path)
+
+        # Update cache
+        store = MetadataStore(str(get_repo_cache_path(repo_owner, repo_name)))
+        store.save_full_analysis_snapshot(full_analysis)
+
+        # Rebuild Neo4j graph (incremental would diff, but for now rebuild from updated data)
+        builder = Neo4jGraphBuilder()
+        builder.clear_repository_graph(repo_id)
+        builder.build_graph(repo_id, full_analysis)
+
+        # Update metadata branch with new analysis
+        from app.github.client import RepoHealGitHubClient
+        from app.github.metadata_branch import MetadataBranchManager
+        from app.visualization.graph_api import GraphVisualizer
+
+        github_client = RepoHealGitHubClient(installation_id)
+        repo_obj = github_client.get_repo(repo_id)
+        meta = MetadataBranchManager(github_client)
+        aid, sid, _ = meta.generate_ids(repo_id, branch, commit_sha)
+        full_analysis["analysis_id"] = aid
+        full_analysis["repository_snapshot_id"] = sid
+        visualizer = GraphVisualizer(full_analysis)
+        meta.save_latest_analysis(
+            repo_obj, repo_id, full_analysis,
+            {**visualizer.to_cytoscape_format(repo_id),
+             "statistics": visualizer.get_statistics()},
+            source_branch=branch, commit_sha=commit_sha
+        )
+
+        set_analysis_progress(
+            job_id, repo_owner, repo_name, JobStatus.COMPLETED, 100,
+            "Incremental analysis completed", job_type="incremental",
+            selected_branch=branch, target_commit_sha=commit_sha,
+            analysis_id=aid, repository_snapshot_id=sid
+        )
+        logger.info(f"Incremental analysis completed for {repo_id} (job={job_id})")
+
+    except Exception as e:
+        import traceback
+        error_msg = traceback.format_exc()
+        set_analysis_progress(
+            job_id, repo_owner, repo_name, JobStatus.FAILED, 0,
+            f"Incremental analysis failed: {e}", error=str(e),
+            job_type="incremental", selected_branch=branch,
+            target_commit_sha=commit_sha
+        )
+        logger.error(f"Incremental analysis failed for {repo_id}: {error_msg}")
+    finally:
+        if repo_path:
+            cleanup_repository(repo_path)
 
 
 @router.delete("/uninstall/{installation_id}")

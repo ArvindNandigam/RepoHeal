@@ -6,7 +6,7 @@ from app.graph.connection import neo4j_connection
 from app.utils.logger import get_logger
 from app.utils.rate_limit import limiter
 from app.errors.handlers import register_error_handlers
-from app.routers import health, auth, dashboard, workspace, visualization, webhook, analysis, graph, reports, sse, migrations
+from app.routers import health, auth, dashboard, workspace, visualization, webhook, analysis, graph, reports, sse, migrations, monitoring
 
 logger = get_logger(__name__)
 
@@ -40,3 +40,4 @@ app.include_router(graph.router)
 app.include_router(reports.router)
 app.include_router(sse.router)
 app.include_router(migrations.router)
+app.include_router(monitoring.router)

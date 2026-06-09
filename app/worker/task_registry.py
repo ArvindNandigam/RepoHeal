@@ -561,6 +561,30 @@ def run_analysis_in_background(
         )
         logger.info(f"Background analysis completed for {repo_id} (job={job_id})")
 
+        # Phase 6: Record health snapshot and generate alerts
+        try:
+            from app.worker.monitoring_worker import record_health_snapshot, generate_alerts_from_report
+            from app.github.metadata_branch import MetadataBranchManager
+            meta_manager = MetadataBranchManager(github_client)
+            report_data = meta_manager.load_latest_report(repo_obj)
+            if report_data and report_data.get("report"):
+                report = report_data["report"]
+
+                # Get previous score for trend detection
+                db_mongo = get_mongo_db()
+                prev = db_mongo.health_scores.find_one(
+                    {"repository": repo_id},
+                    sort=[("recorded_at", -1)]
+                )
+                prev_score = prev.get("health_score") if prev else None
+
+                record_health_snapshot(repo_id, analysis_id, report)
+                alert_count = generate_alerts_from_report(repo_id, report, prev_score)
+                if alert_count:
+                    logger.info(f"Generated {alert_count} alerts for {repo_id}")
+        except Exception as monitor_err:
+            logger.warning(f"Monitoring update failed for {repo_id}: {monitor_err}")
+
     except Exception as e:
         error_msg = traceback.format_exc()
         set_analysis_progress(

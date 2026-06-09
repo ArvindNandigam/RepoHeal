@@ -57,6 +57,29 @@ def _ensure_indexes(db):
             unique=True
         )
 
+        # Phase 6: Monitoring indexes
+        db.health_scores.create_index(
+            [("repository", 1), ("recorded_at", -1)]
+        )
+        db.dependency_watchlist.create_index(
+            [("repository", 1), ("package_name", 1)],
+            unique=True,
+            partialFilterExpression={"package_name": {"$exists": True}}
+        )
+        db.alerts.create_index(
+            [("repository", 1), ("created_at", -1)]
+        )
+        db.alerts.create_index(
+            [("repository", 1), ("category", 1), ("symbol", 1)]
+        )
+        db.alert_rules.create_index(
+            [("repository", 1)]
+        )
+        db.monitoring_config.create_index(
+            [("repository", 1)],
+            unique=True
+        )
+
         logger.info("MongoDB indexes ensured")
     except Exception as e:
         logger.warning(f"Failed to create MongoDB indexes (non-fatal): {e}")
