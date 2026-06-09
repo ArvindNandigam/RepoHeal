@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RepoHeal Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  background: #0d1117; color: #c9d1d9; padding: 32px;
+}
+h1 { font-size: 28px; font-weight: 600; margin-bottom: 8px; }
+h2 { font-size: 18px; font-weight: 600; margin-bottom: 16px; color: #58a6ff; display: flex; align-items: center; gap: 8px; }
+h2 small { font-size: 13px; font-weight: 400; color: #8b949e; }
+.subtitle { color: #8b949e; margin-bottom: 32px; font-size: 14px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 32px; }
+.card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px;
+  transition: border-color .2s;
+}
+.card:hover { border-color: #58a6ff; }
+.card .label { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #8b949e; margin-bottom: 6px; }
+.card .value { font-size: 32px; font-weight: 700; color: #f0f6fc; }
+.card .sub { font-size: 12px; color: #8b949e; margin-top: 4px; }
+.hero-card {
+  background: linear-gradient(135deg, #1f2937, #161b22);
+  border: 1px solid #58a6ff; grid-column: span 2;
+}
+.section { margin-bottom: 40px; }
+.loading { text-align: center; padding: 60px; color: #8b949e; }
+.error { color: #f85149; text-align: center; padding: 32px; }
+</style>
+</head>
+<body>
+<h1>📊 RepoHeal Admin</h1>
+<p class="subtitle">Signed in as {{ github_user }} · Platform-wide metrics</p>
+
+<div id="app">
+  <div class="loading">Loading metrics&hellip;</div>
+</div>
+
+<script>
+async function load() {
+  try {
+    const [metricsRes, obsRes] = await Promise.all([
+      fetch('/admin/metrics'),
+      fetch('/admin/observability')
+    ]);
+    if (!metricsRes.ok) throw new Error(await metricsRes.text());
+    const d = await metricsRes.json();
+    let o = null;
+    if (obsRes.ok) o = await obsRes.json();
+    render(d, o);
+  } catch (e) {
+    document.getElementById('app').innerHTML =
+      `<div class="error">Failed to load metrics: ${e.message}</div>`;
+  }
+}
+
+function render(d, o) {
+  const obsHtml = o ? `
+<div class="section">
+  <h2>⚡ Observability <small>Active Jobs · Cache · Orphans</small></h2>
+  <div class="grid">
+    <div class="card"><div class="label">Active Jobs</div><div class="value">${o.active_jobs_count}</div></div>
+    <div class="card"><div class="label">Orphaned Jobs (recovered)</div><div class="value">${o.orphaned_count}</div></div>
+    <div class="card"><div class="label">Cache Size</div><div class="value">${o.cache_size_mb} MB</div></div>
+    <div class="card"><div class="label">Avg Analysis Time</div><div class="value">${o.average_analysis_time_s}s</div></div>
+    <div class="card"><div class="label">Success Rate</div><div class="value">${o.success_rate_pct}%</div></div>
+    <div class="card"><div class="label">Total Analyses</div><div class="value">${o.total_analyses}</div></div>
+  </div>
+  ${o.active_jobs.length ? `<details><summary>Active Job Details (${o.active_jobs.length})</summary><pre style="font-size:12px;max-height:200px;overflow:auto">${JSON.stringify(o.active_jobs, null, 2)}</pre></details>` : ''}
+  ${o.orphaned_jobs.length ? `<details><summary>Orphaned Jobs (${o.orphaned_jobs.length})</summary><pre style="font-size:12px;max-height:200px;overflow:auto">${JSON.stringify(o.orphaned_jobs, null, 2)}</pre></details>` : ''}
+</div>
+` : '';
+
+  const html = `${obsHtml}
+<div class="section">
+  <h2>🏢 Repository Scale</h2>
+  <div class="grid">
+    <div class="card"><div class="label">Repositories Analyzed</div><div class="value">${d.repositories_analyzed}</div></div>
+    <div class="card"><div class="label">Analyses Performed</div><div class="value">${d.analyses_performed}</div></div>
+    <div class="card"><div class="label">Commits Analyzed</div><div class="value">${d.commits_analyzed}</div></div>
+    <div class="card"><div class="label">Branches Analyzed</div><div class="value">${d.branches_analyzed.length}</div><div class="sub">${d.branches_analyzed.join(', ') || '—'}</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>🧠 Code Scale <small>Python Files · Functions · Classes · APIs</small></h2>
+  <div class="grid">
+    <div class="card hero-card">
+      <div class="label">Semantic Entities Indexed</div>
+      <div class="value">${d.semantic_entities_indexed.toLocaleString()}</div>
+      <div class="sub">Functions + Classes + APIs</div>
+    </div>
+    <div class="card"><div class="label">Python Files Scanned</div><div class="value">${d.python_files_scanned.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Jupyter Notebooks Scanned</div><div class="value">${d.notebooks_scanned.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Functions Indexed</div><div class="value">${d.functions_indexed.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Classes Indexed</div><div class="value">${d.classes_indexed.toLocaleString()}</div></div>
+    <div class="card"><div class="label">APIs Fingerprinted</div><div class="value">${d.apis_fingerprinted.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Lines of Code Scanned</div><div class="value">${d.lines_of_code_scanned.toLocaleString()}</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>🕸️ Knowledge Graph <small>Neo4j</small></h2>
+  <div class="grid">
+    <div class="card"><div class="label">Total Nodes Created</div><div class="value">${d.total_nodes.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Total Relationships Created</div><div class="value">${d.total_edges.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Graphs Built</div><div class="value">${d.graph_count}</div></div>
+    <div class="card"><div class="label">Largest Graph</div><div class="value">${d.largest_node_count.toLocaleString()} nodes</div><div class="sub">${d.largest_graph_repo || '—'}</div></div>
+    <div class="card"><div class="label">Avg Graph Size</div><div class="value">${d.graph_count ? Math.round(d.total_nodes / d.graph_count).toLocaleString() : 0}</div><div class="sub">nodes per graph</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>📦 Dependency Intelligence</h2>
+  <div class="grid">
+    <div class="card"><div class="label">Dependencies Detected</div><div class="value">${d.dependencies_detected.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Unique Packages</div><div class="value">${d.unique_packages_seen.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Deprecated APIs Found</div><div class="value">${d.deprecated_apis_found.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Breaking APIs Found</div><div class="value">${d.breaking_apis_found.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Migration Candidates</div><div class="value">${d.migration_candidates.toLocaleString()}</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>🎯 Impact Analysis</h2>
+  <div class="grid">
+    <div class="card"><div class="label">Affected Files Identified</div><div class="value">${d.affected_files_identified.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Affected Functions Traced</div><div class="value">${d.affected_functions_traced.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Call Chains Traversed</div><div class="value">${d.call_chains_traversed.toLocaleString()}</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>🔄 Migrations & Remediation</h2>
+  <div class="grid">
+    <div class="card"><div class="label">Migration Reports</div><div class="value">${d.migration_reports_generated.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Upgrade Simulations</div><div class="value">${d.upgrade_simulations_run.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Auto-Fix Opportunities</div><div class="value">${d.auto_fix_opportunities.toLocaleString()}</div></div>
+    <div class="card"><div class="label">PRs Created</div><div class="value">${d.prs_created.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Files Modified</div><div class="value">${d.files_modified.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Imports Rewritten</div><div class="value">${d.imports_rewritten.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Symbols Renamed</div><div class="value">${d.symbols_renamed.toLocaleString()}</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>📡 Monitoring</h2>
+  <div class="grid">
+    <div class="card"><div class="label">Alerts Generated</div><div class="value">${d.alerts_generated.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Health Degradations Detected</div><div class="value">${d.health_degradations_detected.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Watchlist Packages</div><div class="value">${d.watchlist_packages.toLocaleString()}</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>⚡ Performance</h2>
+  <div class="grid">
+    <div class="card"><div class="label">Average Analysis Time</div><div class="value">${d.average_analysis_time}s</div></div>
+    <div class="card"><div class="label">Max Analysis Time</div><div class="value">${d.max_analysis_time}s</div></div>
+    <div class="card"><div class="label">Min Analysis Time</div><div class="value">${d.min_analysis_time}s</div></div>
+    <div class="card"><div class="label">Success Rate</div><div class="value">${d.success_rate}%</div><div class="sub">${d.success_count} / ${d.analysis_count} analyses</div></div>
+  </div>
+</div>
+
+  `;
+  document.getElementById('app').innerHTML = html;
+}
+
+load();
+</script>
+</body>
+</html>

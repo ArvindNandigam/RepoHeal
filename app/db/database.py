@@ -80,6 +80,9 @@ def _ensure_indexes(db):
             unique=True
         )
 
+        # Admin platform metrics
+        db.platform_metrics.create_index("metric", unique=True)
+
         logger.info("MongoDB indexes ensured")
     except Exception as e:
         logger.warning(f"Failed to create MongoDB indexes (non-fatal): {e}")

@@ -49,6 +49,10 @@ def record_health_snapshot(
 
     db.health_scores.insert_one(snapshot.model_dump(mode="json"))
 
+    # Record monitoring metrics
+    from app.worker.metrics import record_monitoring_metrics
+    record_monitoring_metrics(watchlist_packages=len([d for d in inventory if d.get("status") in ("outdated", "critical")]))
+
     # Update watchlist entries from inventory
     for dep in inventory:
         if dep.get("status") in ("outdated", "critical"):
@@ -84,6 +88,8 @@ def generate_alerts_from_report(
 
     # Health degradation alert
     if previous_score is not None and current_score < previous_score - 10:
+        from app.worker.metrics import record_monitoring_metrics
+        record_monitoring_metrics(degradations=1)
         _create_alert_if_allowed(db, repository, rules, Alert(
             id=str(uuid.uuid4()),
             repository=repository,
@@ -150,6 +156,9 @@ def generate_alerts_from_report(
             ))
             count += 1
 
+    if count:
+        from app.worker.metrics import record_monitoring_metrics
+        record_monitoring_metrics(alerts=count)
     return count
 
 

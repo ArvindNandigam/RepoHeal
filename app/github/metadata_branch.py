@@ -33,7 +33,7 @@ class MetadataBranchManager:
         repo,
         repo_id: str,
         analysis: Dict[str, Any],
-        graph: Dict[str, Any],
+        graph: Dict[str, Any] | None = None,
         source_branch: str | None = None,
         commit_sha: str | None = None
     ) -> str:
@@ -109,41 +109,40 @@ class MetadataBranchManager:
         manifest.setdefault("comparisons", [])
         manifest.setdefault("pull_requests", [])
 
-        graph_payload = {
-            **metadata,
-            **graph
-        }
-        
         analysis_payload = {
             **metadata,
             "analysis": analysis,
-            "graph_path": graph_snapshot_path
+            "graph_path": graph_snapshot_path if graph is not None else None,
         }
 
         files_to_commit = {
             f"{self.base_path}/metadata.json": self._json(manifest),
             analysis_record_path: self._json(analysis_payload),
-            graph_snapshot_path: self._json(graph_payload),
-            
-            # Latest pointers (compat)
+
+            # Latest analysis pointer
             latest_analysis_path: self._json({
                 "repository": repo_id,
                 "branch": source_branch,
                 "commit_sha": commit_sha,
                 "analyzed_at": analyzed_at,
                 "analysis_id": analysis_id,
-                "analysis": analysis
+                "analysis": analysis,
             }),
-            latest_graph_path: self._json(graph_payload),
+
+            # Packages
             latest_packages_path: self._json({
                 **analysis.get("dependencies", {}),
                 "packages": analysis.get("dependency_graph", {}),
-                "analysis_id": analysis_id
+                "analysis_id": analysis_id,
             }),
+
+            # Imports
             latest_imports_path: self._json({
                 **analysis.get("imports", {}),
-                "analysis_id": analysis_id
+                "analysis_id": analysis_id,
             }),
+
+            # Risk report
             latest_risk_report_path: self._json({
                 "repository": repo_id,
                 "branch": source_branch,
@@ -151,9 +150,15 @@ class MetadataBranchManager:
                 "analyzed_at": analyzed_at,
                 "analysis_id": analysis_id,
                 "issues": analysis.get("issues", {}),
-                "dependency_graph": analysis.get("dependency_graph", {})
-            })
+                "dependency_graph": analysis.get("dependency_graph", {}),
+            }),
         }
+
+        # Phase 5: Graph is now optional — only write if provided (lazy generation on viz request)
+        if graph is not None:
+            graph_payload = {**metadata, **graph}
+            files_to_commit[graph_snapshot_path] = self._json(graph_payload)
+            files_to_commit[latest_graph_path] = self._json(graph_payload)
 
         self.client.ensure_branch(repo, self.branch_name)
         self.client.batch_upsert_files(

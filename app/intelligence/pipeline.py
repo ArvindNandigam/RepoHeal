@@ -69,6 +69,28 @@ class MigrationPipeline:
             source_branch=source_branch,
             commit_sha=commit_sha
         )
+
+        # Record migration and remediation metrics
+        from app.worker.metrics import record_migration_metrics, record_dependency_intelligence, record_impact_analysis
+        migration_candidates = len(report.recommended_actions) if hasattr(report, 'recommended_actions') else 0
+        record_migration_metrics(reports=1, simulations=0, auto_fixes=migration_candidates)
+
+        # dependency intelligence from health report
+        dep_inventory = report.dependency_inventory if hasattr(report, 'dependency_inventory') else []
+        deprecated_count = len(report.deprecated_apis) if hasattr(report, 'deprecated_apis') else 0
+        breaking_count = len(report.breaking_changes) if hasattr(report, 'breaking_changes') else 0
+        record_dependency_intelligence(
+            deps_detected=len(dep_inventory),
+            unique_packages=len(set(d.name for d in dep_inventory if hasattr(d, 'name'))),
+            deprecated_apis=deprecated_count,
+            breaking_apis=breaking_count,
+            migration_candidates=migration_candidates
+        )
+
+        affected_files = len(impacts.get("affected_files", [])) if isinstance(impacts, dict) else 0
+        affected_funcs = len(impacts.get("affected_functions", [])) if isinstance(impacts, dict) else 0
+        chains = len(impacts.get("call_chain_details", [])) if isinstance(impacts, dict) else 0
+        record_impact_analysis(affected_files, affected_funcs, chains)
         
         logger.info(f"Completed migration pipeline for {repo_id}")
         return report

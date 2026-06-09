@@ -33,6 +33,20 @@ class Settings:
     RISK_WEIGHT_VERSION_DISTANCE = float(os.getenv("RISK_WEIGHT_VERSION_DISTANCE", "0.15"))
     RISK_WEIGHT_REPO_SIZE = float(os.getenv("RISK_WEIGHT_REPO_SIZE", "0.10"))
 
+    # Cache governance
+    MAX_CACHE_SIZE_MB = int(os.getenv("MAX_CACHE_SIZE_MB", "500"))
+    MAX_ANALYSIS_HISTORY = int(os.getenv("MAX_ANALYSIS_HISTORY", "5"))
+    CACHE_RETENTION_DAYS = int(os.getenv("CACHE_RETENTION_DAYS", "30"))
+
+    # Large repository protection
+    MAX_ZIP_SIZE_MB = int(os.getenv("MAX_ZIP_SIZE_MB", "200"))
+    MAX_EXTRACTED_SIZE_MB = int(os.getenv("MAX_EXTRACTED_SIZE_MB", "500"))
+    MAX_FILE_COUNT = int(os.getenv("MAX_FILE_COUNT", "10000"))
+    MAX_PYTHON_FILE_COUNT = int(os.getenv("MAX_PYTHON_FILE_COUNT", "5000"))
+
+    # Job recovery
+    JOB_ORPHAN_TIMEOUT_MINUTES = int(os.getenv("JOB_ORPHAN_TIMEOUT_MINUTES", "15"))
+
 settings = Settings()
 
 

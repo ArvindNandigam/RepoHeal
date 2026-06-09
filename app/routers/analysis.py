@@ -17,6 +17,7 @@ from app.utils.rate_limit import limiter
 from app.worker.task_registry import (
     create_job,
     get_job,
+    get_active_jobs,
     run_analysis_in_background,
     run_health_refresh_in_background,
 )
@@ -469,6 +470,11 @@ async def simulate_upgrades_endpoint(
         overall_risk = max((r.risk_score for r in results), default=0.0)
         overall_level = "high" if overall_risk >= 70 else ("medium" if overall_risk >= 40 else "low")
 
+        # Record upgrade simulation metrics
+        from app.worker.metrics import record_migration_metrics
+        auto_fix_total = sum(r.auto_fixable_count for r in results)
+        record_migration_metrics(reports=0, simulations=len(results), auto_fixes=auto_fix_total)
+
         return SimulateUpgradeResponse(
             repository=repo_id,
             generated_at=datetime.now(timezone.utc).isoformat(),
@@ -485,3 +491,24 @@ async def simulate_upgrades_endpoint(
     except Exception as e:
         logger.error(f"Simulation failed for {repo_id}: {e}")
         raise AnalysisError(message=str(e))
+
+
+@router.get("/jobs/queue", response_model=Dict[str, Any])
+async def get_job_queue(user=Depends(verify_session_token)):
+    """Return all active jobs across all repositories (auto-recovery aware)."""
+    return {
+        "active_jobs": get_active_jobs(),
+        "total_active": len(get_active_jobs()),
+    }
+
+
+@router.get("/jobs/{job_id}", response_model=Dict[str, Any])
+async def get_job_status_endpoint(
+    job_id: str,
+    user=Depends(verify_session_token),
+):
+    """Return status of a specific job by ID."""
+    job = get_job(job_id)
+    if not job:
+        raise AnalysisError(message="Job not found")
+    return job

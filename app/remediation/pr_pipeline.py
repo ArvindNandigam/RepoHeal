@@ -95,6 +95,12 @@ This PR was generated to address issues identified in analysis `{analysis_id}`.
             draft=draft
         )
         
+        # Record remediation metrics
+        from app.worker.metrics import record_remediation
+        imports_rewritten = sum(1 for p in patches if p.get("type") == "import_rewrite")
+        symbols_renamed = sum(1 for p in patches if p.get("type") == "symbol_rename")
+        record_remediation(prs=1, files_modified=len(modified_files), imports_rewritten=imports_rewritten, symbols_renamed=symbols_renamed)
+
         # 6. Save PR Metadata with state history
         now_iso = datetime.now(timezone.utc).isoformat()
         commit_sha = repo.get_branch(branch_name).commit.sha
