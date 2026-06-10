@@ -580,6 +580,7 @@
 
     let repositories = [];
     let userTimezone = "auto";
+    const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "orphaned", "outdated", "up_to_date"]);
     const progressSteps = [
       "Connecting to dashboard API",
       "Loading installed repositories",
@@ -697,12 +698,24 @@
     }
 const eventSources = new Map();
 
-function setupSSE(repo) {
+function closeSSE(repoName) {
+  const src = eventSources.get(repoName);
+  if (src) {
+    src.close();
+    eventSources.delete(repoName);
+  }
+}
+
+function setupSSE(repo, initialStatus) {
   if (eventSources.has(repo.name)) return;
+  if (initialStatus && TERMINAL_STATUSES.has(initialStatus.status)) return;
 
   const source = new EventSource(`/sse/status/${repo.owner}/${repo.name}`);
   source.addEventListener("analysis", (event) => {
     const data = JSON.parse(event.data);
+    if (TERMINAL_STATUSES.has(data.status)) {
+      closeSSE(repo.name);
+    }
     const card = repoGrid.querySelector(`[data-repo-name="${CSS.escape(repo.name)}"]`);
     if (card) {
       updateCardFromStatus(card, data);
@@ -737,10 +750,16 @@ function setupSSE(repo) {
   });
   source.onmessage = (event) => {
     const data = JSON.parse(event.data);
+    if (TERMINAL_STATUSES.has(data.status)) {
+      closeSSE(repo.name);
+    }
     const card = repoGrid.querySelector(`[data-repo-name="${CSS.escape(repo.name)}"]`);
     if (card) {
       updateCardFromStatus(card, data);
     }
+  };
+  source.onerror = () => {
+    closeSSE(repo.name);
   };
   eventSources.set(repo.name, source);
 }
@@ -766,59 +785,59 @@ async function refreshRepositoryStatus(repo) {
   setupSSE(repo); // Start listening for live updates
 
   const statusBadge = card.querySelector("[data-status-badge]");
-...
+  const statusMessage = card.querySelector("[data-status-message]");
+  const progressBar = card.querySelector("[data-progress-bar]");
+  const lastAnalysis = card.querySelector("[data-last-analysis]");
+  const lastHealthRefresh = card.querySelector("[data-last-health-refresh]");
+  const lastCommit = card.querySelector("[data-last-commit]");
+  const currentHead = card.querySelector("[data-current-head]");
+  const codeState = card.querySelector("[data-code-state]");
 
-      const statusMessage = card.querySelector("[data-status-message]");
-      const progressBar = card.querySelector("[data-progress-bar]");
-      const lastAnalysis = card.querySelector("[data-last-analysis]");
-      const lastHealthRefresh = card.querySelector("[data-last-health-refresh]");
-      const lastCommit = card.querySelector("[data-last-commit]");
-      const currentHead = card.querySelector("[data-current-head]");
-      const codeState = card.querySelector("[data-code-state]");
+  try {
+    const response = await fetch(repo.status_url, { credentials: "same-origin" });
+    if (!response.ok) throw new Error(`Status returned ${response.status}`);
+    const status = await response.json();
+    setStatusBadge(statusBadge, status);
+    statusMessage.textContent = `${status.message || "Analysis status available"} (${Number(status.progress || 0)}%)`;
+    progressBar.style.setProperty("--progress-width", `${Math.max(0, Math.min(100, Number(status.progress || 0)))}%`);
+    lastAnalysis.textContent = formatDate(status.last_analysis || status.completed_at);
+    lastHealthRefresh.textContent = formatDate(status.last_health_refresh);
+    lastCommit.textContent = shortSha(status.last_commit_analyzed);
+    currentHead.textContent = shortSha(status.current_head);
+    codeState.textContent = codeStateLabel(status.code_state_status);
 
-      try {
-        const response = await fetch(repo.status_url, { credentials: "same-origin" });
-        if (!response.ok) throw new Error(`Status returned ${response.status}`);
-        const status = await response.json();
-        setStatusBadge(statusBadge, status);
-        statusMessage.textContent = `${status.message || "Analysis status available"} (${Number(status.progress || 0)}%)`;
-        progressBar.style.setProperty("--progress-width", `${Math.max(0, Math.min(100, Number(status.progress || 0)))}%`);
-        lastAnalysis.textContent = formatDate(status.last_analysis || status.completed_at);
-        lastHealthRefresh.textContent = formatDate(status.last_health_refresh);
-        lastCommit.textContent = shortSha(status.last_commit_analyzed);
-        currentHead.textContent = shortSha(status.current_head);
-        codeState.textContent = codeStateLabel(status.code_state_status);
+    // Only create SSE if repo is actively running (not terminal)
+    setupSSE(repo, status);
 
-        // Fetch health badge
-        try {
-          const healthRes = await fetch(`/reports/${repo.owner}/${repo.repo}/health`, { credentials: "same-origin" });
-          if (healthRes.ok) {
-            const healthData = await healthRes.json();
-            const healthBadge = card.querySelector("[data-health-badge]");
-            const riskBadge = card.querySelector("[data-risk-badge]");
-            if (healthBadge && healthData.overall_health_score != null) {
-              const score = healthData.overall_health_score;
-              healthBadge.style.display = "inline-flex";
-              healthBadge.textContent = `Health: ${score}/100`;
-              healthBadge.style.background = score > 70 ? "rgba(66,214,164,0.2)" : score > 40 ? "rgba(244,201,93,0.2)" : "rgba(249,112,102,0.2)";
-              healthBadge.style.color = score > 70 ? "var(--accent)" : score > 40 ? "var(--warning)" : "var(--danger)";
-            }
-            if (riskBadge) {
-              const risk = healthData.overall_risk_level || "unknown";
-              riskBadge.style.display = "inline-flex";
-              riskBadge.textContent = `Risk: ${risk.toUpperCase()}`;
-              riskBadge.style.background = risk === "low" ? "rgba(66,214,164,0.2)" : risk === "medium" ? "rgba(244,201,93,0.2)" : "rgba(249,112,102,0.2)";
-              riskBadge.style.color = risk === "low" ? "var(--accent)" : risk === "medium" ? "var(--warning)" : "var(--danger)";
-            }
-          }
-        } catch (e) {}
-      } catch (error) {
-        statusBadge.textContent = "Unknown";
-        statusMessage.textContent = error.message;
+    try {
+      const healthRes = await fetch(`/reports/${repo.owner}/${repo.repo}/health`, { credentials: "same-origin" });
+      if (healthRes.ok) {
+        const healthData = await healthRes.json();
+        const healthBadge = card.querySelector("[data-health-badge]");
+        const riskBadge = card.querySelector("[data-risk-badge]");
+        if (healthBadge && healthData.overall_health_score != null) {
+          const score = healthData.overall_health_score;
+          healthBadge.style.display = "inline-flex";
+          healthBadge.textContent = `Health: ${score}/100`;
+          healthBadge.style.background = score > 70 ? "rgba(66,214,164,0.2)" : score > 40 ? "rgba(244,201,93,0.2)" : "rgba(249,112,102,0.2)";
+          healthBadge.style.color = score > 70 ? "var(--accent)" : score > 40 ? "var(--warning)" : "var(--danger)";
+        }
+        if (riskBadge) {
+          const risk = healthData.overall_risk_level || "unknown";
+          riskBadge.style.display = "inline-flex";
+          riskBadge.textContent = `Risk: ${risk.toUpperCase()}`;
+          riskBadge.style.background = risk === "low" ? "rgba(66,214,164,0.2)" : risk === "medium" ? "rgba(244,201,93,0.2)" : "rgba(249,112,102,0.2)";
+          riskBadge.style.color = risk === "low" ? "var(--accent)" : risk === "medium" ? "var(--warning)" : "var(--danger)";
+        }
       }
-    }
+    } catch (e) {}
+  } catch (error) {
+    statusBadge.textContent = "Unknown";
+    statusMessage.textContent = error.message;
+  }
+}
 
-    function render(items) {
+    async function render(items) {
       repoGrid.innerHTML = "";
 
       if (!items.length) {
@@ -933,18 +952,23 @@ async function refreshRepositoryStatus(repo) {
         });
 
         repoGrid.appendChild(card);
-        refreshRepositoryStatus(repo);
+      }
+      // Batch status/health fetches to avoid browser connection pool exhaustion
+      const MAX_CONCURRENT = 4;
+      for (let i = 0; i < items.length; i += MAX_CONCURRENT) {
+        const batch = items.slice(i, i + MAX_CONCURRENT);
+        await Promise.all(batch.map((r) => refreshRepositoryStatus(r)));
       }
     }
 
-    function applyFilter() {
+    async function applyFilter() {
       const query = searchInput.value.trim().toLowerCase();
       if (!query) {
-        render(repositories);
+        await render(repositories);
         return;
       }
 
-      render(repositories.filter((repo) => {
+      await render(repositories.filter((repo) => {
         return repo.name.toLowerCase().includes(query)
           || repo.owner.toLowerCase().includes(query)
           || repo.repo.toLowerCase().includes(query);
@@ -971,7 +995,7 @@ async function refreshRepositoryStatus(repo) {
         setProgress(3);
         statusLabel.textContent = "Ready";
         loadingState.classList.add("hidden");
-        render(repositories);
+        await render(repositories);
         progressStepLabel.textContent = `Complete: ${progressSteps[progressSteps.length - 1]}`;
         progressSegments.forEach((segment) => {
           segment.classList.add("complete");
@@ -1011,7 +1035,7 @@ async function refreshRepositoryStatus(repo) {
         });
       } catch (e) {}
       settingsModal.classList.remove("open");
-      render(repositories);
+      await render(repositories);
     });
 
     // Load persisted settings
@@ -1055,6 +1079,18 @@ async function refreshRepositoryStatus(repo) {
     document.getElementById("refreshMigrations").addEventListener("click", loadMigrationDocs);
 
     loadDashboard().then(() => loadMigrationDocs());
+
+    // Close SSE connections when leaving page
+    window.addEventListener("beforeunload", () => {
+      eventSources.forEach((src) => src.close());
+      eventSources.clear();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        eventSources.forEach((src) => src.close());
+        eventSources.clear();
+      }
+    });
   </script>
 </body>
 </html>

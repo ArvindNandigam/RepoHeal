@@ -708,7 +708,6 @@ def run_analysis_in_background(
             current_step="graph",
         )
         graph_builder = Neo4jGraphBuilder()
-        graph_builder.clear_repository_graph(repo_id)
         graph_builder.build_graph(repo_id, analysis)
 
         node_count = (
@@ -777,6 +776,15 @@ def run_analysis_in_background(
         # Free analysis after pipeline
         del analysis
         gc.collect()
+
+        # Scratch-space model: clear Neo4j analysis graph — it was only needed during the pipeline.
+        # InstalledRepository nodes are preserved (they track app installations separately).
+        # Graph visualization is generated on-demand from cached JSON, not Neo4j.
+        try:
+            graph_builder = Neo4jGraphBuilder()
+            graph_builder.clear_repository_graph(repo_id)
+        except Exception as neo4j_cleanup_err:
+            logger.warning(f"Neo4j cleanup failed for {repo_id}: {neo4j_cleanup_err}")
 
         # --- Completion ---
         update_job(

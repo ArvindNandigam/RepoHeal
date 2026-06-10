@@ -534,13 +534,16 @@ class Neo4jGraphBuilder:
         with neo4j_connection.get_session() as session:
 
             logger.info(
-                f"Clearing graph for {repo_id}"
+                f"Clearing analysis graph for {repo_id}"
             )
 
+            # Delete analysis nodes (File, Function, Class, API, Namespace, etc.)
+            # Keep InstalledRepository nodes — they track app installations separately.
             session.run(
                 """
                 MATCH (n)
                 WHERE n.repo_id = $repo_id
+                  AND NOT n:InstalledRepository
                 DETACH DELETE n
                 """,
                 repo_id=repo_id
@@ -555,5 +558,5 @@ class Neo4jGraphBuilder:
             )
 
             logger.info(
-                f"Graph cleared for {repo_id}"
+                f"Analysis graph cleared for {repo_id}"
             )
