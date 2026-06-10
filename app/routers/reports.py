@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from app.auth.jwt_manager import verify_session_token
-from app.routers.dependencies import get_session_data
 from app.errors.exceptions import AnalysisError
 from app.github.client import RepoHealGitHubClient
 from app.github.metadata_branch import MetadataBranchManager
@@ -30,30 +29,28 @@ async def get_health_report_data(
     analysis_id: Optional[str] = Query(None),
     user=Depends(verify_session_token)
 ):
-    session_data = get_session_data(user)
-    client = RepoHealGitHubClient(session_data["github_token"])
+    installation = ensure_repoheal_installed(repo_owner, repo_name)
+    client = RepoHealGitHubClient(installation["id"])
     repo = client.get_repo(f"{repo_owner}/{repo_name}")
     metadata_manager = MetadataBranchManager(client)
-    
+
     manifest = metadata_manager._load_manifest(repo)
-    
+
     if analysis_id:
         report_meta = next((r for r in manifest.get("health_reports", []) if r["analysis_id"] == analysis_id), None)
         if not report_meta:
-            # Fallback to searching legacy if needed, but primary is manifest
             raise HTTPException(status_code=404, detail="Health report not found for this analysis")
         path = report_meta["path"]
     else:
         path = manifest.get("latest_health_report")
-    
+
     if not path:
         raise HTTPException(status_code=404, detail="No health report found")
-        
+
     try:
         content = repo.get_contents(path, ref=metadata_manager.branch_name)
         import json
         data = json.loads(content.decoded_content.decode("utf-8"))
-        # Flatten report structure for UI convenience
         report = data.get("report", {})
         return {
             **report,
@@ -71,8 +68,8 @@ async def get_migration_doc_data(
     analysis_id: Optional[str] = Query(None),
     user=Depends(verify_session_token)
 ):
-    session_data = get_session_data(user)
-    client = RepoHealGitHubClient(session_data["github_token"])
+    installation = ensure_repoheal_installed(repo_owner, repo_name)
+    client = RepoHealGitHubClient(installation["id"])
     repo = client.get_repo(f"{repo_owner}/{repo_name}")
     metadata_manager = MetadataBranchManager(client)
     
@@ -101,8 +98,7 @@ async def list_comparisons(
     repo_owner: str,
     repo_name: str,
     user=Depends(verify_session_token)
-):
-    session_data = get_session_data(user)
+):  
     installation = ensure_repoheal_installed(repo_owner, repo_name)
     client = RepoHealGitHubClient(installation["id"])
     repo = client.get_repo(f"{repo_owner}/{repo_name}")
@@ -122,7 +118,6 @@ async def get_comparison(
     comparison_id: str,
     user=Depends(verify_session_token)
 ):
-    session_data = get_session_data(user)
     installation = ensure_repoheal_installed(repo_owner, repo_name)
     client = RepoHealGitHubClient(installation["id"])
     repo = client.get_repo(f"{repo_owner}/{repo_name}")
@@ -149,8 +144,7 @@ async def get_analysis_history(
     repo_name: str,
     branch: Optional[str] = Query(None),
     user=Depends(verify_session_token)
-):
-    session_data = get_session_data(user)
+):  
     installation = ensure_repoheal_installed(repo_owner, repo_name)
     client = RepoHealGitHubClient(installation["id"])
     repo = client.get_repo(f"{repo_owner}/{repo_name}")

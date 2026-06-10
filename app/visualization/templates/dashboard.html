@@ -271,44 +271,59 @@
     }
 
     .repo-card {
-      padding: 20px;
+      padding: 12px;
       border-radius: 8px;
       background: rgba(30, 33, 36, 0.96);
       border: 1px solid rgba(255, 255, 255, 0.06);
-      display: grid;
-      gap: 14px;
-      min-height: 360px;
-    }
-
-    .repo-card h2 {
-      margin: 0;
-      font-size: 20px;
-      line-height: 1.2;
-    }
-
-    .repo-meta {
       display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      color: var(--muted);
-      font-size: 13px;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .repo-card-top {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .repo-card-top h2 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .repo-card-top h2 a {
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .repo-card-top h2 a:hover {
+      color: var(--accent);
     }
 
     .pill {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 6px 10px;
+      gap: 3px;
+      padding: 3px 7px;
       border-radius: 999px;
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 10px;
+      white-space: nowrap;
+      line-height: 1.3;
     }
 
     .pill.status {
       color: #06121c;
       background: var(--accent);
       border-color: transparent;
-      font-weight: 800;
+      font-weight: 700;
     }
 
     .pill.status.outdated {
@@ -316,28 +331,18 @@
       background: var(--danger);
     }
 
-    .pill.status.up-to-date {
-      color: #06150f;
-      background: var(--accent);
-    }
-
     .pill.status.running {
       color: #201604;
       background: var(--accent-2);
     }
 
-    .repo-status {
-      display: grid;
-      gap: 8px;
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.45;
-    }
+    .pill.health { background: rgba(66,214,164,0.15); color: var(--accent); border-color: rgba(66,214,164,0.25); }
+    .pill.risk { background: rgba(249,112,102,0.15); color: var(--danger); border-color: rgba(249,112,102,0.25); }
 
     .repo-progress {
-      height: 8px;
+      height: 4px;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.06);
       overflow: hidden;
     }
 
@@ -349,76 +354,16 @@
       background: linear-gradient(135deg, var(--accent), var(--accent-2));
     }
 
-    .repo-actions {
-      margin-top: auto;
-      display: grid;
-      gap: 10px;
-      grid-template-columns: 1fr;
-    }
-
-    .action-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      gap: 8px;
-    }
-
-    .field {
-      display: grid;
-      gap: 4px;
-    }
-
-    .field span {
-      color: var(--muted);
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-    }
-
-    .field input,
-    .field select {
-      min-width: 0;
-      width: 100%;
-      padding: 10px 12px;
-      border-radius: 8px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      background: rgba(255, 255, 255, 0.05);
-      color: var(--text);
-      outline: none;
-    }
-
-    .action-menu {
-      position: relative;
-    }
-
-    .action-menu summary {
-      list-style: none;
-    }
-
-    .action-menu summary::-webkit-details-marker {
-      display: none;
-    }
-
-    .menu-panel {
-      display: none;
-      position: absolute;
-      z-index: 10;
-      top: calc(100% + 6px);
-      left: 0;
-      right: 0;
+    .repo-card-bottom {
+      display: flex;
+      align-items: center;
       gap: 6px;
-      padding: 8px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: #202326;
-      box-shadow: 0 18px 36px rgba(0, 0, 0, 0.35);
+      flex-wrap: wrap;
     }
 
-    .action-menu[open] .menu-panel {
-      display: grid;
-    }
-
-    .menu-panel button {
-      justify-content: flex-start;
+    .repo-card-bottom .button {
+      font-size: 11px;
+      padding: 4px 8px;
     }
 
     .empty-state,
@@ -433,6 +378,13 @@
     }
 
     .hidden { display: none !important; }
+
+    #toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+    .toast { padding: 12px 20px; border-radius: 10px; font-size: 13px; font-weight: 600; background: var(--panel); border: 1px solid var(--border); color: var(--text); box-shadow: 0 8px 24px rgba(0,0,0,0.4); animation: slideIn 0.25s ease-out; max-width: 360px; }
+    .toast.success { border-color: var(--accent); }
+    .toast.info { border-color: var(--accent-2); }
+    .toast.error { border-color: var(--danger); }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
     @media (max-width: 1100px) {
       .hero,
@@ -454,6 +406,7 @@
   </style>
 </head>
 <body>
+  <div id="toast-container"></div>
   <main class="page">
     <section class="hero">
       <div class="panel hero-main">
@@ -546,11 +499,13 @@
         <span>Timezone Override</span>
         <select id="timezoneSelect">
           <option value="auto">Auto (Browser Local)</option>
-          <option value="UTC">UTC</option>
-          <option value="America/New_York">Eastern Time (ET)</option>
-          <option value="Europe/London">London (GMT/BST)</option>
-          <option value="Asia/Tokyo">Tokyo (JST)</option>
+          <option value="UTC">UTC (Coordinated Universal Time)</option>
         </select>
+        <div id="customTzRow" class="hidden" style="display: flex; gap: 8px; align-items: center; margin-top: 6px;">
+          <span style="color: var(--muted); font-size: 13px;">UTC</span>
+          <input id="customTzOffset" type="text" placeholder="+05:30" style="width: 80px; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); background: #1c1f22; color: var(--text); outline: none; text-align: center;" maxlength="6">
+          <span style="color: var(--muted); font-size: 12px;">e.g. +05:30, -04:00</span>
+        </div>
       </div>
       <div class="repo-actions" style="margin-top: 10px;">
         <button class="button" id="saveSettings">Save Changes</button>
@@ -560,6 +515,15 @@
   </div>
 
   <script>
+    function showToast(message, type = "info") {
+      const container = document.getElementById("toast-container");
+      const el = document.createElement("div");
+      el.className = `toast ${type}`;
+      el.textContent = message;
+      container.appendChild(el);
+      setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity 0.3s"; setTimeout(() => el.remove(), 300); }, 4000);
+    }
+
     const searchInput = document.getElementById("repoSearch");
     const repoGrid = document.getElementById("repoGrid");
     const loadingState = document.getElementById("loadingState");
@@ -577,6 +541,71 @@
     const closeSettingsBtn = document.getElementById("closeSettings");
     const saveSettingsBtn = document.getElementById("saveSettings");
     const timezoneSelect = document.getElementById("timezoneSelect");
+
+    const customTzInput = document.getElementById("customTzOffset");
+    const customTzRow = document.getElementById("customTzRow");
+
+    function populateTimezones() {
+      const select = timezoneSelect;
+      const regions = {
+        "Africa": [], "America": [], "Asia": [], "Atlantic": [],
+        "Australia": [], "Europe": [], "Indian": [], "Pacific": [],
+      };
+      const others = [];
+      try {
+        const zones = Intl.supportedValuesOf("timeZone");
+        for (const z of zones) {
+          const parts = z.split("/");
+          if (parts.length >= 2 && regions[parts[0]] !== undefined) regions[parts[0]].push(z);
+          else others.push(z);
+        }
+      } catch {
+        const fallback = ["America/New_York","America/Chicago","America/Denver","America/Los_Angeles","Europe/London","Europe/Paris","Europe/Berlin","Asia/Tokyo","Asia/Shanghai","Asia/Kolkata","Asia/Dubai","Australia/Sydney","Pacific/Auckland"];
+        for (const z of fallback) {
+          const parts = z.split("/");
+          if (regions[parts[0]] !== undefined) regions[parts[0]].push(z);
+          else others.push(z);
+        }
+      }
+      for (const [region, zones] of Object.entries(regions)) {
+        if (zones.length === 0) continue;
+        const optgroup = document.createElement("optgroup");
+        optgroup.label = region;
+        zones.sort().forEach(z => {
+          const o = document.createElement("option");
+          o.value = z;
+          const label = z.replace(/_/g, " ").split("/").slice(1).join(" / ");
+          o.textContent = label + " (" + z + ")";
+          optgroup.appendChild(o);
+        });
+        select.appendChild(optgroup);
+      }
+      if (others.length > 0) {
+        const optgroup = document.createElement("optgroup");
+        optgroup.label = "Other";
+        others.sort().forEach(z => {
+          const o = document.createElement("option");
+          o.value = z;
+          o.textContent = z.replace(/_/g, " ");
+          optgroup.appendChild(o);
+        });
+        select.appendChild(optgroup);
+      }
+      const customOpt = document.createElement("option");
+      customOpt.value = "custom";
+      customOpt.textContent = "Custom UTC Offset...";
+      select.appendChild(customOpt);
+    }
+
+    timezoneSelect.addEventListener("change", () => {
+      if (timezoneSelect.value === "custom") {
+        customTzRow.classList.remove("hidden");
+        customTzRow.style.display = "flex";
+      } else {
+        customTzRow.classList.add("hidden");
+        customTzRow.style.display = "none";
+      }
+    });
 
     let repositories = [];
     let userTimezone = "auto";
@@ -624,10 +653,22 @@
         hour12: false
       };
       
-      if (userTimezone !== "auto" && userTimezone !== "UTC") {
-        options.timeZone = userTimezone;
+      if (userTimezone === "auto") {
+        // browser local — don't set timeZone
       } else if (userTimezone === "UTC") {
         options.timeZone = "UTC";
+      } else if (userTimezone.startsWith("UTC+") || userTimezone.startsWith("UTC-")) {
+        const offset = userTimezone.replace("UTC", "");
+        const sign = offset.startsWith("+") ? 1 : -1;
+        const [h, m] = offset.slice(1).split(":").map(Number);
+        const totalMinutes = sign * (h * 60 + m);
+        const iana = Intl.supportedValuesOf ? undefined : undefined;
+        const now = new Date();
+        const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+        const local = new Date(utc + totalMinutes * 60000);
+        return local.toISOString().replace("T", " ").slice(0, 19) + " (UTC" + offset + ")";
+      } else {
+        options.timeZone = userTimezone;
       }
       
       return date.toLocaleString(undefined, options);
@@ -656,34 +697,6 @@
       badge.textContent = running ? prettyStatus(status.status) : codeStateLabel(codeState);
     }
 
-    function targetPayload(card, mode) {
-      const branch = card.querySelector("[data-target-branch]").value.trim();
-      const commit = card.querySelector("[data-target-commit]").value.trim();
-      return {
-        mode: mode || (commit ? "commit" : branch ? "branch" : "latest"),
-        branch: branch || null,
-        commit_sha: commit || null
-      };
-    }
-
-    async function postRepositoryAction(url, repoName, payload = null) {
-      const options = {
-        method: "POST",
-        credentials: "same-origin"
-      };
-      if (payload) {
-        options.headers = { "Content-Type": "application/json" };
-        options.body = JSON.stringify(payload);
-      }
-      const response = await fetch(url, {
-        ...options
-      });
-      if (!response.ok) {
-        throw new Error(`${repoName}: action returned ${response.status}`);
-      }
-      return response.json();
-    }
-
     async function getRepositoryAction(url, params = {}) {
       const query = new URLSearchParams();
       Object.entries(params).forEach(([key, value]) => {
@@ -695,6 +708,24 @@
         throw new Error(`Analyze returned ${response.status}`);
       }
       return response.json();
+    }
+
+    async function clickAndQueue(btn, actionFn, repoName) {
+      if (btn.disabled) return;
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = btn.dataset.queuedText || "Queued...";
+      btn.style.opacity = "0.6";
+      try {
+        await actionFn();
+        showToast(`${repoName || "Action"} queued successfully`, "success");
+      } catch (err) {
+        showToast(`${repoName || "Action"} failed: ${err.message}`, "error");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        btn.style.opacity = "1";
+      }
     }
 const eventSources = new Map();
 
@@ -710,7 +741,7 @@ function setupSSE(repo, initialStatus) {
   if (eventSources.has(repo.name)) return;
   if (initialStatus && TERMINAL_STATUSES.has(initialStatus.status)) return;
 
-  const source = new EventSource(`/sse/status/${repo.owner}/${repo.name}`);
+  const source = new EventSource(`/sse/status/${repo.owner}/${repo.repo}`);
   source.addEventListener("analysis", (event) => {
     const data = JSON.parse(event.data);
     if (TERMINAL_STATUSES.has(data.status)) {
@@ -770,11 +801,12 @@ function updateCardFromStatus(card, status) {
   const progressBar = card.querySelector("[data-progress-bar]");
 
   setStatusBadge(statusBadge, status);
-  statusMessage.textContent = `${status.message || "Analysis status available"} (${Number(status.progress || 0)}%)`;
-  progressBar.style.setProperty("--progress-width", `${Math.max(0, Math.min(100, Number(status.progress || 0)))}%`);
+  if (statusMessage) statusMessage.textContent = `${status.message || "Analysis status available"} (${Number(status.progress || 0)}%)`;
+  if (progressBar) progressBar.style.setProperty("--progress-width", `${Math.max(0, Math.min(100, Number(status.progress || 0)))}%`);
 
   if (status.last_analysis) {
-    card.querySelector("[data-last-analysis]").textContent = formatDate(status.last_analysis);
+    const el = card.querySelector("[data-last-analysis]");
+    if (el) el.textContent = formatDate(status.last_analysis);
   }
 }
 
@@ -788,23 +820,16 @@ async function refreshRepositoryStatus(repo) {
   const statusMessage = card.querySelector("[data-status-message]");
   const progressBar = card.querySelector("[data-progress-bar]");
   const lastAnalysis = card.querySelector("[data-last-analysis]");
-  const lastHealthRefresh = card.querySelector("[data-last-health-refresh]");
-  const lastCommit = card.querySelector("[data-last-commit]");
-  const currentHead = card.querySelector("[data-current-head]");
-  const codeState = card.querySelector("[data-code-state]");
 
   try {
     const response = await fetch(repo.status_url, { credentials: "same-origin" });
     if (!response.ok) throw new Error(`Status returned ${response.status}`);
     const status = await response.json();
     setStatusBadge(statusBadge, status);
-    statusMessage.textContent = `${status.message || "Analysis status available"} (${Number(status.progress || 0)}%)`;
-    progressBar.style.setProperty("--progress-width", `${Math.max(0, Math.min(100, Number(status.progress || 0)))}%`);
-    lastAnalysis.textContent = formatDate(status.last_analysis || status.completed_at);
-    lastHealthRefresh.textContent = formatDate(status.last_health_refresh);
-    lastCommit.textContent = shortSha(status.last_commit_analyzed);
-    currentHead.textContent = shortSha(status.current_head);
-    codeState.textContent = codeStateLabel(status.code_state_status);
+    if (statusMessage) statusMessage.textContent = `${status.message || "Analysis status available"} (${Number(status.progress || 0)}%)`;
+    if (progressBar) progressBar.style.setProperty("--progress-width", `${Math.max(0, Math.min(100, Number(status.progress || 0)))}%`);
+    const lastDate = status.last_analysis || status.completed_at;
+    if (lastAnalysis) lastAnalysis.textContent = lastDate ? `Last analysis: ${formatDate(lastDate)}` : "";    
 
     // Only create SSE if repo is actively running (not terminal)
     setupSSE(repo, status);
@@ -854,103 +879,34 @@ async function refreshRepositoryStatus(repo) {
         card.className = "repo-card";
         card.dataset.repoName = repo.name;
         card.innerHTML = `
-          <div>
-            <div class="repo-meta">
-              <span class="pill">${repo.owner}</span>
-              <span class="pill">${repo.private ? "Private" : "Public"}</span>
-              <span class="pill status" data-status-badge>Loading</span>
-            </div>
-            <h2>${repo.name}</h2>
+          <div class="repo-card-top">
+            <span class="pill">${repo.owner}</span>
+            <h2><a href="/repos/${repo.owner}/${repo.repo}">${repo.repo}</a></h2>
+            <span class="pill status" data-status-badge>Loading</span>
           </div>
-          <div class="repo-status">
-            <span data-status-message>${repo.private ? "Access restricted" : "Visible to the user"}</span>
-            <div class="repo-progress"><span data-progress-bar></span></div>
-            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-              <span class="pill" data-health-badge style="display: none;">Health: --</span>
-              <span class="pill" data-risk-badge style="display: none;">Risk: --</span>
-            </div>
-            <span>Last analysis: <strong data-last-analysis>Loading</strong></span>
-            <span>Last health refresh: <strong data-last-health-refresh>Loading</strong></span>
-            <span>Current HEAD: <strong data-current-head>Loading</strong></span>
-            <span>Last analyzed: <strong data-last-commit>Loading</strong></span>
-            <span>Status: <strong data-code-state>Loading</strong></span>
-          </div>
-          <div class="repo-actions">
-            <div class="action-row">
-              <label class="field">
-                <span>Branch</span>
-                <input data-target-branch type="text" placeholder="default" list="branchOptions-${repo.owner}-${repo.repo}">
-              </label>
-              <label class="field">
-                <span>Commit</span>
-                <input data-target-commit type="text" placeholder="latest">
-              </label>
-            </div>
-            <datalist id="branchOptions-${repo.owner}-${repo.repo}">
-              <option value="main"></option>
-              <option value="develop"></option>
-              <option value="feature/"></option>
-              <option value="release/"></option>
-            </datalist>
-            <details class="action-menu">
-              <summary class="button">Analyze v</summary>
-              <div class="menu-panel">
-                <button class="button secondary" type="button" data-action="analyze-latest">Latest Commit</button>
-                <button class="button secondary" type="button" data-action="analyze-branch">Specific Branch</button>
-                <button class="button secondary" type="button" data-action="analyze-commit">Specific Commit</button>
-              </div>
-            </details>
-            <button class="button secondary" type="button" data-action="reanalyze">Refresh Analysis</button>
-            <button class="button tertiary" type="button" data-action="health">Refresh Health Report</button>
-            <a class="button secondary" href="${repo.visualize_url}">Graph</a>
-            <a class="button secondary" href="${repo.reports_hub_url}">Reports Hub</a>
-            <a class="button tertiary" href="/reports/${repo.owner}/${repo.repo}/health-page">Health</a>
-            <a class="button tertiary" href="/reports/${repo.owner}/${repo.repo}/migration-page">Migration</a>
-            <button class="button tertiary" type="button" data-action="compare">Compare</button>
-            <a class="button tertiary" href="${repo.history_url}">History</a>
+          <div class="repo-progress"><span data-progress-bar></span></div>
+          <div class="repo-card-bottom">
+            <span class="pill health" data-health-badge style="display:none">Health: --</span>
+            <span class="pill risk" data-risk-badge style="display:none">Risk: --</span>
+            <span data-last-analysis style="font-size:10px;color:var(--muted);flex:1;"></span>
+            <span data-status-message style="display:none"></span>
+            <button class="button tertiary" type="button" data-action="analyze-latest" data-queued-text="...">Analyze</button>
+            <a class="button tertiary" href="${repo.visualize_url}">Graph</a>
+            <a class="button secondary" href="/repos/${repo.owner}/${repo.repo}">Manage</a>
           </div>
         `;
 
-        card.querySelector('[data-action="analyze-latest"]').addEventListener("click", async () => {
-          await getRepositoryAction(repo.analyze_url, { mode: "latest" });
-          await refreshRepositoryStatus(repo);
+        card.querySelector('[data-action="analyze-latest"]').addEventListener("click", async (e) => {
+          await clickAndQueue(e.currentTarget, async () => {
+            const data = await getRepositoryAction(repo.analyze_url, { mode: "latest" });
+            if (data.job_id) {
+              const msg = card.querySelector("[data-last-analysis]");
+              if (msg) msg.textContent = "Queued — starting...";
+            }
+            await refreshRepositoryStatus(repo);
+            await refreshRepositoryStatus(repo);
+          }, repo.name);
         });
-        card.querySelector('[data-action="analyze-branch"]').addEventListener("click", async () => {
-          const payload = targetPayload(card, "branch");
-          await getRepositoryAction(repo.analyze_url, payload);
-          await refreshRepositoryStatus(repo);
-        });
-        card.querySelector('[data-action="analyze-commit"]').addEventListener("click", async () => {
-          const payload = targetPayload(card, "commit");
-          await getRepositoryAction(repo.analyze_url, payload);
-          await refreshRepositoryStatus(repo);
-        });
-        card.querySelector('[data-action="reanalyze"]').addEventListener("click", async () => {
-          await postRepositoryAction(repo.reanalyze_url, repo.name, targetPayload(card));
-          await refreshRepositoryStatus(repo);
-        });
-        card.querySelector('[data-action="health"]').addEventListener("click", async () => {
-          await postRepositoryAction(repo.health_refresh_url, repo.name, targetPayload(card));
-          await refreshRepositoryStatus(repo);
-        });
-        card.querySelector('[data-action="compare"]').addEventListener("click", async () => {
-          const branchA = window.prompt("Branch A", "main");
-          if (!branchA) return;
-          const commitA = window.prompt("Commit A");
-          if (!commitA) return;
-          const branchB = window.prompt("Branch B", card.querySelector("[data-target-branch]").value.trim() || "main");
-          if (!branchB) return;
-          const commitB = window.prompt("Commit B", card.querySelector("[data-target-commit]").value.trim());
-          if (!commitB) return;
-          await postRepositoryAction(repo.compare_url, repo.name, {
-            branch_a: branchA,
-            commit_a: commitA,
-            branch_b: branchB,
-            commit_b: commitB
-          });
-          await refreshRepositoryStatus(repo);
-        });
-
         repoGrid.appendChild(card);
       }
       // Batch status/health fetches to avoid browser connection pool exhaustion
@@ -1015,7 +971,17 @@ async function refreshRepositoryStatus(repo) {
     searchInput.addEventListener("input", applyFilter);
 
     openSettingsBtn.addEventListener("click", () => {
-      timezoneSelect.value = localStorage.getItem("repoheal_timezone") || "auto";
+      const saved = localStorage.getItem("repoheal_timezone") || "auto";
+      if (saved.startsWith("UTC+") || saved.startsWith("UTC-")) {
+        timezoneSelect.value = "custom";
+        customTzInput.value = saved.replace("UTC", "");
+        customTzRow.classList.remove("hidden");
+        customTzRow.style.display = "flex";
+      } else {
+        timezoneSelect.value = saved;
+        customTzRow.classList.add("hidden");
+        customTzRow.style.display = "none";
+      }
       settingsModal.classList.add("open");
     });
 
@@ -1024,7 +990,17 @@ async function refreshRepositoryStatus(repo) {
     });
 
     saveSettingsBtn.addEventListener("click", async () => {
-      userTimezone = timezoneSelect.value;
+      let tz = timezoneSelect.value;
+      if (tz === "custom") {
+        const offset = customTzInput.value.trim();
+        if (offset && /^[+-]\d{2}:\d{2}$/.test(offset)) {
+          tz = "UTC" + offset;
+        } else {
+          showToast("Invalid offset format. Use +HH:MM or -HH:MM", "error");
+          return;
+        }
+      }
+      userTimezone = tz;
       localStorage.setItem("repoheal_timezone", userTimezone);
       try {
         await fetch("/auth/timezone", {
@@ -1038,7 +1014,8 @@ async function refreshRepositoryStatus(repo) {
       await render(repositories);
     });
 
-    // Load persisted settings
+    // Populate timezone dropdown and load persisted settings
+    populateTimezones();
     userTimezone = localStorage.getItem("repoheal_timezone") || "auto";
 
     async function loadMigrationDocs() {

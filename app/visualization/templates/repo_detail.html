@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RepoHeal — {{ owner }}/{{ repo }}</title>
+  <style>
+    :root { color-scheme: dark; --bg: #101214; --surface: #181a1d; --text: #e8eaed; --muted: #9aa0a6; --accent: #42d6a4; --accent-2: #f4c95d; --danger: #f97066; --border: rgba(255,255,255,0.06); }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 0; min-height: 100vh; }
+    .container { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+    header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+    header h1 { margin: 0; font-size: 20px; font-weight: 600; }
+    .pill { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); font-size: 12px; white-space: nowrap; }
+    .pill.status { color: #06121c; background: var(--accent); border-color: transparent; font-weight: 800; }
+    .pill.status.outdated { color: #240d0b; background: var(--danger); }
+    .pill.status.running { color: #201604; background: var(--accent-2); }
+    .pill.health { background: rgba(66,214,164,0.15); color: var(--accent); border-color: rgba(66,214,164,0.3); }
+    .pill.risk { background: rgba(249,112,102,0.15); color: var(--danger); border-color: rgba(249,112,102,0.3); }
+    .button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; border: 1px solid var(--border); background: rgba(255,255,255,0.06); color: var(--text); cursor: pointer; text-decoration: none; transition: background .15s; white-space: nowrap; }
+    .button:hover { background: rgba(255,255,255,0.1); }
+    .button.secondary { background: var(--accent); color: #06121c; border-color: transparent; }
+    .button.secondary:hover { background: #3bc494; }
+    .button.tertiary { background: transparent; border-color: var(--border); color: var(--muted); }
+    .button.tertiary:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+    .button:disabled { opacity: 0.5; cursor: default; pointer-events: none; }
+    .card { padding: 20px; border-radius: 8px; background: rgba(30,33,36,0.96); border: 1px solid var(--border); }
+    .card + .card { margin-top: 12px; }
+    .card h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    .flex-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .field { display: flex; align-items: center; gap: 6px; }
+    .field select { padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: #1c1f22; color: var(--text); font-size: 12px; outline: none; min-width: 140px; }
+    .field select option { background: #1c1f22; }
+    .repo-progress { height: 6px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; flex: 1; min-width: 80px; }
+    .repo-progress span { display: block; height: 100%; width: var(--progress-width,0%); border-radius: inherit; background: linear-gradient(135deg,var(--accent),var(--accent-2)); }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+    .stat-box { padding: 10px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); }
+    .stat-box .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    .stat-box .value { font-size: 14px; font-weight: 600; margin-top: 4px; }
+    .toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; font-size: 13px; z-index: 999; animation: fadeIn .2s; }
+    .toast.success { background: var(--accent); color: #06121c; }
+    .toast.error { background: var(--danger); color: #fff; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @media (max-width: 600px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <a href="/dashboard" class="button tertiary">&larr; Dashboard</a>
+      <h1>{{ owner }}/{{ repo }}</h1>
+      <span class="pill" data-status-badge>Loading</span>
+      <span class="pill health" data-health-badge style="display:none">Health: --</span>
+      <span class="pill risk" data-risk-badge style="display:none">Risk: --</span>
+    </header>
+
+    <div class="card">
+      <h3>Status</h3>
+      <div class="flex-row" style="margin-bottom: 10px;">
+        <span data-status-message style="color: var(--muted); font-size: 13px;">Loading...</span>
+        <div class="repo-progress"><span data-progress-bar></span></div>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-box"><div class="label">Last Analysis</div><div class="value" data-last-analysis>--</div></div>
+        <div class="stat-box"><div class="label">Status</div><div class="value" data-code-state>--</div></div>
+        <div class="stat-box"><div class="label">HEAD</div><div class="value" data-current-head>--</div></div>
+        <div class="stat-box"><div class="label">Last Analyzed</div><div class="value" data-last-commit>--</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Analyze</h3>
+      <div class="grid-3">
+        <button class="button secondary" type="button" data-action="analyze-latest" data-queued-text="Queued...">Latest Commit</button>
+        <button class="button secondary" type="button" data-action="analyze-branch" data-queued-text="Queued...">Specific Branch</button>
+        <button class="button secondary" type="button" data-action="analyze-commit" data-queued-text="Queued...">Specific Commit</button>
+        <button class="button tertiary" type="button" data-action="reanalyze" data-queued-text="Queued...">Refresh Analysis</button>
+        <button class="button tertiary" type="button" data-action="health" data-queued-text="Queued...">Refresh Health Report</button>
+      </div>
+      <div class="flex-row" style="margin-top: 12px;">
+        <label class="field">
+          <select data-target-branch><option value="">Branch (default)</option></select>
+        </label>
+        <label class="field">
+          <select data-target-commit><option value="">Commit (latest)</option></select>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Reports &amp; Tools</h3>
+      <div class="grid-2">
+        <a class="button tertiary" href="/reports/{{ owner }}/{{ repo }}/health-page">Health Report</a>
+        <a class="button tertiary" href="/reports/{{ owner }}/{{ repo }}/migration-page">Migration Center</a>
+        <a class="button tertiary" href="/reports/{{ owner }}/{{ repo }}/hub">Reports Hub</a>
+        <a class="button tertiary" href="/reports/{{ owner }}/{{ repo }}/history-page">Analysis History</a>
+        <a class="button tertiary" href="/visualize/{{ owner }}/{{ repo }}">Graph</a>
+        <a class="button tertiary" href="/reports/{{ owner }}/{{ repo }}/migration-review">Migration Review</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Compare</h3>
+      <div class="flex-row">
+        <label class="field">
+          <span style="font-size:11px;color:var(--muted);">Branch A</span>
+          <input id="branchA" class="field-input" value="main" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;width:120px;">
+        </label>
+        <label class="field">
+          <span style="font-size:11px;color:var(--muted);">Commit A</span>
+          <input id="commitA" class="field-input" placeholder="latest" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;width:160px;">
+        </label>
+        <label class="field">
+          <span style="font-size:11px;color:var(--muted);">Branch B</span>
+          <input id="branchB" class="field-input" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;width:120px;">
+        </label>
+        <label class="field">
+          <span style="font-size:11px;color:var(--muted);">Commit B</span>
+          <input id="commitB" class="field-input" placeholder="latest" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;width:160px;">
+        </label>
+        <button class="button secondary" type="button" data-action="compare">Compare</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const OWNER = "{{ owner }}";
+    const REPO = "{{ repo }}";
+    const FULL_NAME = `${OWNER}/${REPO}`;
+    const analyzeUrl = `/analyze/${OWNER}/${REPO}`;
+    const reanalyzeUrl = `/reanalyze/${OWNER}/${REPO}`;
+    const healthRefreshUrl = `/health-refresh/${OWNER}/${REPO}`;
+    const statusUrl = `/status/${OWNER}/${REPO}`;
+    const compareUrl = `/compare/${OWNER}/${REPO}`;
+
+    let eventSource = null;
+    let branchSelect = document.querySelector("[data-target-branch]");
+    let commitSelect = document.querySelector("[data-target-commit]");
+
+    function showToast(msg, type) {
+      const t = document.createElement("div");
+      t.className = `toast ${type}`;
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 3000);
+    }
+
+    async function clickAndQueue(btn, actionFn) {
+      if (btn.disabled) return;
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = btn.dataset.queuedText || "Queued...";
+      btn.style.opacity = "0.6";
+      try {
+        await actionFn();
+        showToast(`${FULL_NAME}: queued successfully`, "success");
+      } catch (err) {
+        showToast(`${FULL_NAME}: ${err.message}`, "error");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        btn.style.opacity = "1";
+      }
+    }
+
+    function targetPayload(mode) {
+      const branch = branchSelect ? branchSelect.value.trim() : "";
+      const commit = commitSelect ? commitSelect.value.trim() : "";
+      return {
+        mode: mode || (commit ? "commit" : branch ? "branch" : "latest"),
+        branch: branch || null,
+        commit_sha: commit || null
+      };
+    }
+
+    function updateCard(data) {
+      const badge = document.querySelector("[data-status-badge]");
+      const msg = document.querySelector("[data-status-message]");
+      const bar = document.querySelector("[data-progress-bar]");
+      const lastAnalysis = document.querySelector("[data-last-analysis]");
+      const codeState = document.querySelector("[data-code-state]");
+      const currentHead = document.querySelector("[data-current-head]");
+      const lastCommit = document.querySelector("[data-last-commit]");
+
+      if (badge) {
+        const status = data.status || "idle";
+        badge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+        badge.className = "pill";
+        if (status === "running" || status === "queued") badge.classList.add("status", "running");
+        else if (status === "failed" || status === "error") badge.classList.add("status", "outdated");
+        else badge.classList.add("status");
+      }
+      if (msg) msg.textContent = `${data.message || ""} (${Number(data.progress || 0)}%)`;
+      if (bar) bar.style.setProperty("--progress-width", `${Math.max(0, Math.min(100, Number(data.progress || 0)))}%`);
+      if (lastAnalysis) lastAnalysis.textContent = data.last_analysis || data.completed_at || "--";
+      if (codeState) codeState.textContent = data.code_state_status || "--";
+      if (currentHead) currentHead.textContent = data.current_head ? data.current_head.slice(0, 7) : "--";
+      if (lastCommit) lastCommit.textContent = data.last_commit_analyzed ? data.last_commit_analyzed.slice(0, 7) : "--";
+    }
+
+    async function refreshStatus() {
+      try {
+        const res = await fetch(statusUrl, { credentials: "same-origin" });
+        if (res.ok) {
+          const data = await res.json();
+          updateCard(data);
+        }
+      } catch (_) {}
+      try {
+        const healthRes = await fetch(`/reports/${OWNER}/${REPO}/health`, { credentials: "same-origin" });
+        if (healthRes.ok) {
+          const h = await healthRes.json();
+          const hb = document.querySelector("[data-health-badge]");
+          const rb = document.querySelector("[data-risk-badge]");
+          if (hb && h.overall_health_score != null) {
+            hb.style.display = "inline-flex";
+            hb.textContent = `Health: ${h.overall_health_score}/100`;
+          }
+          if (rb && h.overall_risk_level) {
+            rb.style.display = "inline-flex";
+            rb.textContent = `Risk: ${h.overall_risk_level.toUpperCase()}`;
+          }
+        }
+      } catch (_) {}
+    }
+
+    function setupSSE() {
+      if (eventSource) eventSource.close();
+      eventSource = new EventSource(`/sse/status/${OWNER}/${REPO}`);
+      const terminal = new Set(["completed", "failed", "cancelled", "skipped"]);
+      eventSource.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        updateCard(data);
+        if (terminal.has(data.status)) { eventSource.close(); eventSource = null; }
+      };
+      eventSource.onerror = () => { if (eventSource) { eventSource.close(); eventSource = null; } };
+    }
+
+    // Populate branches
+    (async () => {
+      try {
+        const res = await fetch(`/repos/${OWNER}/${REPO}/branches`, { credentials: "same-origin" });
+        if (res.ok) {
+          for (const b of (await res.json()).branches) {
+            const o = document.createElement("option");
+            o.value = b; o.textContent = b; branchSelect.appendChild(o);
+          }
+        }
+      } catch (_) {}
+    })();
+
+    branchSelect.addEventListener("change", async () => {
+      const b = branchSelect.value;
+      if (!b) return;
+      commitSelect.innerHTML = '<option value="">Commit (latest)</option>';
+      commitSelect.disabled = true;
+      try {
+        const res = await fetch(`/repos/${OWNER}/${REPO}/commits?branch=${encodeURIComponent(b)}`, { credentials: "same-origin" });
+        if (res.ok) {
+          for (const c of (await res.json()).commits.slice(0, 50)) {
+            const o = document.createElement("option");
+            o.value = c.sha; o.textContent = `${c.sha.slice(0,7)} — ${c.message.slice(0,60)}`;
+            commitSelect.appendChild(o);
+          }
+          commitSelect.disabled = false;
+        }
+      } catch (_) {}
+    });
+
+    // Wire buttons
+    document.querySelector('[data-action="analyze-latest"]').addEventListener("click", (e) =>
+      clickAndQueue(e.currentTarget, async () => {
+        await (await fetch(analyzeUrl, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({mode:"latest"}) })).json();
+        await refreshStatus();
+      })
+    );
+    document.querySelector('[data-action="analyze-branch"]').addEventListener("click", (e) =>
+      clickAndQueue(e.currentTarget, async () => {
+        await (await fetch(analyzeUrl, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify(targetPayload("branch")) })).json();
+        await refreshStatus();
+      })
+    );
+    document.querySelector('[data-action="analyze-commit"]').addEventListener("click", (e) =>
+      clickAndQueue(e.currentTarget, async () => {
+        await (await fetch(analyzeUrl, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify(targetPayload("commit")) })).json();
+        await refreshStatus();
+      })
+    );
+    document.querySelector('[data-action="reanalyze"]').addEventListener("click", (e) =>
+      clickAndQueue(e.currentTarget, async () => {
+        await (await fetch(reanalyzeUrl, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify(targetPayload()) })).json();
+        await refreshStatus();
+      })
+    );
+    document.querySelector('[data-action="health"]').addEventListener("click", (e) =>
+      clickAndQueue(e.currentTarget, async () => {
+        await (await fetch(healthRefreshUrl, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify(targetPayload()) })).json();
+        await refreshStatus();
+      })
+    );
+    document.querySelector('[data-action="compare"]').addEventListener("click", (e) =>
+      clickAndQueue(e.currentTarget, async () => {
+        await (await fetch(compareUrl, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({
+          branch_a: document.getElementById("branchA").value || "main",
+          commit_a: document.getElementById("commitA").value || null,
+          branch_b: document.getElementById("branchB").value || null,
+          commit_b: document.getElementById("commitB").value || null
+        }) })).json();
+        await refreshStatus();
+      })
+    );
+
+    window.addEventListener("beforeunload", () => { if (eventSource) eventSource.close(); });
+    document.addEventListener("visibilitychange", () => { if (document.hidden && eventSource) { eventSource.close(); eventSource = null; } });
+
+    refreshStatus();
+    setupSSE();
+  </script>
+</body>
+</html>
