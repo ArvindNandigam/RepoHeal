@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from typing import List, Optional
+from pathlib import Path
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import HTMLResponse
 from app.auth.jwt_manager import verify_session_token
 from app.auth.authorization import verify_repository_access
 from app.routers.dependencies import get_session_data, ensure_repoheal_installed
@@ -308,3 +310,33 @@ async def monitoring_dashboard_data(
         "active_alerts": alerts,
         "schedule": schedule or {"frequency": "weekly"}
     }
+
+
+@router.get("/dashboard/{repo_owner}/{repo_name}/view", response_class=HTMLResponse)
+async def monitoring_dashboard_view(
+    repo_owner: str,
+    repo_name: str,
+    user=Depends(verify_session_token),
+):
+    html = (
+        Path(__file__).resolve().parent.parent
+        / "visualization" / "templates" / "monitoring_dashboard.html"
+    ).read_text(encoding="utf-8")
+    return HTMLResponse(html)
+
+
+@router.post("/digest/{repo_owner}/{repo_name}/send")
+async def send_digest(
+    repo_owner: str,
+    repo_name: str,
+    user=Depends(verify_session_token),
+):
+    repo_id = f"{repo_owner}/{repo_name}"
+    from app.worker.monitoring_worker import generate_weekly_digest
+    from app.notifications.email_sender import send_digest_email
+
+    digest = generate_weekly_digest(repo_id)
+    session_data = get_session_data(user)
+    to_email = session_data.get("github_email") or f"{user.get('github_login', 'user')}@users.noreply.github.com"
+    sent = send_digest_email(to_email, repo_id, digest)
+    return {"sent": sent, "to": to_email, "repository": repo_id, "digest": digest}

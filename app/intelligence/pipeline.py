@@ -25,6 +25,13 @@ class MigrationPipeline:
         self.document_generator = MigrationDocumentGenerator()
         self.metadata_manager = MetadataBranchManager(github_client)
         self.changes_manager = ChangesBranchManager(github_client)
+        self.cancel_check = None
+
+    def _check_cancelled(self):
+        from app.intelligence.webtool_client import WebtoolClient
+        check = self.cancel_check or WebtoolClient.cancel_check
+        if check and check():
+            raise RuntimeError("Operation cancelled")
     
     async def run(
         self,
@@ -39,22 +46,27 @@ class MigrationPipeline:
         
         # 1. Correlate
         correlation = await self.correlator.correlate(analysis, repo_id)
+        self._check_cancelled()
         
         # 2. Impact
         impacts = self.impact_analyzer.analyze(
             analysis.get("semantic_graph", {}),
             correlation.assessments
         )
+        self._check_cancelled()
         
         # 3. Risk
         total_files = len(analysis.get("semantic_graph", {}).get("files", {}))
         risks = self.risk_classifier.classify(correlation.assessments, impacts, total_files)
+        self._check_cancelled()
         
         # 4. Report
         report = self.report_generator.generate(correlation, impacts, risks, analysis)
+        self._check_cancelled()
         
         # 5. Document
         document = self.document_generator.generate(report)
+        self._check_cancelled()
         
         # 6. Metadata Branch
         # Use provided analysis_id or fallback to a short hash if missing

@@ -5,40 +5,49 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RepoHeal Migration Review</title>
   <style>
-    :root {
-      color-scheme: dark;
-      --bg: #0f1113;
-      --panel: #1c1f22;
-      --border: rgba(255, 255, 255, 0.1);
-      --text: #f4f6f8;
-      --muted: #a8b0b8;
-      --accent: #42d6a4;
-      --warning: #f4c95d;
-      --danger: #f97066;
-    }
+    :root { color-scheme: dark; --bg: #0f1113; --panel: #1c1f22; --border: rgba(255,255,255,0.1); --text: #f4f6f8; --muted: #a8b0b8; --accent: #42d6a4; --warning: #f4c95d; --danger: #f97066; }
     * { box-sizing: border-box; }
     body { font-family: Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; }
-    .container { max-width: 1000px; margin: 0 auto; display: grid; gap: 24px; }
-    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
-    .header { display: flex; justify-content: space-between; align-items: center; }
-    h1, h2, h3 { margin: 0; }
-    .btn { display: inline-flex; align-items: center; justify-content: center; padding: 10px 20px; border-radius: 999px; text-decoration: none; font-weight: 700; border: 0; cursor: pointer; color: #021019; background: linear-gradient(135deg, var(--accent), var(--warning)); }
+    .container { max-width: 1100px; margin: 0 auto; display: grid; gap: 20px; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+    .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+    h1, h2, h3, h4 { margin: 0; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; padding: 8px 18px; border-radius: 999px; text-decoration: none; font-weight: 600; border: 0; cursor: pointer; color: #021019; background: linear-gradient(135deg, var(--accent), var(--warning)); font-size: 13px; }
     .btn.ghost { color: var(--text); background: rgba(255,255,255,0.08); border: 1px solid var(--border); }
     .btn.danger { background: var(--danger); color: #240d0b; }
     .btn.warning { background: var(--warning); color: #201604; }
-    .btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
-    .badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
-    .badge.risk-low { background: rgba(66, 214, 164, 0.2); color: var(--accent); }
-    .badge.risk-med { background: rgba(244, 201, 93, 0.2); color: var(--warning); }
-    .badge.risk-high { background: rgba(249, 112, 102, 0.2); color: var(--danger); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+    .badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .badge.low, .badge.LOW { background: rgba(249,112,102,0.2); color: var(--danger); }
+    .badge.medium, .badge.MEDIUM { background: rgba(244,201,93,0.2); color: var(--warning); }
+    .badge.high, .badge.HIGH { background: rgba(66,214,164,0.2); color: var(--accent); }
+    .badge.safe_ast { background: rgba(66,214,164,0.15); color: var(--accent); }
+    .badge.llm_candidate { background: rgba(66,150,255,0.15); color: #4296ff; }
+    .badge.manual_required { background: rgba(249,112,102,0.15); color: var(--danger); }
     .badge.status { background: rgba(255,255,255,0.06); border: 1px solid var(--border); }
-    .section-title { font-size: 14px; text-transform: uppercase; letter-spacing: 0.2em; color: var(--accent); margin-bottom: 12px; }
+    .badge.valid { background: rgba(66,214,164,0.15); color: var(--accent); }
+    .badge.invalid { background: rgba(249,112,102,0.15); color: var(--danger); }
+    .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: 0.2em; color: var(--accent); margin-bottom: 10px; }
     .empty-state { padding: 32px; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: 12px; }
     .loading-state { padding: 32px; text-align: center; color: var(--muted); }
     .hidden { display: none !important; }
-    pre { background: rgba(0,0,0,0.3); padding: 16px; border-radius: 8px; overflow-x: auto; font-family: monospace; font-size: 13px; line-height: 1.5; }
-    .markdown-body { line-height: 1.6; }
-    .markdown-body code { background: rgba(255,255,255,0.05); padding: 2px 4px; border-radius: 4px; }
+    pre { background: rgba(0,0,0,0.3); padding: 14px; border-radius: 8px; overflow-x: auto; font-family: monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+    .diff-view { background: rgba(0,0,0,0.3); border-radius: 8px; overflow-x: auto; font-family: monospace; font-size: 12px; line-height: 1.5; }
+    .diff-add { background: rgba(66,214,164,0.12); color: var(--accent); padding: 1px 0; }
+    .diff-rem { background: rgba(249,112,102,0.12); color: var(--danger); padding: 1px 0; }
+    .diff-line { padding: 1px 14px; white-space: pre; }
+    .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+    .meta-item { text-align: center; }
+    .meta-item .value { font-size: 20px; font-weight: 700; margin-top: 4px; }
+    .meta-item .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .tab-bar { display: flex; gap: 4px; margin-bottom: 12px; }
+    .tab { padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; background: transparent; color: var(--muted); border: 1px solid transparent; }
+    .tab.active { background: rgba(255,255,255,0.06); color: var(--text); border-color: var(--border); }
+    .alert-box { padding: 12px; border-radius: 8px; margin: 8px 0; font-size: 13px; }
+    .alert-box.success { background: rgba(66,214,164,0.1); border: 1px solid rgba(66,214,164,0.2); }
+    .alert-box.error { background: rgba(249,112,102,0.1); border: 1px solid rgba(249,112,102,0.2); }
+    .alert-box.warning { background: rgba(244,201,93,0.1); border: 1px solid rgba(244,201,93,0.2); }
   </style>
 </head>
 <body>
@@ -46,36 +55,37 @@
     <div class="header">
       <div>
         <h1 id="migrationTitle">Migration Review</h1>
-        <p id="migrationMeta" style="color: var(--muted); margin-top: 6px;"></p>
+        <p id="migrationMeta" style="color: var(--muted); margin-top: 4px;"></p>
       </div>
-      <a href="/dashboard" class="btn ghost">Back to Dashboard</a>
+      <a href="/migration_center.html" class="btn ghost">Back to Migration Center</a>
     </div>
 
     <div id="loadingState" class="loading-state">Loading migration details...</div>
 
     <div id="migrationContent" class="hidden">
-      <div class="panel" style="display: flex; gap: 20px; flex-wrap: wrap;">
-        <div>
-          <span style="color: var(--muted); font-size: 12px;">Risk Score</span><br>
-          <strong id="riskScore" style="font-size: 28px;">--</strong>
-        </div>
-        <div>
-          <span style="color: var(--muted); font-size: 12px;">Status</span><br>
-          <strong id="migrationStatus" class="badge status">--</strong>
-        </div>
-        <div>
-          <span style="color: var(--muted); font-size: 12px;">Analysis</span><br>
-          <strong id="analysisId" style="font-size: 14px;">--</strong>
-        </div>
-        <div>
-          <span style="color: var(--muted); font-size: 12px;">Created</span><br>
-          <strong id="createdAt" style="font-size: 14px;">--</strong>
-        </div>
+      <div class="panel">
+        <div class="meta-grid" id="metaGrid"></div>
       </div>
 
       <div class="panel">
-        <div class="section-title">Migration Document</div>
-        <div id="docContent" class="markdown-body">Loading...</div>
+        <div class="section-title">Migration Class</div>
+        <div id="migrationClassBadge" style="margin-top: 4px;"></div>
+      </div>
+
+      <div class="panel">
+        <div class="section-title">Patch Plans</div>
+        <div id="patchList"></div>
+      </div>
+
+      <div class="panel" id="validationPanel" style="display: none;">
+        <div class="section-title">Validation Results</div>
+        <div id="validationResults"></div>
+      </div>
+
+      <div class="panel" id="diffPanel" style="display: none;">
+        <div class="section-title">Diff View</div>
+        <div class="tab-bar" id="diffTabs"></div>
+        <div id="diffContent"></div>
       </div>
 
       <div class="panel">
@@ -84,8 +94,9 @@
           <button class="btn" data-action="approve" id="approveBtn">Approve & Create PR</button>
           <button class="btn danger" data-action="reject" id="rejectBtn">Reject</button>
           <button class="btn warning" data-action="defer" id="deferBtn">Defer</button>
+          <button class="btn ghost" data-action="regenerate" id="regenerateBtn">Request Regeneration</button>
         </div>
-        <div id="actionResult" class="hidden" style="margin-top: 12px; padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.05);"></div>
+        <div id="actionResult" class="hidden" style="margin-top: 12px;"></div>
       </div>
     </div>
 
@@ -118,23 +129,57 @@
         document.getElementById("migrationContent").classList.remove("hidden");
 
         const risk = data.risk_score || 0;
-        const riskEl = document.getElementById("riskScore");
-        riskEl.textContent = risk;
-        riskEl.className = risk > 70 ? "badge risk-high" : risk > 30 ? "badge risk-med" : "badge risk-low";
+        document.getElementById("metaGrid").innerHTML = `
+          <div class="meta-item">
+            <div class="label">Risk Score</div>
+            <div class="value" style="color:${risk > 70 ? 'var(--danger)' : risk > 30 ? 'var(--warning)' : 'var(--accent)'}">${risk}</div>
+          </div>
+          <div class="meta-item">
+            <div class="label">Status</div>
+            <div class="value"><span class="badge status">${data.status || "completed"}</span></div>
+          </div>
+          <div class="meta-item">
+            <div class="label">Analysis</div>
+            <div class="value" style="font-size:12px;">${(data.analysis_id || migrationId).slice(0, 16)}</div>
+          </div>
+          <div class="meta-item">
+            <div class="label">Created</div>
+            <div class="value" style="font-size:13px;">${data.timestamp ? new Date(data.timestamp).toLocaleDateString() : "N/A"}</div>
+          </div>
+          <div class="meta-item">
+            <div class="label">Migration Class</div>
+            <div class="value"><span class="badge ${data.migration_class || 'llm_candidate'}">${(data.migration_class || 'llm_candidate').replace('_', ' ').toUpperCase()}</span></div>
+          </div>
+          <div class="meta-item">
+            <div class="label">Confidence</div>
+            <div class="value"><span class="badge ${(data.confidence_level || 'MEDIUM').toLowerCase()}">${data.confidence_level || 'MEDIUM'}</span></div>
+          </div>
+        `;
 
-        document.getElementById("migrationStatus").textContent = data.status || "completed";
-        document.getElementById("analysisId").textContent = data.analysis_id || migrationId;
-        document.getElementById("createdAt").textContent = data.timestamp ? new Date(data.timestamp).toLocaleString() : "N/A";
+        const mc = data.migration_class || "llm_candidate";
+        document.getElementById("migrationClassBadge").innerHTML = `<span class="badge ${mc}">${mc.replace('_', ' ').toUpperCase()}</span>`;
 
-        if (data.content) {
-          const docDiv = document.getElementById("docContent");
-          if (typeof marked !== "undefined") {
-            docDiv.innerHTML = marked.parse(data.content);
-          } else {
-            docDiv.textContent = data.content.substring(0, 2000) + "...";
-          }
+        const patches = data.patch_plans || [];
+        const patchList = document.getElementById("patchList");
+        if (patches.length === 0) {
+          patchList.innerHTML = '<div class="empty-state">No patch plans available for this migration.</div>';
         } else {
-          document.getElementById("docContent").textContent = "No document content available.";
+          patchList.innerHTML = patches.map((p, i) => `
+            <div style="padding: 12px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <div>
+                  <strong>${p.file_path || 'unknown'}</strong>
+                  <span class="badge ${p.migration_class || 'llm_candidate'}" style="margin-left: 8px;">${(p.migration_class || 'llm_candidate').replace('_', ' ').toUpperCase()}</span>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <span class="badge ${(p.confidence_level || 'LOW').toLowerCase()}">${p.confidence_level || 'LOW'}</span>
+                  <span class="badge ${p.valid ? 'valid' : 'invalid'}">${p.valid ? '✓ Valid' : '✗ Invalid'}</span>
+                </div>
+              </div>
+              ${p.explanation ? `<p style="color: var(--muted); font-size: 13px; margin: 8px 0 0 0;">${p.explanation.slice(0, 300)}</p>` : ''}
+              ${p.modified_code ? `<button class="btn ghost" style="padding: 4px 10px; font-size: 11px; margin-top: 8px;" onclick='showDiff(${i}, ${JSON.stringify(p).replace(/'/g,"\\'")})'>View Diff</button>` : ''}
+            </div>
+          `).join("");
         }
 
         const status = data.status || "completed";
@@ -145,6 +190,62 @@
         document.getElementById("loadingState").classList.add("hidden");
         document.getElementById("errorState").classList.remove("hidden");
         document.getElementById("errorState").textContent = `Error: ${err.message}`;
+      }
+    }
+
+    function showDiff(index, plan) {
+      const panel = document.getElementById("diffPanel");
+      const tabs = document.getElementById("diffTabs");
+      const content = document.getElementById("diffContent");
+      panel.style.display = "";
+      tabs.innerHTML = `<div class="tab active">${plan.file_path || 'patch_' + index}</div>`;
+
+      const original = plan.original_code || "";
+      const modified = plan.modified_code || "";
+      const origLines = original.split("\n");
+      const modLines = modified.split("\n");
+
+      let html = '<div class="diff-view">';
+      const maxLen = Math.max(origLines.length, modLines.length);
+      for (let i = 0; i < maxLen; i++) {
+        const o = origLines[i] !== undefined ? origLines[i] : "";
+        const m = modLines[i] !== undefined ? modLines[i] : "";
+        if (o === m) {
+          html += `<div class="diff-line">  ${o}</div>`;
+        } else {
+          if (origLines[i] !== undefined) html += `<div class="diff-line diff-rem">- ${o}</div>`;
+          if (modLines[i] !== undefined) html += `<div class="diff-line diff-add">+ ${m}</div>`;
+        }
+      }
+      html += "</div>";
+
+      if (plan.validation) {
+        html += `<div style="margin-top: 12px; display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px;">`;
+        html += `<span class="badge ${plan.validation.syntax_valid ? 'valid' : 'invalid'}">AST: ${plan.validation.syntax_valid ? '✓' : '✗'}</span>`;
+        html += `<span class="badge ${plan.validation.ast_valid ? 'valid' : 'invalid'}">Syntax: ${plan.validation.ast_valid ? '✓' : '✗'}</span>`;
+        html += `<span class="badge ${plan.validation.imports_resolved ? 'valid' : 'invalid'}">Imports: ${plan.validation.imports_resolved ? '✓' : '✗'}</span>`;
+        html += `<span class="badge ${plan.validation.no_truncated ? 'valid' : 'invalid'}">No Truncation: ${plan.validation.no_truncated ? '✓' : '✗'}</span>`;
+        html += `<span class="badge ${plan.validation.valid ? 'valid' : 'invalid'}">Overall: ${plan.validation.valid ? '✓' : '✗'}</span>`;
+        html += "</div>";
+      }
+
+      content.innerHTML = html;
+
+      const validationPanel = document.getElementById("validationPanel");
+      validationPanel.style.display = "";
+      if (plan.validation) {
+        document.getElementById("validationResults").innerHTML = `
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; font-size: 12px;">
+            <div><strong>Valid:</strong> <span class="badge ${plan.validation.valid ? 'valid' : 'invalid'}">${plan.validation.valid ? 'Yes' : 'No'}</span></div>
+            <div><strong>Syntax:</strong> ${plan.validation.syntax_valid ? '✓' : '✗'}</div>
+            <div><strong>AST:</strong> ${plan.validation.ast_valid ? '✓' : '✗'}</div>
+            <div><strong>Imports:</strong> ${plan.validation.imports_resolved ? '✓' : '✗'}</div>
+            <div><strong>Not Truncated:</strong> ${plan.validation.no_truncated ? '✓' : '✗'}</div>
+            <div><strong>Has Changes:</strong> ${plan.validation.has_changed ? '✓' : '✗'}</div>
+          </div>
+          ${plan.validation.errors.length > 0 ? `<div class="alert-box error"><strong>Errors:</strong><ul>${plan.validation.errors.map(e => `<li>${e}</li>`).join('')}</ul></div>` : ''}
+          ${plan.validation.warnings.length > 0 ? `<div class="alert-box warning"><strong>Warnings:</strong><ul>${plan.validation.warnings.map(w => `<li>${w}</li>`).join('')}</ul></div>` : ''}
+        `;
       }
     }
 
@@ -162,28 +263,24 @@
 
       const resultDiv = document.getElementById("actionResult");
       resultDiv.classList.remove("hidden");
-      resultDiv.textContent = `${action} in progress...`;
+      resultDiv.innerHTML = `<div class="alert-box warning">${action} in progress...</div>`;
 
       try {
         const res = await fetch(`/migrations/${migrationId}/${action}?repo_owner=${repoOwner}&repo_name=${repoName}`, { method: "POST" });
         const data = await res.json();
         const isSuccess = data.status === action;
         resultDiv.innerHTML = isSuccess
-          ? `<strong>✓ Migration ${action} successfully.</strong>${data.pr_created ? ' PR has been created.' : data.pr ? ' PR created.' : ''}`
-          : `<strong>✗ Action failed.</strong> ${data.error || 'Unexpected response.'}`;
-        resultDiv.style.background = isSuccess ? "rgba(66, 214, 164, 0.1)" : "rgba(249, 112, 102, 0.1)";
-
-        document.getElementById("migrationStatus").textContent = action;
+          ? `<div class="alert-box success"><strong>✓ Migration ${action} successfully.</strong>${data.pr_created ? ' PR has been created.' : ''}${data.pr_url ? ` <a href="${data.pr_url}" target="_blank">View PR</a>` : ''}</div>`
+          : `<div class="alert-box error"><strong>✗ Action failed.</strong> ${data.error || 'Unexpected response.'}</div>`;
         if (data.pr_url) {
-          resultDiv.innerHTML += ` <a href="${data.pr_url}" target="_blank" class="btn ghost" style="padding: 6px 12px; font-size: 12px;">View PR</a>`;
+          document.getElementById("actionResult").innerHTML += ` <a href="${data.pr_url}" target="_blank" style="color: var(--accent);">View PR #${data.pr_number || ''}</a>`;
         }
       } catch (err) {
-        resultDiv.innerHTML = `<strong>Error:</strong> ${err.message}`;
+        resultDiv.innerHTML = `<div class="alert-box error"><strong>Error:</strong> ${err.message}</div>`;
       }
     });
 
     loadReview();
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </body>
 </html>

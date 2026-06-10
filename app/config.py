@@ -53,6 +53,29 @@ class Settings:
     # Job recovery
     JOB_ORPHAN_TIMEOUT_MINUTES = int(os.getenv("JOB_ORPHAN_TIMEOUT_MINUTES", "15"))
 
+    # LLM & Remediation safety controls (Phase 7)
+    ENABLE_LLM_PATCHING = os.getenv("ENABLE_LLM_PATCHING", "true").lower() in ("1", "true", "yes")
+    MAX_FILES_PER_PATCH = int(os.getenv("MAX_FILES_PER_PATCH", "10"))
+    MAX_LINES_PER_PATCH = int(os.getenv("MAX_LINES_PER_PATCH", "500"))
+    MAX_TOKENS_PER_REQUEST = int(os.getenv("MAX_TOKENS_PER_REQUEST", "4096"))
+    AUTO_PR_RISK_THRESHOLD = int(os.getenv("AUTO_PR_RISK_THRESHOLD", "30"))
+    DRAFT_PR_RISK_THRESHOLD = int(os.getenv("DRAFT_PR_RISK_THRESHOLD", "70"))
+
+    # LLM Provider
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq")
+    LLM_MODEL = os.getenv("LLM_MODEL", "llama3-70b-8192")
+    LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+    LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "2048"))
+    LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.3"))
+
+    # Email / Notifications
+    EMAIL_ENABLED = os.getenv("EMAIL_ENABLED", "false").lower() in ("1", "true", "yes")
+    SMTP_HOST = os.getenv("SMTP_HOST", "")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER = os.getenv("SMTP_USER", "")
+    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+    EMAIL_FROM = os.getenv("EMAIL_FROM", "repoheal@noreply.local")
+
 settings = Settings()
 
 

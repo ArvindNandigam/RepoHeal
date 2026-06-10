@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 import httpx
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Callable, Optional
 from collections import defaultdict
 from app.cache.cache_manager import CacheManager
 from app.utils.logger import get_logger
@@ -10,6 +10,9 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 class CircuitBreakerOpenException(Exception):
+    pass
+
+class JobCancelledException(Exception):
     pass
 
 class WebtoolClient:
@@ -20,6 +23,7 @@ class WebtoolClient:
     _reset_timeout = 300
     _inflight: Dict[str, asyncio.Task] = {}
     _inflight_lock = asyncio.Lock()
+    cancel_check = None  # Optional callable, checked during retry sleeps
 
     def __init__(self, base_url: str = None, api_key: str = None):
         self.base_url = base_url or os.getenv("WEBTOOL_API_URL", "https://restrictedwebtool.onrender.com")
@@ -98,6 +102,7 @@ class WebtoolClient:
                     self.__class__._inflight.pop(key, None)
 
     async def _request_with_retry(self, method: str, endpoint: str, **kwargs):
+        self._check_cancelled()
         cache_key = self._cache_key(method, endpoint, kwargs)
         cached = CacheManager.get(cache_key)
         if cached is not None:
@@ -110,10 +115,15 @@ class WebtoolClient:
 
         return await self._coalesce_request(cache_key, outbound)
 
+    def _check_cancelled(self):
+        if self.__class__.cancel_check and self.__class__.cancel_check():
+            raise JobCancelledException("Job was cancelled during request")
+
     async def _request_uncached(self, method: str, endpoint: str, **kwargs):
-        delays = [2, 4, 8, 16]
+        delays = [2, 4, 8, 16, 32, 60]
 
         for attempt in range(len(delays) + 1):
+            self._check_cancelled()
             await self._check_circuit()
             
             try:
@@ -136,7 +146,7 @@ class WebtoolClient:
                     logger.warning(
                         f"Rate limited on {endpoint}; retrying in {delay}s"
                     )
-                    await asyncio.sleep(delay)
+                    await self._sleep_with_cancel(delay)
                     continue
 
                 self._record_failure()
@@ -152,7 +162,16 @@ class WebtoolClient:
                     
                 delay = delays[attempt]
                 logger.warning(f"Request failed, retrying in {delay}s: {e}")
-                await asyncio.sleep(delay)
+                await self._sleep_with_cancel(delay)
+
+    async def _sleep_with_cancel(self, delay: float):
+        """Sleep in 1s intervals, checking cancellation between each."""
+        for _ in range(int(delay)):
+            self._check_cancelled()
+            await asyncio.sleep(1)
+        remaining = delay - int(delay)
+        if remaining > 0:
+            await asyncio.sleep(remaining)
                 
     async def get_library_intelligence(self, library: str, version: str) -> Dict[str, Any]:
         """Fetch intelligence for a specific library version."""

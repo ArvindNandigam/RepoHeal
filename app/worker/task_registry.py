@@ -401,6 +401,16 @@ def get_job(job_id: str):
     return doc
 
 
+def was_job_cancelled(job_id: str) -> bool:
+    """Check if a job has been marked as CANCELLED in MongoDB."""
+    try:
+        db = get_mongo_db()
+        doc = db.jobs.find_one({"job_id": job_id}, {"status": 1})
+        return doc is not None and doc.get("status") == JobStatus.CANCELLED.value
+    except Exception:
+        return False
+
+
 def get_active_jobs() -> list:
     """Return all jobs in an active/running status."""
     db = get_mongo_db()
@@ -746,6 +756,8 @@ def run_analysis_in_background(
         )
 
         # --- Phase: Migration pipeline ---
+        from app.intelligence.webtool_client import WebtoolClient as _Webtool
+
         set_analysis_progress(
             job_id, repo_owner, repo_name, JobStatus.GENERATING_MIGRATIONS, 95,
             "Correlating intelligence and generating migration documents",
@@ -754,10 +766,18 @@ def run_analysis_in_background(
             analysis_id=analysis_id, repository_snapshot_id=snapshot_id,
             current_step="migrations",
         )
+
+        # Set up cancellation check for webtool retries and pipeline
+        def _cancel_check():
+            return was_job_cancelled(job_id)
+
+        _Webtool.cancel_check = _cancel_check
+        _pipeline_success = False
         try:
             async def run_pipeline():
                 intelligence_provider = create_intelligence_provider()
                 pipeline = MigrationPipeline(intelligence_provider, github_client)
+                pipeline.cancel_check = _cancel_check
                 try:
                     report = await pipeline.run(
                         analysis, repo_id, repo_obj,
@@ -770,12 +790,15 @@ def run_analysis_in_background(
                     await intelligence_provider.close()
 
             asyncio.run(run_pipeline())
+            _pipeline_success = True
         except Exception as pipeline_err:
             logger.error(f"Migration pipeline failed for {repo_id}: {pipeline_err}")
 
         # Free analysis after pipeline
         del analysis
         gc.collect()
+
+        _Webtool.cancel_check = None
 
         # Scratch-space model: clear Neo4j analysis graph — it was only needed during the pipeline.
         # InstalledRepository nodes are preserved (they track app installations separately).
@@ -787,20 +810,23 @@ def run_analysis_in_background(
             logger.warning(f"Neo4j cleanup failed for {repo_id}: {neo4j_cleanup_err}")
 
         # --- Completion ---
+        _completion_msg = "Completed" if _pipeline_success else "Completed (migration pipeline failed)"
+        _completion_status = "analyzed" if _pipeline_success else "analyzed_no_migrations"
         update_job(
             job_id, JobStatus.COMPLETED,
             result={
                 "repository": repo_id,
-                "status": "analyzed",
+                "status": _completion_status,
                 "analysis_id": analysis_id,
                 "repository_snapshot_id": snapshot_id,
+                "pipeline_succeeded": _pipeline_success,
             },
-            progress=100, message="Completed",
+            progress=100, message=_completion_msg,
             analysis_id=analysis_id, repository_snapshot_id=snapshot_id,
             current_step="completed",
         )
         update_repository_status(
-            repo_owner, repo_name, JobStatus.COMPLETED, 100, "Completed",
+            repo_owner, repo_name, JobStatus.COMPLETED, 100, _completion_msg,
             job_id=job_id, job_type=job_type,
             selected_branch=selected_branch, target_commit_sha=commit_sha,
             current_head=current_head, analysis_id=analysis_id,

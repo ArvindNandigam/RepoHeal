@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from app.auth.jwt_manager import verify_session_token
 from app.auth.authorization import verify_repository_access
 from app.routers.dependencies import get_session_data, ensure_repoheal_installed
@@ -196,8 +198,17 @@ async def defer_migration(
         if mig.get("migration_id") == migration_id or mig.get("analysis_id") == migration_id:
             mig["status"] = "deferred"
             mig["deferred_at"] = datetime.now(timezone.utc).isoformat()
-            files = {"repoheal.meta/metadata.json": metadata_manager._json(manifest)}
-            client.batch_upsert_files(repo, metadata_manager.branch_name, files, f"Defer {migration_id}")
-            return {"status": "deferred", "migration_id": migration_id}
+        files = {"repoheal.meta/metadata.json": metadata_manager._json(manifest)}
+        client.batch_upsert_files(repo, metadata_manager.branch_name, files, f"Defer {migration_id}")
+        return {"status": "deferred", "migration_id": migration_id}
 
     raise HTTPException(status_code=404, detail="Migration not found")
+
+
+@router.get("/review", response_class=HTMLResponse)
+async def migration_review_page(user=Depends(verify_session_token)):
+    html = (
+        Path(__file__).resolve().parent.parent
+        / "visualization" / "templates" / "migration_review.html"
+    ).read_text(encoding="utf-8")
+    return HTMLResponse(html)

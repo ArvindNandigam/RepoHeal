@@ -18,10 +18,13 @@ class CacheManager:
             doc = db.cache.find_one({"key": key})
             if not doc:
                 return None
-            # Double-check expiry (TTL cleanup is eventual)
-            if doc.get("expires_at") and doc["expires_at"] <= datetime.now(timezone.utc):
-                db.cache.delete_one({"key": key})
-                return None
+            expires_at = doc.get("expires_at")
+            if expires_at is not None:
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                if expires_at <= datetime.now(timezone.utc):
+                    db.cache.delete_one({"key": key})
+                    return None
             return doc.get("value")
         except Exception as e:
             logger.error(f"Cache GET failed for {key}: {e}")
