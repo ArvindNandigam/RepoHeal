@@ -235,7 +235,7 @@ async def get_schedule(
     if not doc:
         doc = {
             "repository": repo_id,
-            "frequency": "weekly",
+            "frequency": "monthly",
             "branches": ["main"],
             "watch_dependencies": True,
             "auto_remediate": False,

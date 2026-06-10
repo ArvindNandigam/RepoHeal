@@ -15,12 +15,16 @@ logger = get_logger(__name__)
 FREQUENCY_DELTAS = {
     "daily": timedelta(days=1),
     "weekly": timedelta(weeks=1),
+    "biweekly": timedelta(weeks=2),
     "monthly": timedelta(days=30),
 }
 
 
 def compute_next_run(frequency: str) -> str:
-    delta = FREQUENCY_DELTAS.get(frequency, timedelta(weeks=1))
+    if frequency.isdigit():
+        delta = timedelta(days=int(frequency))
+    else:
+        delta = FREQUENCY_DELTAS.get(frequency, timedelta(weeks=1))
     return (datetime.now(timezone.utc) + delta).isoformat()
 
 

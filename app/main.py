@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
@@ -33,7 +34,29 @@ async def lifespan(app: FastAPI):
     except Exception as cache_err:
         logger.warning(f"Cache governance error on startup: {cache_err}")
 
+    # Start the auto-analysis scheduler loop
+    scheduler_task = None
+    try:
+        from app.worker.scheduler import check_due_repositories, update_all_next_runs
+        update_all_next_runs()
+        async def scheduler_loop():
+            while True:
+                try:
+                    due = check_due_repositories()
+                    if due:
+                        logger.info(f"Auto-analysis scheduler queued {len(due)} job(s)")
+                except Exception as e:
+                    logger.warning(f"Scheduler check failed: {e}")
+                await asyncio.sleep(300)  # check every 5 minutes
+        scheduler_task = asyncio.create_task(scheduler_loop())
+        logger.info("Auto-analysis scheduler started (5min interval)")
+    except Exception as init_err:
+        logger.warning(f"Scheduler init skipped: {init_err}")
+
     yield
+
+    if scheduler_task:
+        scheduler_task.cancel()
     neo4j_connection.close()
     logger.info("Shutting down RepoHeal backend")
 

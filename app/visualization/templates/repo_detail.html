@@ -90,6 +90,43 @@
     </div>
 
     <div class="card">
+      <h3>Auto Analysis</h3>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+          <input type="checkbox" id="autoAnalysisToggle" style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer;">
+          Auto-analyze latest commits
+        </label>
+        <div id="autoConfigArea" style="display:none;flex-direction:column;gap:10px;">
+          <div class="flex-row" style="gap:10px;">
+            <label class="field" style="flex:1;">
+              <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Frequency</span>
+              <select id="autoFreqSelect" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;min-width:120px;">
+                <option value="monthly">Monthly</option>
+                <option value="biweekly">Biweekly</option>
+                <option value="weekly">Weekly</option>
+                <option value="daily">Daily</option>
+                <option value="custom">Custom days</option>
+              </select>
+            </label>
+            <label class="field" id="customDaysRow" style="display:none;flex:0 0 80px;">
+              <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Every N days</span>
+              <input type="number" id="customDaysInput" value="3" min="1" max="90" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;width:80px;">
+            </label>
+            <label class="field" style="flex:2;">
+              <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Tracked branches</span>
+              <select id="autoBranchesSelect" multiple style="padding:4px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:11px;outline:none;min-height:60px;"></select>
+            </label>
+          </div>
+          <div class="flex-row" style="gap:8px;font-size:12px;color:var(--muted);">
+            <span>Next run: <strong id="autoNextRun">--</strong></span>
+            <span>Last run: <strong id="autoLastRun">--</strong></span>
+            <button class="button tertiary" type="button" id="saveAutoConfig" style="font-size:11px;padding:4px 10px;margin-left:auto;">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
       <h3>Reports &amp; Tools</h3>
       <div class="grid-2">
         <a class="button tertiary" href="/reports/{{ owner }}/{{ repo }}/health-page">Health Report</a>
@@ -320,6 +357,125 @@
         await refreshStatus();
       })
     );
+
+    // Auto Analysis
+    const autoToggle = document.getElementById("autoAnalysisToggle");
+    const autoConfigArea = document.getElementById("autoConfigArea");
+    const autoFreqSelect = document.getElementById("autoFreqSelect");
+    const customDaysRow = document.getElementById("customDaysRow");
+    const customDaysInput = document.getElementById("customDaysInput");
+    const autoBranchesSelect = document.getElementById("autoBranchesSelect");
+    const autoNextRun = document.getElementById("autoNextRun");
+    const autoLastRun = document.getElementById("autoLastRun");
+    const saveAutoBtn = document.getElementById("saveAutoConfig");
+    const MONITOR_SCHEDULE_URL = `/monitor/schedule/${OWNER}/${REPO}`;
+
+    // Populate branch options in auto-branches select
+    async function populateAutoBranches() {
+      try {
+        const res = await fetch(`/repos/${OWNER}/${REPO}/branches`, { credentials: "same-origin" });
+        if (res.ok) {
+          const branches = (await res.json()).branches;
+          autoBranchesSelect.innerHTML = "";
+          for (const b of branches) {
+            const o = document.createElement("option");
+            o.value = b; o.textContent = b;
+            autoBranchesSelect.appendChild(o);
+          }
+        }
+      } catch (_) {}
+    }
+
+    async function loadAutoAnalysis() {
+      try {
+        const res = await fetch(MONITOR_SCHEDULE_URL, { credentials: "same-origin" });
+        if (!res.ok) return;
+        const data = await res.json();
+        const isOn = data.frequency !== "manual";
+        autoToggle.checked = isOn;
+        autoConfigArea.style.display = isOn ? "flex" : "none";
+
+        if (isOn) {
+          const freq = data.frequency || "daily";
+          if (["daily","weekly","monthly"].includes(freq)) {
+            autoFreqSelect.value = freq;
+            customDaysRow.style.display = "none";
+          } else {
+            autoFreqSelect.value = "custom";
+            customDaysRow.style.display = "flex";
+            customDaysInput.value = parseInt(freq) || 3;
+          }
+          // Mark selected branches
+          const tracked = data.branches || ["main"];
+          await populateAutoBranches();
+          Array.from(autoBranchesSelect.options).forEach(o => {
+            o.selected = tracked.includes(o.value);
+          });
+          autoNextRun.textContent = data.next_run ? new Date(data.next_run).toLocaleString() : "—";
+          autoLastRun.textContent = data.last_run ? new Date(data.last_run).toLocaleString() : "—";
+        }
+      } catch (_) {}
+    }
+
+    autoFreqSelect.addEventListener("change", () => {
+      customDaysRow.style.display = autoFreqSelect.value === "custom" ? "flex" : "none";
+    });
+
+    autoToggle.addEventListener("change", async () => {
+      if (autoToggle.checked) {
+        await populateAutoBranches();
+        autoConfigArea.style.display = "flex";
+        autoFreqSelect.value = "monthly";
+        customDaysRow.style.display = "none";
+        Array.from(autoBranchesSelect.options).forEach(o => { o.selected = o.value === "main"; });
+      } else {
+        autoConfigArea.style.display = "none";
+        // Save as manual
+        try {
+          const res = await fetch(MONITOR_SCHEDULE_URL, {
+            method: "POST", credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              repository: `${OWNER}/${REPO}`, frequency: "manual",
+              branches: ["main"], watch_dependencies: true, auto_remediate: false,
+              notify_on: ["security","breaking","deprecation","health_degradation","upgrade_available","migration_ready"],
+              digest_enabled: true
+            })
+          });
+          if (res.ok) showToast("Auto analysis disabled", "success");
+          else showToast("Failed to disable", "error");
+        } catch (err) { showToast(`Error: ${err.message}`, "error"); }
+      }
+    });
+
+    saveAutoBtn.addEventListener("click", async () => {
+      const freq = autoFreqSelect.value === "custom"
+        ? String(parseInt(customDaysInput.value) || 3)
+        : autoFreqSelect.value;
+      const branches = Array.from(autoBranchesSelect.selectedOptions).map(o => o.value);
+      if (branches.length === 0) { showToast("Select at least one branch", "error"); return; }
+      try {
+        const res = await fetch(MONITOR_SCHEDULE_URL, {
+          method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repository: `${OWNER}/${REPO}`, frequency: freq,
+            branches: branches, watch_dependencies: true, auto_remediate: false,
+            notify_on: ["security","breaking","deprecation","health_degradation","upgrade_available","migration_ready"],
+            digest_enabled: true
+          })
+        });
+        if (res.ok) {
+          showToast(`Auto analysis saved (every ${freq})`, "success");
+          await loadAutoAnalysis();
+        } else {
+          const err = await res.text();
+          showToast(`Failed: ${err}`, "error");
+        }
+      } catch (err) { showToast(`Error: ${err.message}`, "error"); }
+    });
+
+    loadAutoAnalysis();
 
     window.addEventListener("beforeunload", () => { if (eventSource) eventSource.close(); });
     document.addEventListener("visibilitychange", () => { if (document.hidden && eventSource) { eventSource.close(); eventSource = null; } });

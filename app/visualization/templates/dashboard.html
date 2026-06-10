@@ -857,6 +857,22 @@ async function refreshRepositoryStatus(repo) {
         }
       }
     } catch (e) {}
+
+    try {
+      const autoRes = await fetch(`/monitor/schedule/${repo.owner}/${repo.repo}`, { credentials: "same-origin" });
+      if (autoRes.ok) {
+        const autoData = await autoRes.json();
+        const autoBadge = card.querySelector("[data-auto-badge]");
+        if (autoBadge) {
+          if (autoData.frequency !== "manual") {
+            autoBadge.style.display = "inline-flex";
+            autoBadge.textContent = `Auto: ${autoData.frequency}`;
+          } else {
+            autoBadge.style.display = "none";
+          }
+        }
+      }
+    } catch (e) {}
   } catch (error) {
     statusBadge.textContent = "Unknown";
     statusMessage.textContent = error.message;
@@ -884,6 +900,7 @@ async function refreshRepositoryStatus(repo) {
             <span class="pill">${repo.owner}</span>
             <h2><a href="/repos/${repo.owner}/${repo.repo}">${repo.repo}</a></h2>
             <span class="pill status" data-status-badge>Loading</span>
+            <span class="pill" data-auto-badge style="display:none;font-size:9px;padding:2px 6px;background:rgba(66,214,164,0.12);color:var(--accent);border-color:rgba(66,214,164,0.2);">Auto</span>
           </div>
           <div class="repo-progress"><span data-progress-bar></span></div>
           <div class="repo-card-bottom">
