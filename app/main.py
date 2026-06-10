@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from slowapi.middleware import SlowAPIMiddleware
 from app.auth.session_store import session_store
 from app.graph.connection import neo4j_connection
@@ -61,3 +62,7 @@ app.include_router(monitoring.router)
 app.include_router(admin.router)
 app.include_router(repo_data.router)
 app.include_router(repo_detail.router)
+
+@app.get("/login")
+async def login_redirect():
+    return RedirectResponse(url="/auth/login-page")

@@ -106,19 +106,19 @@
       <div class="flex-row">
         <label class="field">
           <span style="font-size:11px;color:var(--muted);">Branch A</span>
-          <input id="branchA" class="field-input" value="main" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;width:120px;">
+          <select id="branchA" class="field-select" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;min-width:120px;"><option value="">(default)</option></select>
         </label>
         <label class="field">
           <span style="font-size:11px;color:var(--muted);">Commit A</span>
-          <input id="commitA" class="field-input" placeholder="latest" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;width:160px;">
+          <select id="commitA" class="field-select" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;min-width:180px;"><option value="">(latest)</option></select>
         </label>
         <label class="field">
           <span style="font-size:11px;color:var(--muted);">Branch B</span>
-          <input id="branchB" class="field-input" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;width:120px;">
+          <select id="branchB" class="field-select" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;min-width:120px;"><option value="">(default)</option></select>
         </label>
         <label class="field">
           <span style="font-size:11px;color:var(--muted);">Commit B</span>
-          <input id="commitB" class="field-input" placeholder="latest" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;width:160px;">
+          <select id="commitB" class="field-select" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;min-width:180px;"><option value="">(latest)</option></select>
         </label>
         <button class="button secondary" type="button" data-action="compare">Compare</button>
       </div>
@@ -138,6 +138,10 @@
     let eventSource = null;
     let branchSelect = document.querySelector("[data-target-branch]");
     let commitSelect = document.querySelector("[data-target-commit]");
+    let branchASelect = document.getElementById("branchA");
+    let commitASelect = document.getElementById("commitA");
+    let branchBSelect = document.getElementById("branchB");
+    let commitBSelect = document.getElementById("commitB");
 
     function showToast(msg, type) {
       const t = document.createElement("div");
@@ -238,36 +242,41 @@
       eventSource.onerror = () => { if (eventSource) { eventSource.close(); eventSource = null; } };
     }
 
-    // Populate branches
-    (async () => {
+    async function populateBranches(sel) {
       try {
         const res = await fetch(`/repos/${OWNER}/${REPO}/branches`, { credentials: "same-origin" });
         if (res.ok) {
           for (const b of (await res.json()).branches) {
             const o = document.createElement("option");
-            o.value = b; o.textContent = b; branchSelect.appendChild(o);
+            o.value = b; o.textContent = b; sel.appendChild(o);
           }
         }
       } catch (_) {}
-    })();
-
-    branchSelect.addEventListener("change", async () => {
-      const b = branchSelect.value;
-      if (!b) return;
-      commitSelect.innerHTML = '<option value="">Commit (latest)</option>';
-      commitSelect.disabled = true;
+    }
+    async function populateCommits(branch, sel) {
+      sel.innerHTML = '<option value="">Commit (latest)</option>';
+      sel.disabled = true;
+      if (!branch) { sel.disabled = false; return; }
       try {
-        const res = await fetch(`/repos/${OWNER}/${REPO}/commits?branch=${encodeURIComponent(b)}`, { credentials: "same-origin" });
+        const res = await fetch(`/repos/${OWNER}/${REPO}/commits?branch=${encodeURIComponent(branch)}`, { credentials: "same-origin" });
         if (res.ok) {
           for (const c of (await res.json()).commits.slice(0, 50)) {
             const o = document.createElement("option");
             o.value = c.sha; o.textContent = `${c.sha.slice(0,7)} — ${c.message.slice(0,60)}`;
-            commitSelect.appendChild(o);
+            sel.appendChild(o);
           }
-          commitSelect.disabled = false;
+          sel.disabled = false;
         }
-      } catch (_) {}
-    });
+      } catch (_) { sel.disabled = false; }
+    }
+
+    populateBranches(branchSelect);
+    populateBranches(branchASelect);
+    populateBranches(branchBSelect);
+
+    branchSelect.addEventListener("change", () => populateCommits(branchSelect.value, commitSelect));
+    branchASelect.addEventListener("change", () => populateCommits(branchASelect.value, commitASelect));
+    branchBSelect.addEventListener("change", () => populateCommits(branchBSelect.value, commitBSelect));
 
     // Wire buttons
     document.querySelector('[data-action="analyze-latest"]').addEventListener("click", (e) =>

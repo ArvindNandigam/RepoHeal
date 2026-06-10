@@ -419,7 +419,8 @@
         <div class="toolbar">
           <input id="repoSearch" class="search" type="search" placeholder="Search repositories by name or owner">
           <button class="button secondary" type="button" id="openSettings">Settings</button>
-          <a class="button secondary" href="/logout">Logout</a>
+          <a class="button tertiary" href="/auth/switch-account">Switch Account</a>
+          <a class="button secondary" href="/auth/logout">Logout</a>
           
         </div>
       </div>
@@ -1038,7 +1039,7 @@ async function refreshRepositoryStatus(repo) {
             const risk = m.risk_score != null ? m.risk_score : "?";
             item.innerHTML = `<span><strong>${repo.name}</strong> · <span style="color: var(--muted);">${ts}</span></span>
               <span style="display: flex; gap: 8px; align-items: center;">
-                <span style="color: ${risk > 70 ? 'var(--danger)' : risk > 30 ? 'var(--warning)' : 'var(--accent)'};">Risk: ${risk}</span>
+                <span style="color: ${risk > 70 ? 'var(--danger)' : risk > 30 ? 'var(--warning)' : 'var(--accent)'};">Mig. Risk: ${risk}</span>
                 <a class="pill" href="/reports/${repo.owner}/${repo.repo}/migration-page?analysis_id=${m.analysis_id}">View</a>
                 <a class="pill" href="/reports/${repo.owner}/${repo.repo}/migration-review?migration_id=${m.migration_id || m.analysis_id}&repo_owner=${repo.owner}&repo_name=${repo.repo}">Review</a>
               </span>`;

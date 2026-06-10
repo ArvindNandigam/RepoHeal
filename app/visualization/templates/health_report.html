@@ -209,7 +209,7 @@
                 <div class="timeline-item">
                   <span><strong>${m.migration_id || m.analysis_id}</strong> <span style="color: var(--muted);">${m.timestamp ? new Date(m.timestamp).toLocaleString() : ""}</span></span>
                   <span style="display: flex; gap: 8px;">
-                    <span style="color: ${(m.risk_score || 0) > 70 ? 'var(--danger)' : (m.risk_score || 0) > 30 ? 'var(--warning)' : 'var(--accent)'};">Risk: ${m.risk_score || "N/A"}</span>
+                    <span style="color: ${(m.risk_score || 0) > 70 ? 'var(--danger)' : (m.risk_score || 0) > 30 ? 'var(--warning)' : 'var(--accent)'};">Migration Risk: ${m.risk_score || "N/A"}</span>
                     <a class="pill" href="/reports/${repoOwner}/${repoName}/migration-page?analysis_id=${m.analysis_id}">View</a>
                   </span>
                 </div>

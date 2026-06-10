@@ -113,8 +113,8 @@
 
           const ts = new Date(a.timestamp).toLocaleString();
           const sc = a.health_score;
-          const scoreStr = sc != null ? `${sc}/100` : "N/A";
-          const scoreCls = sc > 70 ? "score-high" : sc > 40 ? "score-med" : "score-low";
+          const scoreStr = sc != null ? `${sc}/100` : "—";
+          const scoreCls = sc != null ? (sc > 70 ? "score-high" : sc > 40 ? "score-med" : "score-low") : "";
 
           let badges = "";
           const commit = a.commit || "";
