@@ -428,10 +428,11 @@ def _clear_local_repository_cache(repo_owner: str, repo_name: str) -> None:
 
 def _enforce_cache_governance() -> None:
     """
-    Enforce cache size limits:
-    1. Prune snapshots older than CACHE_RETENTION_DAYS
-    2. Keep at most MAX_ANALYSIS_HISTORY analyses per repo
-    3. If total cache exceeds MAX_CACHE_SIZE_MB, evict oldest repos
+    Enforce cache size limits (tuned for Render's ~200MB disk):
+    1. Prune snapshots older than CACHE_RETENTION_DAYS (default 7)
+    2. Keep at most MAX_ANALYSIS_HISTORY (default 2) per repo
+    3. If total cache exceeds MAX_CACHE_SIZE_MB (default 50), evict oldest repos
+    4. If free disk drops below MIN_FREE_DISK_MB (default 50), evict aggressively
     """
     from app.routers.dependencies import REPO_CACHE_ROOT
 
@@ -450,21 +451,21 @@ def _enforce_cache_governance() -> None:
             if not meta_dir.exists():
                 continue
 
-            # Prune old snapshots by mtime
             snap_dir = meta_dir / "snapshots"
             if snap_dir.exists():
-                for snap_file in sorted(snap_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+                sorted_snaps = sorted(snap_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+                for snap_file in sorted_snaps:
                     if snap_file.stat().st_mtime < retention_limit.timestamp():
                         snap_file.unlink()
                         logger.debug(f"Pruned old snapshot: {snap_file}")
 
-            # Keep only MAX_ANALYSIS_HISTORY snapshots
-            snapshot_files = sorted(snap_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-            for old_snap in snapshot_files[MAX_ANALYSIS_HISTORY:]:
-                old_snap.unlink()
-                logger.debug(f"Pruned excess snapshot: {old_snap}")
+                # Keep only MAX_ANALYSIS_HISTORY snapshots per repo
+                remaining = sorted(snap_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+                for old_snap in remaining[MAX_ANALYSIS_HISTORY:]:
+                    old_snap.unlink()
+                    logger.debug(f"Pruned excess snapshot: {old_snap}")
 
-    # Evict entire repos if total cache exceeds limit
+    # Evict entire repos if total cache exceeds limit, or if disk is critically low
     total_mb = 0
     repo_dirs = []
     for owner_dir in cache_root.iterdir():
@@ -472,19 +473,32 @@ def _enforce_cache_governance() -> None:
             continue
         for repo_dir in owner_dir.iterdir():
             size_mb = sum(f.stat().st_size for f in repo_dir.rglob("*") if f.is_file()) / 1024 / 1024
-            last_access = max(f.stat().st_mtime for f in repo_dir.rglob("*") if f.is_file()) if any(True for _ in repo_dir.rglob("*")) else 0
+            last_access = max(
+                (f.stat().st_mtime for f in repo_dir.rglob("*") if f.is_file()),
+                default=0,
+            )
             repo_dirs.append((repo_dir, size_mb, last_access))
             total_mb += size_mb
 
-    if total_mb > MAX_CACHE_SIZE_MB:
-        # Evict oldest-accessed repos first
+    # Check free disk
+    try:
+        st = shutil.disk_usage(str(cache_root) if cache_root.exists() else "/")
+        free_mb = st.free / 1024 / 1024
+        min_free = getattr(__import__("app.config", fromlist=["settings"]).settings, "MIN_FREE_DISK_MB", 50)
+        disk_critical = free_mb < min_free
+        if disk_critical:
+            logger.warning(f"Free disk is {free_mb:.0f}MB (below {min_free}MB threshold) — evicting aggressively")
+    except Exception:
+        disk_critical = False
+
+    if total_mb > MAX_CACHE_SIZE_MB or disk_critical:
         repo_dirs.sort(key=lambda x: x[2])
         for repo_dir, size_mb, _ in repo_dirs:
-            if total_mb <= MAX_CACHE_SIZE_MB:
+            if total_mb <= MAX_CACHE_SIZE_MB and not disk_critical:
                 break
             shutil.rmtree(repo_dir)
             total_mb -= size_mb
-            logger.info(f"Evicted cache for {repo_dir} (cache over limit)")
+            logger.info(f"Evicted cache for {repo_dir} (total={total_mb:.0f}MB, free_disk_critical={disk_critical})")
 
 
 def run_analysis_in_background(
@@ -502,6 +516,8 @@ def run_analysis_in_background(
     """
     from app.analysis.repository_analyzer import analyze_repository
     from app.github.repository_fetcher import download_repository_snapshot, cleanup_repository
+    from app.storage.gridfs_repo_storage import extract_files_to_memory, store_zip_stream, cleanup_repo_files as gridfs_cleanup
+    from app.github.tree_blob_fetcher import fetch_repository_contents
     from app.storage.metadata_store import save_analysis_to_metadata
     from app.routers.dependencies import get_repo_cache_path
     from app.graph.graph_builder import Neo4jGraphBuilder
@@ -517,9 +533,12 @@ def run_analysis_in_background(
     )
     from datetime import datetime as dt_mod, timezone as tz_mod
     import asyncio
+    import requests as _requests
+    from app.github.auth import get_installation_token as _get_installation_token
 
     repo_id = f"{repo_owner}/{repo_name}"
     repo_path = None
+    _gridfs_zip_id = None
     job_type = "reanalyze" if force_reanalysis else "analysis"
     selected_branch = target_branch
     commit_sha = target_commit_sha
@@ -557,7 +576,81 @@ def run_analysis_in_background(
         )
         logger.info(f"Background analysis started for {repo_id} (job={job_id})")
 
-        repo_path = download_repository_snapshot(repo_owner, repo_name, ref=target["archive_ref"])
+        # Phase: Download — try GridFS first, then disk ZIP, finally Tree+Blob for large repos
+        _use_gridfs = not getattr(settings, "USE_DISK_EXTRACTION", False)
+        _repo_path_or_content = None
+        _gridfs_zip_id = None
+        _use_tree_blob = False
+
+        def _tree_blob_progress(_repo, _status, _pct, _msg, _step):
+            set_analysis_progress(
+                job_id, repo_owner, repo_name, JobStatus.ANALYZING, _pct,
+                _msg, job_type=job_type,
+                selected_branch=selected_branch, target_commit_sha=commit_sha,
+                current_head=current_head, current_step=_step,
+            )
+
+        def _try_tree_blob_fallback(err_msg: str) -> bool:
+            nonlocal _repo_path_or_content, _use_tree_blob
+            logger.warning(f"ZIP download infeasible ({err_msg}), using Tree+Blob API")
+            _repo_path_or_content = fetch_repository_contents(
+                installation["id"], repo_owner, repo_name, commit_sha,
+                repo_id,
+                progress_callback=_tree_blob_progress,
+            )
+            _use_tree_blob = True
+            return True
+
+        try:
+            if _use_gridfs:
+                _token = _get_installation_token(installation["id"])
+                zip_url = f"https://api.github.com/repos/{repo_id}/zipball/{target['archive_ref']}"
+                resp = _requests.get(zip_url, headers={"Authorization": f"token {_token}"}, stream=True, timeout=30)
+                resp.raise_for_status()
+                cl = resp.headers.get("content-length")
+                zip_mb = (int(cl) / 1024 / 1024) if cl else 0
+                if zip_mb > getattr(settings, "MAX_ZIP_SIZE_MB", 50):
+                    resp.close()
+                    _try_tree_blob_fallback(f"ZIP is {zip_mb:.0f}MB > {getattr(settings, 'MAX_ZIP_SIZE_MB', 50)}MB")
+                else:
+                    zid = store_zip_stream(repo_owner, repo_name, resp.iter_content(chunk_size=65536), content_length=int(cl) if cl else None)
+                    _gridfs_zip_id = zid
+                    file_contents = extract_files_to_memory(zid, repo_owner, repo_name)
+                    prefix = ""
+                    for k in file_contents:
+                        parts = k.replace("\\", "/").split("/")
+                        if len(parts) > 1:
+                            prefix = parts[0] + "/"
+                            break
+                    stripped = {}
+                    for k, v in file_contents.items():
+                        rel = k[len(prefix):] if k.startswith(prefix) else k
+                        stripped[rel] = v
+                    _repo_path_or_content = stripped
+            else:
+                try:
+                    _repo_path_or_content = download_repository_snapshot(repo_owner, repo_name, ref=target["archive_ref"])
+                except (ValueError, OSError) as disk_err:
+                    msg = str(disk_err).lower()
+                    if "exceed" in msg or "disk space" in msg:
+                        _try_tree_blob_fallback(str(disk_err))
+                    else:
+                        raise
+        except Exception as gridfs_err:
+            msg = str(gridfs_err).lower()
+            if "exceed" in msg or "zip is" in msg.lower():
+                _try_tree_blob_fallback(str(gridfs_err))
+            else:
+                logger.warning(f"GridFS download failed, falling back to disk: {gridfs_err}")
+                try:
+                    _repo_path_or_content = download_repository_snapshot(repo_owner, repo_name, ref=target["archive_ref"])
+                except (ValueError, OSError) as disk_err2:
+                    dmsg = str(disk_err2).lower()
+                    if "exceed" in dmsg or "disk space" in dmsg:
+                        _try_tree_blob_fallback(str(disk_err2))
+                    else:
+                        raise
+                _use_gridfs = False
 
         # --- Phase: Analyze ---
         set_analysis_progress(
@@ -573,7 +666,10 @@ def run_analysis_in_background(
             current_step="analyzing",
         )
 
-        analysis = analyze_repository(repo_path)
+        if _use_gridfs or _use_tree_blob:
+            analysis = analyze_repository("/virtual/repo", file_contents=_repo_path_or_content)
+        else:
+            analysis = analyze_repository(_repo_path_or_content)
         analysis["branch"] = selected_branch
         analysis["commit_sha"] = commit_sha
         save_analysis_to_metadata(str(get_repo_cache_path(repo_owner, repo_name)), analysis)
@@ -745,6 +841,12 @@ def run_analysis_in_background(
         logger.error(f"Background analysis failed for {repo_id} (job={job_id}): {error_msg}")
 
     finally:
+        if _gridfs_zip_id:
+            try:
+                from app.storage.gridfs_repo_storage import cleanup_repo_files as _g_cleanup
+                _g_cleanup(repo_owner, repo_name)
+            except Exception:
+                pass
         if repo_path:
             cleanup_repository(repo_path)
 

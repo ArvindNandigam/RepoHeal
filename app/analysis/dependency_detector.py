@@ -17,33 +17,161 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-def extract_requirements(repo_path):
+def _mem_read(files: dict, name: str) -> str | None:
+    """Read a file from the memory dict by basename or path ending with name."""
+    for path, content in files.items():
+        if isinstance(content, bytes):
+            content = content.decode("utf-8", errors="replace")
+        if path.endswith(name):
+            return content
+    return None
+
+
+def _parse_from_memory(files: dict, deps: dict) -> None:
+    import io as _io_mod
+    import json as _json_mod
+
+    # Group 1: poetry.lock / pyproject.toml
+    content = _mem_read(files, "poetry.lock")
+    if content and tomllib:
+        try:
+            data = tomllib.load(_io_mod.BytesIO(content.encode() if isinstance(content, str) else content))
+            for pkg in data.get("package", []):
+                _add_dependency(deps, pkg.get("name"), pkg.get("version"), "==", "poetry.lock")
+        except Exception:
+            pass
+    else:
+        content = _mem_read(files, "pyproject.toml")
+        if content and tomllib:
+            try:
+                data = tomllib.load(_io_mod.BytesIO(content.encode() if isinstance(content, str) else content))
+                for pkg, ver in data.get("tool", {}).get("poetry", {}).get("dependencies", {}).items():
+                    if pkg == "python": continue
+                    ver_str = str(ver.get("version") if isinstance(ver, dict) else ver)
+                    _add_dependency(deps, pkg, ver_str, "==", "pyproject.toml")
+                for dep in data.get("project", {}).get("dependencies", []):
+                    if ">=" in dep:
+                        p, v = dep.split(">=", 1)
+                        _add_dependency(deps, p.strip(), v.strip(), ">=", "pyproject.toml")
+                    elif "==" in dep:
+                        p, v = dep.split("==", 1)
+                        _add_dependency(deps, p.strip(), v.strip(), "==", "pyproject.toml")
+                    else:
+                        _add_dependency(deps, dep, "unknown", "", "pyproject.toml")
+            except Exception:
+                pass
+
+    # Group 2: Pipfile.lock / Pipfile
+    content = _mem_read(files, "Pipfile.lock")
+    if content:
+        try:
+            data = _json_mod.loads(content)
+            for pkg, details in data.get("default", {}).items():
+                version = details.get("version", "").lstrip("=")
+                _add_dependency(deps, pkg, version, "==", "Pipfile.lock")
+        except Exception:
+            pass
+    else:
+        content = _mem_read(files, "Pipfile")
+        if content and tomllib:
+            try:
+                data = tomllib.load(_io_mod.BytesIO(content.encode() if isinstance(content, str) else content))
+                for pkg, ver in data.get("packages", {}).items():
+                    ver_str = str(ver.get("version") if isinstance(ver, dict) else ver).lstrip("=")
+                    _add_dependency(deps, pkg, ver_str, "==", "Pipfile")
+            except Exception:
+                pass
+
+    # Group 3: requirements.txt
+    content = _mem_read(files, "requirements.txt")
+    if content:
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or line.startswith("-"):
+                continue
+            if "==" in line:
+                pkg, ver = line.split("==", 1)
+                _add_dependency(deps, pkg, ver.strip(), "==", "requirements.txt")
+            elif ">=" in line:
+                pkg, ver = line.split(">=", 1)
+                _add_dependency(deps, pkg, ver.strip(), ">=", "requirements.txt")
+            elif "~=" in line:
+                pkg, ver = line.split("~=", 1)
+                _add_dependency(deps, pkg, ver.strip(), "~=", "requirements.txt")
+            else:
+                _add_dependency(deps, line, "unknown", "", "requirements.txt")
+
+    # Group 4: setup.cfg
+    content = _mem_read(files, "setup.cfg")
+    if content:
+        import configparser as _cfg
+        cfg = _cfg.ConfigParser()
+        cfg.read_string(content)
+        if cfg.has_section("options"):
+            requires = cfg.get("options", "install_requires", fallback="")
+            for line in requires.split("\n"):
+                line = line.strip()
+                if line:
+                    if ">=" in line:
+                        p, v = line.split(">=", 1)
+                        _add_dependency(deps, p.strip(), v.strip(), ">=", "setup.cfg")
+                    elif "==" in line:
+                        p, v = line.split("==", 1)
+                        _add_dependency(deps, p.strip(), v.strip(), "==", "setup.cfg")
+                    else:
+                        _add_dependency(deps, line, "unknown", "", "setup.cfg")
+
+    # Group 5: setup.py
+    content = _mem_read(files, "setup.py")
+    if content:
+        try:
+            tree = ast.parse(content)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "setup":
+                    for kw in node.keywords:
+                        if kw.arg == "install_requires" and isinstance(kw.value, ast.List):
+                            for elt in kw.value.elts:
+                                if isinstance(elt, ast.Constant):
+                                    val = elt.value
+                                    if "==" in val:
+                                        p, v = val.split("==", 1)
+                                        _add_dependency(deps, p.strip(), v.strip(), "==", "setup.py")
+                                    else:
+                                        _add_dependency(deps, val, "unknown", "", "setup.py")
+        except Exception:
+            pass
+
+
+def extract_requirements(repo_path, file_contents: dict | None = None):
     dependencies = {}
-    base_path = Path(repo_path)
+    base_path = Path(repo_path) if file_contents is None else None
 
-    # 1. poetry.lock / pyproject.toml
-    if (base_path / "poetry.lock").exists() and tomllib:
-        _parse_poetry_lock(base_path / "poetry.lock", dependencies)
-    elif (base_path / "pyproject.toml").exists() and tomllib:
-        _parse_pyproject_toml(base_path / "pyproject.toml", dependencies)
-    
-    # 2. Pipfile.lock / Pipfile
-    if (base_path / "Pipfile.lock").exists():
-        _parse_pipfile_lock(base_path / "Pipfile.lock", dependencies)
-    elif (base_path / "Pipfile").exists() and tomllib:
-        _parse_pipfile(base_path / "Pipfile", dependencies)
+    if file_contents is not None:
+        _parse_from_memory(file_contents, dependencies)
+    else:
+        # 1. poetry.lock / pyproject.toml
+        if (base_path / "poetry.lock").exists() and tomllib:
+            _parse_poetry_lock(base_path / "poetry.lock", dependencies)
+        elif (base_path / "pyproject.toml").exists() and tomllib:
+            _parse_pyproject_toml(base_path / "pyproject.toml", dependencies)
         
-    # 3. requirements.txt
-    if (base_path / "requirements.txt").exists():
-        _parse_requirements_txt(base_path / "requirements.txt", dependencies)
+        # 2. Pipfile.lock / Pipfile
+        if (base_path / "Pipfile.lock").exists():
+            _parse_pipfile_lock(base_path / "Pipfile.lock", dependencies)
+        elif (base_path / "Pipfile").exists() and tomllib:
+            _parse_pipfile(base_path / "Pipfile", dependencies)
+            
+        # 3. requirements.txt
+        if (base_path / "requirements.txt").exists():
+            _parse_requirements_txt(base_path / "requirements.txt", dependencies)
 
-    # 4. setup.cfg
-    if (base_path / "setup.cfg").exists():
-        _parse_setup_cfg(base_path / "setup.cfg", dependencies)
+        # 4. setup.cfg
+        if (base_path / "setup.cfg").exists():
+            _parse_setup_cfg(base_path / "setup.cfg", dependencies)
 
-    # 5. setup.py
-    if (base_path / "setup.py").exists():
-        _parse_setup_py(base_path / "setup.py", dependencies)
+        # 5. setup.py
+        if (base_path / "setup.py").exists():
+            _parse_setup_py(base_path / "setup.py", dependencies)
 
     logger.info(f"Detected {len(dependencies)} dependencies")
     return dependencies

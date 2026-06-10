@@ -467,7 +467,7 @@
           <input id="repoSearch" class="search" type="search" placeholder="Search repositories by name or owner">
           <button class="button secondary" type="button" id="openSettings">Settings</button>
           <a class="button secondary" href="/logout">Logout</a>
-          <a class="button" href="/visualize/{{ github_user }}/Repohealdemo">Open sample graph</a>
+          
         </div>
       </div>
 
@@ -954,7 +954,10 @@ async function refreshRepositoryStatus(repo) {
     async function loadDashboard() {
       try {
         setProgress(0);
-        const response = await fetch("/dashboard/data", { credentials: "same-origin" });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        const response = await fetch("/dashboard/data", { credentials: "same-origin", signal: controller.signal });
+        clearTimeout(timeoutId);
         if (!response.ok) {
           throw new Error(`Dashboard API returned ${response.status}`);
         }
@@ -978,7 +981,7 @@ async function refreshRepositoryStatus(repo) {
         progressLabels[progressLabels.length - 1].classList.add("active");
       } catch (error) {
         loadingState.classList.add("hidden");
-        errorState.textContent = error.message;
+        errorState.textContent = error.name === "AbortError" ? "Request timed out — server may be slow or unreachable" : error.message;
         errorState.classList.remove("hidden");
         statusLabel.textContent = "Failed";
         progressStepLabel.textContent = "Failed while loading dashboard";

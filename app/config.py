@@ -33,16 +33,22 @@ class Settings:
     RISK_WEIGHT_VERSION_DISTANCE = float(os.getenv("RISK_WEIGHT_VERSION_DISTANCE", "0.15"))
     RISK_WEIGHT_REPO_SIZE = float(os.getenv("RISK_WEIGHT_REPO_SIZE", "0.10"))
 
-    # Cache governance
-    MAX_CACHE_SIZE_MB = int(os.getenv("MAX_CACHE_SIZE_MB", "500"))
-    MAX_ANALYSIS_HISTORY = int(os.getenv("MAX_ANALYSIS_HISTORY", "5"))
-    CACHE_RETENTION_DAYS = int(os.getenv("CACHE_RETENTION_DAYS", "30"))
+    # Cache governance — Render free tier has ~200MB total disk.
+    # Cache must not exceed available free space.
+    MAX_CACHE_SIZE_MB = int(os.getenv("MAX_CACHE_SIZE_MB", "50"))
+    MAX_ANALYSIS_HISTORY = int(os.getenv("MAX_ANALYSIS_HISTORY", "2"))
+    CACHE_RETENTION_DAYS = int(os.getenv("CACHE_RETENTION_DAYS", "7"))
 
-    # Large repository protection
-    MAX_ZIP_SIZE_MB = int(os.getenv("MAX_ZIP_SIZE_MB", "200"))
-    MAX_EXTRACTED_SIZE_MB = int(os.getenv("MAX_EXTRACTED_SIZE_MB", "500"))
-    MAX_FILE_COUNT = int(os.getenv("MAX_FILE_COUNT", "10000"))
-    MAX_PYTHON_FILE_COUNT = int(os.getenv("MAX_PYTHON_FILE_COUNT", "5000"))
+    # Large repository protection — tight limits for Render's 200MB disk.
+    # These prevent OOM/crash from repos too large to fit on disk.
+    MAX_ZIP_SIZE_MB = int(os.getenv("MAX_ZIP_SIZE_MB", "50"))
+    MAX_EXTRACTED_SIZE_MB = int(os.getenv("MAX_EXTRACTED_SIZE_MB", "100"))
+    MAX_FILE_COUNT = int(os.getenv("MAX_FILE_COUNT", "5000"))
+    MAX_PYTHON_FILE_COUNT = int(os.getenv("MAX_PYTHON_FILE_COUNT", "2000"))
+    MIN_FREE_DISK_MB = int(os.getenv("MIN_FREE_DISK_MB", "50"))
+
+    # GridFS: when True, extract to disk instead of MongoDB GridFS (default: False = use GridFS)
+    USE_DISK_EXTRACTION = os.getenv("USE_DISK_EXTRACTION", "false").lower() in ("1", "true", "yes")
 
     # Job recovery
     JOB_ORPHAN_TIMEOUT_MINUTES = int(os.getenv("JOB_ORPHAN_TIMEOUT_MINUTES", "15"))

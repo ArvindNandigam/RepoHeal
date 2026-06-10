@@ -28,11 +28,14 @@ def get_latest_pypi_versions(packages):
                 results[pkg] = version
     return results
 
-def analyze_repository(repo_path):
-
+def analyze_repository(repo_path, file_contents: dict | None = None):
+    """
+    Analyzes a repository.
+    When `file_contents` is provided, scanners read from memory instead of disk.
+    """
     logger.info(f"Analyzing repository: {repo_path}")
 
-    scan_result = scan_repository(repo_path)
+    scan_result = scan_repository(repo_path, file_contents=file_contents)
 
     file_imports = scan_result.get(
         "imports",
@@ -47,7 +50,7 @@ def analyze_repository(repo_path):
         {}
     )
 
-    dependencies = extract_requirements(repo_path)
+    dependencies = extract_requirements(repo_path, file_contents=file_contents)
 
     all_imports = set()
     for imports in file_imports.values():

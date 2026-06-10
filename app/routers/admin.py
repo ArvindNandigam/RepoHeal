@@ -40,16 +40,25 @@ async def admin_observability(user=Depends(require_admin)):
     cache_size_mb = 0
     from app.routers.dependencies import REPO_CACHE_ROOT
     import shutil
+    import os as _os
     cache_root = str(REPO_CACHE_ROOT)
-    if __import__("os").path.exists(cache_root):
-        for dirpath, dirnames, filenames in __import__("os").walk(cache_root):
+    if _os.path.exists(cache_root):
+        for dirpath, dirnames, filenames in _os.walk(cache_root):
             for f in filenames:
-                fp = __import__("os").path.join(dirpath, f)
+                fp = _os.path.join(dirpath, f)
                 try:
-                    cache_size_mb += __import__("os").path.getsize(fp)
+                    cache_size_mb += _os.path.getsize(fp)
                 except OSError:
                     pass
         cache_size_mb = cache_size_mb / 1024 / 1024
+
+    # Free disk space
+    free_disk_mb = 0
+    try:
+        du = shutil.disk_usage(cache_root if _os.path.exists(cache_root) else "/")
+        free_disk_mb = du.free / 1024 / 1024
+    except Exception:
+        pass
 
     # Performance
     avg_time = metrics.get("average_analysis_time", 0)
@@ -59,17 +68,20 @@ async def admin_observability(user=Depends(require_admin)):
     # Cache governance status
     config = __import__("app.config", fromlist=["settings"]).settings
     limits = {
-        "max_cache_size_mb": getattr(config, "MAX_CACHE_SIZE_MB", 500),
-        "max_analysis_history": getattr(config, "MAX_ANALYSIS_HISTORY", 5),
-        "cache_retention_days": getattr(config, "CACHE_RETENTION_DAYS", 30),
-        "max_zip_size_mb": getattr(config, "MAX_ZIP_SIZE_MB", 200),
-        "max_extracted_size_mb": getattr(config, "MAX_EXTRACTED_SIZE_MB", 500),
-        "max_file_count": getattr(config, "MAX_FILE_COUNT", 10000),
-        "max_python_file_count": getattr(config, "MAX_PYTHON_FILE_COUNT", 5000),
+        "max_cache_size_mb": getattr(config, "MAX_CACHE_SIZE_MB", 50),
+        "max_analysis_history": getattr(config, "MAX_ANALYSIS_HISTORY", 2),
+        "cache_retention_days": getattr(config, "CACHE_RETENTION_DAYS", 7),
+        "max_zip_size_mb": getattr(config, "MAX_ZIP_SIZE_MB", 50),
+        "max_extracted_size_mb": getattr(config, "MAX_EXTRACTED_SIZE_MB", 100),
+        "max_file_count": getattr(config, "MAX_FILE_COUNT", 5000),
+        "max_python_file_count": getattr(config, "MAX_PYTHON_FILE_COUNT", 2000),
         "orphan_timeout_minutes": getattr(config, "JOB_ORPHAN_TIMEOUT_MINUTES", 15),
+        "min_free_disk_mb": getattr(config, "MIN_FREE_DISK_MB", 50),
+        "use_disk_extraction": getattr(config, "USE_DISK_EXTRACTION", False),
     }
 
     return {
+        "free_disk_mb": round(free_disk_mb, 1),
         "cache_size_mb": round(cache_size_mb, 1),
         "active_jobs_count": len(active_jobs),
         "active_jobs": active_jobs,

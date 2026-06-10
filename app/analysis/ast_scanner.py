@@ -471,7 +471,7 @@ def extract_imports_from_file(file_path):
         }
 
 
-def extract_imports_from_notebook(file_path, module_index=None):
+def extract_imports_from_notebook(file_path, module_index=None, _content_override=None):
 
     imports = {
         "direct": [],
@@ -483,13 +483,16 @@ def extract_imports_from_notebook(file_path, module_index=None):
 
     try:
 
-        with open(
-            file_path,
-            "r",
-            encoding="utf-8"
-        ) as f:
+        if _content_override is not None:
+            notebook = json.loads(_content_override) if isinstance(_content_override, str) else _content_override
+        else:
+            with open(
+                file_path,
+                "r",
+                encoding="utf-8"
+            ) as f:
 
-            notebook = json.load(f)
+                notebook = json.load(f)
 
         cells = notebook.get("cells", [])
 
@@ -577,7 +580,7 @@ def extract_imports_from_notebook(file_path, module_index=None):
     return imports
 
 
-def extract_semantics_from_notebook(file_path, module_name=None, module_index=None):
+def extract_semantics_from_notebook(file_path, module_name=None, module_index=None, _content_override=None):
 
     semantic_data = {
         "module_name": module_name,
@@ -589,13 +592,16 @@ def extract_semantics_from_notebook(file_path, module_name=None, module_index=No
 
     try:
 
-        with open(
-            file_path,
-            "r",
-            encoding="utf-8"
-        ) as f:
+        if _content_override is not None:
+            notebook = json.loads(_content_override) if isinstance(_content_override, str) else _content_override
+        else:
+            with open(
+                file_path,
+                "r",
+                encoding="utf-8"
+            ) as f:
 
-            notebook = json.load(f)
+                notebook = json.load(f)
 
         cells = notebook.get("cells", [])
 
@@ -639,66 +645,112 @@ def extract_semantics_from_notebook(file_path, module_name=None, module_index=No
     return semantic_data
 
 
-def scan_repository(repo_path):
+def _memory_module_name(rel_path: str) -> str:
+    path = rel_path.replace("\\", "/")
+    parts = path.split("/")
+    if parts[-1] == "__init__.py":
+        parts = parts[:-1]
+    else:
+        parts[-1] = Path(parts[-1]).stem
+    return ".".join(p for p in parts if p)
+
+
+def scan_repository(repo_path, file_contents: dict | None = None):
+    """
+    Scans repository files for imports and semantic structure.
+    When `file_contents` is provided (`{relative_path: text_content}`),
+    uses in-memory content instead of reading from disk.
+    """
+    import json as _json
 
     repository_files = []
+    python_files: list = []
+    notebook_files: list = []
 
-    python_files = list(Path(repo_path).rglob("*.py"))
-    notebook_files = list(Path(repo_path).rglob("*.ipynb"))
-
-    repository_files.extend(python_files)
-    repository_files.extend(notebook_files)
+    if file_contents:
+        for rel_path in file_contents:
+            if rel_path.endswith(".py"):
+                python_files.append(rel_path)
+            elif rel_path.endswith(".ipynb"):
+                notebook_files.append(rel_path)
+        repository_files = python_files + notebook_files
+    else:
+        python_files = list(Path(repo_path).rglob("*.py"))
+        notebook_files = list(Path(repo_path).rglob("*.ipynb"))
+        repository_files = python_files + notebook_files
 
     module_index = set()
 
-    for py_file in python_files:
-        module_index.add(
-            build_module_name(str(py_file), repo_path)
-        )
+    if file_contents:
+        for py_file in python_files:
+            module_index.add(
+                _memory_module_name(py_file)
+            )
+    else:
+        for py_file in python_files:
+            module_index.add(
+                build_module_name(str(py_file), repo_path)
+            )
 
     imports_by_file = {}
     semantic_by_file = {}
 
     for notebook_file in notebook_files:
-
-        imports = extract_imports_from_notebook(
-            notebook_file,
-            module_index=module_index
-        )
-
-        imports_by_file[str(notebook_file)] = imports
-        semantic_by_file[str(notebook_file)] = {
-            **extract_semantics_from_notebook(
+        if file_contents:
+            nb_content = file_contents.get(notebook_file, "{}")
+            imports = extract_imports_from_notebook(
                 notebook_file,
-                module_name=build_module_name(
-                    str(notebook_file),
-                    repo_path
-                ),
+                module_index=module_index,
+                _content_override=nb_content if isinstance(nb_content, str) else nb_content.decode("utf-8", errors="replace"),
+            )
+            mod_name = _memory_module_name(notebook_file)
+            imports_by_file[notebook_file] = imports
+            semantic_by_file[notebook_file] = {
+                **extract_semantics_from_notebook(
+                    notebook_file,
+                    module_name=mod_name,
+                    module_index=module_index,
+                    _content_override=nb_content if isinstance(nb_content, str) else nb_content.decode("utf-8", errors="replace"),
+                )
+            }
+        else:
+            imports = extract_imports_from_notebook(
+                notebook_file,
                 module_index=module_index
             )
-        }
+            imports_by_file[str(notebook_file)] = imports
+            semantic_by_file[str(notebook_file)] = {
+                **extract_semantics_from_notebook(
+                    notebook_file,
+                    module_name=build_module_name(
+                        str(notebook_file),
+                        repo_path
+                    ),
+                    module_index=module_index
+                )
+            }
 
     for py_file in python_files:
-
-        with open(
-            py_file,
-            "r",
-            encoding="utf-8"
-        ) as f:
-            source = f.read()
+        if file_contents:
+            source = file_contents[py_file]
+            if isinstance(source, bytes):
+                source = source.decode("utf-8", errors="replace")
+            mod_name = _memory_module_name(py_file)
+        else:
+            with open(py_file, "r", encoding="utf-8") as f:
+                source = f.read()
+            mod_name = build_module_name(str(py_file), repo_path)
 
         imports = extract_imports_from_python_source(
             source,
             module_index=module_index
         )
 
-        imports_by_file[str(py_file)] = imports
-        semantic_by_file[str(py_file)] = extract_python_semantics(
+        fp_key = py_file if file_contents else str(py_file)
+        imports_by_file[fp_key] = imports
+        semantic_by_file[fp_key] = extract_python_semantics(
             source,
-            module_name=build_module_name(
-                str(py_file),
-                repo_path
-            ),
+            module_name=mod_name,
             module_index=module_index
         )
 
