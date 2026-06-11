@@ -372,7 +372,8 @@
         const data = await res.json();
         const commits = data.commits || [];
         if (commits.length === 0) {
-          sel.innerHTML = '<option value="">No commits found on this branch</option>';
+          const errMsg = data.error ? ` (${data.error})` : "";
+          sel.innerHTML = `<option value="">No commits found on this branch${errMsg}</option>`;
           sel.disabled = false;
           return;
         }

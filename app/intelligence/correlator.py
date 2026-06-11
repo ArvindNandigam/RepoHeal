@@ -267,6 +267,48 @@ class MigrationCorrelator:
                 f"{installed_version} → {latest_version} ({status})"
             )
 
+        # Version-gap fallback: if fingerprint_data gave us nothing, check dependency_graph directly
+        if not fingerprint_data and dependency_graph:
+            for library, dep in dependency_graph.items():
+                installed_version = dep.get("version", "unknown")
+                latest_version = dep.get("latest_version", "unknown")
+                delta = _version_delta(installed_version, latest_version)
+                if not delta or delta[0] <= 0:
+                    continue
+                symbol = f"{library}@{installed_version} → {latest_version}"
+                if (library, symbol) in {(a.library, a.symbol) for a in assessments}:
+                    continue
+                status = "breaking" if delta[0] >= 2 else "at_risk"
+                assessments.append(
+                    SymbolAssessment(
+                        symbol=symbol,
+                        library=library,
+                        installed_version=installed_version,
+                        latest_version=latest_version,
+                        status=status,
+                        relationships=[
+                            SymbolRelationship(
+                                relation="major_version_gap",
+                                target=latest_version,
+                                status=status,
+                                confidence=0.9,
+                                evidence_links=[],
+                            )
+                        ],
+                        version_distance=VersionDistance(
+                            installed=installed_version,
+                            latest=latest_version,
+                            major_diff=max(0, delta[0]),
+                            minor_diff=max(0, delta[1]),
+                            patch_diff=max(0, delta[2]),
+                        ),
+                    )
+                )
+                logger.info(
+                    f"Version-gap assessment (fallback) for {library}: "
+                    f"{installed_version} → {latest_version} ({status})"
+                )
+
         if fingerprint_data and not assessments and not errors:
             errors.append(
                 "No symbol intelligence or version-gap signals were produced — "

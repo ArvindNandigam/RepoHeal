@@ -565,6 +565,40 @@ class MetadataBranchManager:
                 return result
         return None
 
+    def load_latest_analysis_record(self, repo) -> Dict[str, Any] | None:
+        manifest = self._load_manifest(repo)
+        analysis_path = manifest.get("latest_analysis")
+        if analysis_path:
+            result = self._load_json_file(repo, analysis_path)
+            if result:
+                return result
+        # Fallback: scan analyses dir for the most recent
+        try:
+            contents = repo.get_contents(f"{self.base_path}/analyses", ref=self.branch_name)
+            if isinstance(contents, list):
+                branch_dirs = [c for c in contents if c.type == "dir"]
+                branch_dirs.sort(key=lambda c: c.last_modified if hasattr(c, 'last_modified') else "", reverse=True)
+                for branch_dir in branch_dirs[:3]:
+                    try:
+                        commit_dirs = repo.get_contents(branch_dir.path, ref=self.branch_name)
+                        if isinstance(commit_dirs, list):
+                            commit_dirs.sort(key=lambda c: c.last_modified if hasattr(c, 'last_modified') else "", reverse=True)
+                            for commit_dir in commit_dirs[:3]:
+                                try:
+                                    files = repo.get_contents(commit_dir.path, ref=self.branch_name)
+                                    if isinstance(files, list):
+                                        json_files = [f for f in files if f.name.startswith("analysis_") and f.name.endswith(".json")]
+                                        if json_files:
+                                            newest = max(json_files, key=lambda f: f.last_modified if hasattr(f, 'last_modified') else "")
+                                            return json.loads(newest.decoded_content.decode("utf-8"))
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return None
+
     def load_latest_report(self, repo) -> Dict[str, Any] | None:
         manifest = self._load_manifest(repo)
         for path in (

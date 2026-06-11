@@ -35,7 +35,7 @@ async def list_commits(
         repo = client.github.get_repo(f"{repo_owner}/{repo_name}")
         try:
             commits = []
-            for c in repo.get_commits(sha=branch, per_page=50):
+            for c in repo.get_commits(sha=branch)[:50]:
                 commits.append({
                     "sha": c.sha,
                     "message": c.commit.message.split("\n")[0],

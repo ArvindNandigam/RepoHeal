@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from pathlib import Path
 from fastapi import APIRouter, Depends, Query
@@ -233,6 +233,7 @@ async def get_schedule(
     db = get_mongo_db()
     doc = db.monitoring_config.find_one({"repository": repo_id}, {"_id": 0})
     if not doc:
+        now = datetime.now(timezone.utc)
         doc = {
             "repository": repo_id,
             "frequency": "monthly",
@@ -241,7 +242,8 @@ async def get_schedule(
             "auto_remediate": False,
             "notify_on": [c.value for c in AlertCategory],
             "digest_enabled": True,
-            "updated_at": datetime.now(timezone.utc).isoformat()
+            "next_run": (now + timedelta(days=30)).isoformat(),
+            "updated_at": now.isoformat()
         }
     return doc
 
@@ -261,7 +263,17 @@ async def update_schedule(
     )
     repo_id = f"{repo_owner}/{repo_name}"
     schedule.repository = repo_id
-    schedule.updated_at = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
+    schedule.updated_at = now.isoformat()
+    # Compute next_run based on frequency
+    if schedule.frequency == "daily":
+        schedule.next_run = (now + timedelta(days=1)).isoformat()
+    elif schedule.frequency == "weekly":
+        schedule.next_run = (now + timedelta(weeks=1)).isoformat()
+    elif schedule.frequency == "monthly":
+        schedule.next_run = (now + timedelta(days=30)).isoformat()
+    elif schedule.frequency == "manual":
+        schedule.next_run = None
     db = get_mongo_db()
     db.monitoring_config.update_one(
         {"repository": repo_id},

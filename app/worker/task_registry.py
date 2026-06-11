@@ -875,6 +875,16 @@ def run_analysis_in_background(
             repository_snapshot_id=snapshot_id,
         )
         logger.info(f"Background analysis completed for {repo_id} (job={job_id})")
+        # Update last_run timestamp in monitoring config
+        try:
+            from app.db.database import get_mongo_db
+            _mdb = get_mongo_db()
+            _mdb.monitoring_config.update_one(
+                {"repository": repo_id},
+                {"$set": {"last_run": dt_mod.now(tz_mod.utc).isoformat()}},
+            )
+        except Exception:
+            logger.warning("Failed to update last_run for %s", repo_id)
 
         _elapsed = (dt_mod.now(tz_mod.utc) - _start).total_seconds()
         record_analysis_duration(_elapsed, success=True)
@@ -978,6 +988,12 @@ def run_health_refresh_in_background(
         record = None
         if commit_sha:
             record = metadata_manager.load_analysis_record(repo_obj, selected_branch, commit_sha)
+        # Fall back to the latest analysis from the metadata manifest
+        if not record:
+            try:
+                record = metadata_manager.load_latest_analysis_record(repo_obj)
+            except Exception:
+                pass
         analysis = (record or {}).get("analysis") or load_cached_analysis(repo_owner, repo_name)
         if not analysis or not analysis.get("dependency_graph"):
             raise ValueError("No analysis snapshot found for health refresh")
@@ -1016,6 +1032,16 @@ def run_health_refresh_in_background(
             selected_branch=selected_branch, target_commit_sha=commit_sha,
             current_head=current_head,
         )
+        # Update last_run timestamp in monitoring config
+        try:
+            from app.db.database import get_mongo_db
+            mdb = get_mongo_db()
+            mdb.monitoring_config.update_one(
+                {"repository": repo_id},
+                {"$set": {"last_run": datetime.now(timezone.utc).isoformat()}},
+            )
+        except Exception:
+            logger.warning("Failed to update last_run for %s", repo_id)
     except Exception as e:
         error_msg = traceback.format_exc()
         set_analysis_progress(
