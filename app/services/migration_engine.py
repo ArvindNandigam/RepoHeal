@@ -194,6 +194,15 @@ class MigrationEngine:
                 if debug: debug_trace["deduplicated_relationships"] = deduped
                 
                 for rel in deduped:
+                    # Normalize 'from' to the symbol being discovered
+                    # Groq often returns just the method name (e.g. "append" instead of "pandas.DataFrame.append"),
+                    # which would cause lookup_relationships(symbol) to miss it later.
+                    rel_from = rel.get("from", "")
+                    if rel_from and rel_from != symbol:
+                        rel_from_tail = rel_from.split(".")[-1] if "." in rel_from else rel_from
+                        symbol_tail = symbol.split(".")[-1]
+                        if rel_from_tail == symbol_tail:
+                            rel["from"] = symbol
                     # Use the first page that has evidence for this relationship
                     evidence_page = page_data_cache[0]
                     for page_data in page_data_cache:
