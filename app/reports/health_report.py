@@ -6,6 +6,46 @@ from app.models.migration_models import (
     ExecutiveSummary, DependencyEntry, MigrationPath, RecommendedAction
 )
 
+
+def compute_overall_risk_score(report: HealthReport) -> int:
+    """Return 0–100 migration risk (higher = riskier). Never reuse health score."""
+    if getattr(report, "overall_risk_score", None) is not None:
+        return int(report.overall_risk_score)
+    if report.risk_assessment:
+        return max(r.risk_score for r in report.risk_assessment)
+    if report.overall_risk_level == "high":
+        return 75
+    if report.overall_risk_level == "medium":
+        return 50
+    return 0
+
+
+def compute_overall_risk_score_from_inputs(
+    risks: List[RiskAssessment],
+    deprecated_count: int,
+    breaking_count: int,
+) -> int:
+    if risks:
+        return max(r.risk_score for r in risks)
+    if breaking_count:
+        return min(100, 60 + breaking_count * 10)
+    if deprecated_count:
+        return min(100, 35 + deprecated_count * 8)
+    return 0
+
+
+def assessments_had_intelligence(correlation: CorrelationResult) -> bool:
+    return any(
+        a.status not in ("healthy", "unknown") or a.relationships
+        for a in correlation.assessments
+    )
+
+
+def fingerprint_libraries(analysis: Dict[str, Any]) -> bool:
+    fingerprints = analysis.get("fingerprints", {})
+    return bool(fingerprints)
+
+
 class HealthReportGenerator:
     def generate(self, correlation: CorrelationResult, impacts: List[ImpactReport], risks: List[RiskAssessment], analysis: Dict[str, Any]) -> HealthReport:
         # Calculate Executive Summary metrics
@@ -20,9 +60,12 @@ class HealthReportGenerator:
         deprecated_count = sum(1 for a in correlation.assessments if a.status == "deprecated")
         breaking_count = sum(1 for a in correlation.assessments if a.status == "breaking")
         
-        if overall_health_score < 40:
+        overall_risk_score = compute_overall_risk_score_from_inputs(
+            risks, deprecated_count, breaking_count
+        )
+        if overall_risk_score >= 70 or overall_health_score < 40:
             overall_risk_level = "high"
-        elif overall_health_score < 70:
+        elif overall_risk_score >= 40 or overall_health_score < 70:
             overall_risk_level = "medium"
         else:
             overall_risk_level = "low"
@@ -100,11 +143,20 @@ class HealthReportGenerator:
                 confidence=action_confidence
             ))
             
+        intelligence_warnings = list(correlation.webtool_errors or [])
+        if not assessments_had_intelligence(correlation) and fingerprint_libraries(analysis):
+            intelligence_warnings.append(
+                "Symbol intelligence returned no deprecation data — "
+                "version-gap and pattern-based checks were applied as fallback."
+            )
+
         return HealthReport(
             repository=correlation.repository,
             generated_at=datetime.now(timezone.utc).isoformat(),
             overall_health_score=overall_health_score,
+            overall_risk_score=overall_risk_score,
             overall_risk_level=overall_risk_level,
+            intelligence_warnings=intelligence_warnings,
             executive_summary=exec_summary,
             dependency_inventory=inventory,
             deprecated_apis=deprecated_apis,
@@ -121,14 +173,24 @@ class HealthReportGenerator:
     def to_markdown(self, report: HealthReport) -> str:
         sections = [
             self._render_executive_summary(report),
+        ]
+        if report.intelligence_warnings:
+            sections.append(self._render_intelligence_warnings(report))
+        sections.extend([
             self._render_dependency_inventory(report),
             self._render_symbol_section("Deprecated APIs", report.deprecated_apis),
             self._render_symbol_section("Breaking Changes", report.breaking_changes),
             self._render_migration_paths(report),
             self._render_risk_assessment(report),
             self._render_recommended_actions(report),
-        ]
+        ])
         return "\n\n---\n\n".join(sections) + "\n"
+
+    def _render_intelligence_warnings(self, report: HealthReport) -> str:
+        lines = ["## Intelligence Warnings", ""]
+        for warning in report.intelligence_warnings:
+            lines.append(f"- {warning}")
+        return "\n".join(lines)
 
     def _render_executive_summary(self, report: HealthReport) -> str:
         summary = report.executive_summary

@@ -58,6 +58,7 @@ class ImpactAnalyzer:
         symbol_base = symbol_parts[-1] if symbol_parts else symbol
         
         direct_callers = set()
+        version_gap = "@" in symbol and "→" in symbol
 
         for file_path, data in files.items():
             for func in data.get("functions", []):
@@ -69,7 +70,12 @@ class ImpactAnalyzer:
         for file_path, data in files.items():
             for api in data.get("apis", []):
                 api_name = api.get("name", "")
-                if self._matches_symbol(api_name, api.get("package"), assessment.library, symbol, symbol_base):
+                matches = (
+                    version_gap and api.get("package") == assessment.library
+                ) or self._matches_symbol(
+                    api_name, api.get("package"), assessment.library, symbol, symbol_base
+                )
+                if matches:
                     line = api.get("line")
                     if line:
                         affected_files_dict[file_path].append(line)

@@ -5,7 +5,7 @@ from typing import Dict, Any
 
 from app.github.client import RepoHealGitHubClient, REPOHEAL_METADATA_BRANCH
 from app.migrations.document_generator import MigrationDocument
-from app.reports.health_report import HealthReportGenerator
+from app.reports.health_report import HealthReportGenerator, compute_overall_risk_score
 from app.models.migration_models import HealthReport
 from app.utils.logger import get_logger
 
@@ -201,6 +201,7 @@ class MetadataBranchManager:
         
         manifest = self._load_manifest(repo)
         
+        risk_score = compute_overall_risk_score(report)
         health_data = {
             "migration_id": migration_id,
             "analysis_id": analysis_id,
@@ -208,7 +209,9 @@ class MetadataBranchManager:
             "generated_from_commit": commit_sha,
             "generated_at": refreshed_at.isoformat(),
             "health_score": getattr(report, "overall_health_score", 0),
-            "risk_score": getattr(report, "overall_health_score", 0), # Using health score as base for now
+            "risk_score": risk_score,
+            "overall_risk_level": getattr(report, "overall_risk_level", "unknown"),
+            "intelligence_warnings": getattr(report, "intelligence_warnings", []),
             "report": report.model_dump()
         }
 
@@ -231,7 +234,8 @@ class MetadataBranchManager:
             "analysis_id": analysis_id,
             "timestamp": refreshed_at.isoformat(),
             "path": migration_report_path,
-            "risk_score": health_data["risk_score"]
+            "risk_score": health_data["risk_score"],
+            "overall_risk_level": health_data["overall_risk_level"],
         })
         
         files_to_commit = {

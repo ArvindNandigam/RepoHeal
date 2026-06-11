@@ -41,8 +41,12 @@
     .stat-box .value { font-size: 14px; font-weight: 600; margin-top: 4px; }
     .toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; font-size: 13px; z-index: 999; animation: fadeIn .2s; }
     .toast.success { background: var(--accent); color: #06121c; }
-    .toast.error { background: var(--danger); color: #fff; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .toast.info { background: var(--accent-2); color: #201604; }
+    .chip-row { display: flex; flex-wrap: wrap; gap: 6px; min-height: 32px; align-items: center; }
+    .branch-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: rgba(66,214,164,0.12); border: 1px solid rgba(66,214,164,0.25); font-size: 12px; }
+    .branch-chip button { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
+    .branch-chip button:hover { color: var(--danger); }
+    .branch-add-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     @media (max-width: 600px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -114,7 +118,13 @@
             </label>
             <label class="field" style="flex:2;">
               <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Tracked branches</span>
-              <select id="autoBranchesSelect" multiple style="padding:4px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:11px;outline:none;min-height:60px;"></select>
+              <div id="trackedBranchesChips" class="chip-row" aria-live="polite"></div>
+              <div class="branch-add-row" style="margin-top:8px;">
+                <select id="addBranchSelect" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;min-width:160px;">
+                  <option value="">Add branch…</option>
+                </select>
+                <button class="button tertiary" type="button" id="addBranchBtn" style="font-size:11px;padding:4px 10px;">Add</button>
+              </div>
             </label>
           </div>
           <div class="flex-row" style="gap:8px;font-size:12px;color:var(--muted);">
@@ -188,15 +198,31 @@
       setTimeout(() => t.remove(), 3000);
     }
 
-    async function clickAndQueue(btn, actionFn) {
+    function formatQueueMessage(actionLabel, payload, response) {
+      const branch = response?.branch || payload?.branch || "default branch";
+      const commit = response?.commit_sha || payload?.commit_sha;
+      const commitPart = commit ? ` @ ${String(commit).slice(0, 7)}` : "";
+      const jobPart = response?.job_id ? ` (job ${response.job_id.slice(0, 8)}…)` : "";
+      if (response?.deduplicated) {
+        return `${FULL_NAME}: ${actionLabel} already running for ${branch}${commitPart}`;
+      }
+      return `${FULL_NAME}: ${actionLabel} queued for ${branch}${commitPart}${jobPart}`;
+    }
+
+    async function clickAndQueue(btn, actionFn, actionLabel = "Task") {
       if (btn.disabled) return;
       const originalText = btn.textContent;
       btn.disabled = true;
       btn.textContent = btn.dataset.queuedText || "Queued...";
       btn.style.opacity = "0.6";
       try {
-        await actionFn();
-        showToast(`${FULL_NAME}: queued successfully`, "success");
+        const result = await actionFn();
+        const msg = typeof result === "object" && result?.message
+          ? result.message
+          : formatQueueMessage(actionLabel, result?.payload, result?.response || result);
+        showToast(msg, result?.deduplicated ? "info" : "success");
+        setupSSE();
+        await refreshStatus();
       } catch (err) {
         showToast(`${FULL_NAME}: ${err.message}`, "error");
       } finally {
@@ -316,46 +342,63 @@
     branchBSelect.addEventListener("change", () => populateCommits(branchBSelect.value, commitBSelect));
 
     // Wire buttons
+    async function queueAnalyze(payload) {
+      const query = new URLSearchParams();
+      if (payload.mode) query.set("mode", payload.mode);
+      if (payload.branch) query.set("branch", payload.branch);
+      if (payload.commit_sha) query.set("commit_sha", payload.commit_sha);
+      const suffix = query.toString() ? `?${query}` : "";
+      const response = await fetch(`${analyzeUrl}${suffix}`, { method: "GET", credentials: "same-origin" });
+      if (!response.ok) throw new Error(`Analyze returned ${response.status}`);
+      return response.json();
+    }
+
     document.querySelector('[data-action="analyze-latest"]').addEventListener("click", (e) =>
       clickAndQueue(e.currentTarget, async () => {
-        await (await fetch(analyzeUrl, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({mode:"latest"}) })).json();
-        await refreshStatus();
-      })
+        const payload = { mode: "latest" };
+        const response = await queueAnalyze(payload);
+        return { payload, response };
+      }, "Analysis")
     );
     document.querySelector('[data-action="analyze-branch"]').addEventListener("click", (e) =>
       clickAndQueue(e.currentTarget, async () => {
-        await (await fetch(analyzeUrl, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify(targetPayload("branch")) })).json();
-        await refreshStatus();
-      })
+        const payload = targetPayload("branch");
+        const response = await queueAnalyze(payload);
+        return { payload, response };
+      }, "Analysis")
     );
     document.querySelector('[data-action="analyze-commit"]').addEventListener("click", (e) =>
       clickAndQueue(e.currentTarget, async () => {
-        await (await fetch(analyzeUrl, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify(targetPayload("commit")) })).json();
-        await refreshStatus();
-      })
+        const payload = targetPayload("commit");
+        const response = await queueAnalyze(payload);
+        return { payload, response };
+      }, "Analysis")
     );
     document.querySelector('[data-action="reanalyze"]').addEventListener("click", (e) =>
       clickAndQueue(e.currentTarget, async () => {
-        await (await fetch(reanalyzeUrl, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify(targetPayload()) })).json();
-        await refreshStatus();
-      })
+        const payload = targetPayload();
+        const response = await (await fetch(reanalyzeUrl, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) })).json();
+        return { payload, response };
+      }, "Reanalysis")
     );
     document.querySelector('[data-action="health"]').addEventListener("click", (e) =>
       clickAndQueue(e.currentTarget, async () => {
-        await (await fetch(healthRefreshUrl, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify(targetPayload()) })).json();
-        await refreshStatus();
-      })
+        const payload = targetPayload();
+        const response = await (await fetch(healthRefreshUrl, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) })).json();
+        return { payload, response };
+      }, "Health refresh")
     );
     document.querySelector('[data-action="compare"]').addEventListener("click", (e) =>
       clickAndQueue(e.currentTarget, async () => {
-        await (await fetch(compareUrl, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({
+        const payload = {
           branch_a: document.getElementById("branchA").value || "main",
           commit_a: document.getElementById("commitA").value || null,
           branch_b: document.getElementById("branchB").value || null,
           commit_b: document.getElementById("commitB").value || null
-        }) })).json();
-        await refreshStatus();
-      })
+        };
+        const response = await (await fetch(compareUrl, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) })).json();
+        return { payload, response };
+      }, "Comparison")
     );
 
     // Auto Analysis
@@ -364,27 +407,77 @@
     const autoFreqSelect = document.getElementById("autoFreqSelect");
     const customDaysRow = document.getElementById("customDaysRow");
     const customDaysInput = document.getElementById("customDaysInput");
-    const autoBranchesSelect = document.getElementById("autoBranchesSelect");
+    const autoBranchesChips = document.getElementById("trackedBranchesChips");
+    const addBranchSelect = document.getElementById("addBranchSelect");
+    const addBranchBtn = document.getElementById("addBranchBtn");
     const autoNextRun = document.getElementById("autoNextRun");
     const autoLastRun = document.getElementById("autoLastRun");
     const saveAutoBtn = document.getElementById("saveAutoConfig");
     const MONITOR_SCHEDULE_URL = `/monitor/schedule/${OWNER}/${REPO}`;
+    let trackedBranches = ["main"];
+    let allRepoBranches = ["main"];
 
-    // Populate branch options in auto-branches select
+    function renderTrackedBranchChips() {
+      autoBranchesChips.innerHTML = "";
+      if (!trackedBranches.length) {
+        autoBranchesChips.innerHTML = '<span style="color:var(--muted);font-size:12px;">No branches tracked</span>';
+        return;
+      }
+      trackedBranches.forEach((branch) => {
+        const chip = document.createElement("span");
+        chip.className = "branch-chip";
+        chip.innerHTML = `<span>${branch}</span>`;
+        if (trackedBranches.length > 1) {
+          const removeBtn = document.createElement("button");
+          removeBtn.type = "button";
+          removeBtn.title = `Stop tracking ${branch}`;
+          removeBtn.textContent = "×";
+          removeBtn.addEventListener("click", () => {
+            trackedBranches = trackedBranches.filter((b) => b !== branch);
+            renderTrackedBranchChips();
+            refreshAddBranchOptions();
+          });
+          chip.appendChild(removeBtn);
+        } else {
+          chip.title = "At least one branch must remain tracked";
+        }
+        autoBranchesChips.appendChild(chip);
+      });
+    }
+
+    function refreshAddBranchOptions() {
+      addBranchSelect.innerHTML = '<option value="">Add branch…</option>';
+      allRepoBranches
+        .filter((b) => !trackedBranches.includes(b))
+        .forEach((b) => {
+          const o = document.createElement("option");
+          o.value = b;
+          o.textContent = b;
+          addBranchSelect.appendChild(o);
+        });
+    }
+
     async function populateAutoBranches() {
       try {
         const res = await fetch(`/repos/${OWNER}/${REPO}/branches`, { credentials: "same-origin" });
         if (res.ok) {
-          const branches = (await res.json()).branches;
-          autoBranchesSelect.innerHTML = "";
-          for (const b of branches) {
-            const o = document.createElement("option");
-            o.value = b; o.textContent = b;
-            autoBranchesSelect.appendChild(o);
+          allRepoBranches = (await res.json()).branches || ["main"];
+          if (!allRepoBranches.includes("main")) {
+            allRepoBranches.unshift("main");
           }
+          refreshAddBranchOptions();
         }
       } catch (_) {}
     }
+
+    addBranchBtn.addEventListener("click", () => {
+      const branch = addBranchSelect.value;
+      if (!branch || trackedBranches.includes(branch)) return;
+      trackedBranches.push(branch);
+      renderTrackedBranchChips();
+      refreshAddBranchOptions();
+      addBranchSelect.value = "";
+    });
 
     async function loadAutoAnalysis() {
       try {
@@ -406,11 +499,12 @@
             customDaysInput.value = parseInt(freq) || 3;
           }
           // Mark selected branches
-          const tracked = data.branches || ["main"];
+          trackedBranches = data.branches || ["main"];
+          if (!trackedBranches.includes("main") && allRepoBranches.includes("main")) {
+            trackedBranches.unshift("main");
+          }
           await populateAutoBranches();
-          Array.from(autoBranchesSelect.options).forEach(o => {
-            o.selected = tracked.includes(o.value);
-          });
+          renderTrackedBranchChips();
           autoNextRun.textContent = data.next_run ? new Date(data.next_run).toLocaleString() : "—";
           autoLastRun.textContent = data.last_run ? new Date(data.last_run).toLocaleString() : "—";
         }
@@ -427,7 +521,9 @@
         autoConfigArea.style.display = "flex";
         autoFreqSelect.value = "monthly";
         customDaysRow.style.display = "none";
-        Array.from(autoBranchesSelect.options).forEach(o => { o.selected = o.value === "main"; });
+        trackedBranches = ["main"];
+        renderTrackedBranchChips();
+        refreshAddBranchOptions();
       } else {
         autoConfigArea.style.display = "none";
         // Save as manual
@@ -452,7 +548,7 @@
       const freq = autoFreqSelect.value === "custom"
         ? String(parseInt(customDaysInput.value) || 3)
         : autoFreqSelect.value;
-      const branches = Array.from(autoBranchesSelect.selectedOptions).map(o => o.value);
+      const branches = [...trackedBranches];
       if (branches.length === 0) { showToast("Select at least one branch", "error"); return; }
       try {
         const res = await fetch(MONITOR_SCHEDULE_URL, {
@@ -476,6 +572,8 @@
     });
 
     loadAutoAnalysis();
+    renderTrackedBranchChips();
+    populateAutoBranches().then(() => renderTrackedBranchChips());
 
     window.addEventListener("beforeunload", () => { if (eventSource) eventSource.close(); });
     document.addEventListener("visibilitychange", () => { if (document.hidden && eventSource) { eventSource.close(); eventSource = null; } });

@@ -112,7 +112,9 @@ class HealthReport(BaseModel):
     repository: str
     generated_at: str
     overall_health_score: int
+    overall_risk_score: int = 0
     overall_risk_level: str
+    intelligence_warnings: List[str] = Field(default_factory=list)
     executive_summary: ExecutiveSummary
     dependency_inventory: List[DependencyEntry] = Field(default_factory=list)
     deprecated_apis: List[SymbolAssessment] = Field(default_factory=list)

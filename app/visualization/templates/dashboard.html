@@ -1053,10 +1053,14 @@ async function refreshRepositoryStatus(repo) {
             const item = document.createElement("div");
             item.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid var(--border);";
             const ts = m.timestamp ? new Date(m.timestamp).toLocaleString() : "N/A";
-            const risk = m.risk_score != null ? m.risk_score : "?";
+            const riskScore = m.risk_score != null ? Number(m.risk_score) : null;
+            const riskLevel = (m.overall_risk_level || "").toUpperCase();
+            const riskText = riskScore != null
+              ? (riskLevel ? `${riskLevel} (${riskScore}/100)` : `${riskScore}/100`)
+              : (riskLevel || "?");
             item.innerHTML = `<span><strong>${repo.name}</strong> · <span style="color: var(--muted);">${ts}</span></span>
               <span style="display: flex; gap: 8px; align-items: center;">
-                <span style="color: ${risk > 70 ? 'var(--danger)' : risk > 30 ? 'var(--warning)' : 'var(--accent)'};">Mig. Risk: ${risk}</span>
+                <span style="color: ${riskScore != null && riskScore > 70 ? 'var(--danger)' : riskScore != null && riskScore > 30 ? 'var(--warning)' : 'var(--accent)'};">Migration risk: ${riskText}</span>
                 <a class="pill" href="/reports/${repo.owner}/${repo.repo}/migration-page?analysis_id=${m.analysis_id}">View</a>
                 <a class="pill" href="/reports/${repo.owner}/${repo.repo}/migration-review?migration_id=${m.migration_id || m.analysis_id}&repo_owner=${repo.owner}&repo_name=${repo.repo}">Review</a>
               </span>`;

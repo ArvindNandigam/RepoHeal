@@ -3,6 +3,7 @@ import re
 from typing import Dict, List, Any
 from datetime import datetime, timezone
 
+from app.analysis.fingerprint import expand_symbols_for_intelligence
 from app.intelligence.webtool_client import WebtoolClient
 from app.models.migration_models import (
     CorrelationResult, SymbolAssessment, SymbolRelationship, VersionDistance
@@ -91,7 +92,7 @@ class MigrationCorrelator:
             ):
                 continue
 
-            unique_symbols = sorted(set(symbols))
+            unique_symbols = sorted(set(expand_symbols_for_intelligence(library, symbols)))
             requests.append({
                 "library": library,
                 "symbols": unique_symbols,
@@ -169,6 +170,13 @@ class MigrationCorrelator:
                         )
                     )
 
+        self._add_version_gap_assessments(
+            assessments,
+            fingerprint_data,
+            dependency_graph,
+            errors,
+        )
+
         return CorrelationResult(
             repository=repo_id,
             timestamp=datetime.now(timezone.utc).isoformat(),
@@ -199,6 +207,72 @@ class MigrationCorrelator:
 
         return {"results": results}
         
+    def _add_version_gap_assessments(
+        self,
+        assessments: List[SymbolAssessment],
+        fingerprint_data: Dict[str, Any],
+        dependency_graph: Dict[str, Any],
+        errors: List[str],
+    ) -> None:
+        """Flag libraries with large version lag when symbol intelligence is empty."""
+        assessed_symbols = {(a.library, a.symbol) for a in assessments}
+
+        for library, fp_data in fingerprint_data.items():
+            dep = dependency_graph.get(library, {})
+            installed_version = fp_data.get("version") or dep.get("version", "unknown")
+            latest_version = dep.get("latest_version", "unknown")
+            delta = _version_delta(installed_version, latest_version)
+            if not delta or delta[0] <= 0:
+                continue
+
+            symbol = f"{library}@{installed_version} → {latest_version}"
+            if (library, symbol) in assessed_symbols:
+                continue
+
+            has_actionable = any(
+                a.library == library and a.status not in ("healthy", "unknown")
+                for a in assessments
+            )
+            if has_actionable:
+                continue
+
+            status = "breaking" if delta[0] >= 2 else "at_risk"
+            assessments.append(
+                SymbolAssessment(
+                    symbol=symbol,
+                    library=library,
+                    installed_version=installed_version,
+                    latest_version=latest_version,
+                    status=status,
+                    relationships=[
+                        SymbolRelationship(
+                            relation="major_version_gap",
+                            target=latest_version,
+                            status=status,
+                            confidence=0.9,
+                            evidence_links=[],
+                        )
+                    ],
+                    version_distance=VersionDistance(
+                        installed=installed_version,
+                        latest=latest_version,
+                        major_diff=max(0, delta[0]),
+                        minor_diff=max(0, delta[1]),
+                        patch_diff=max(0, delta[2]),
+                    ),
+                )
+            )
+            logger.info(
+                f"Version-gap assessment for {library}: "
+                f"{installed_version} → {latest_version} ({status})"
+            )
+
+        if fingerprint_data and not assessments and not errors:
+            errors.append(
+                "No symbol intelligence or version-gap signals were produced — "
+                "check Restricted Webtool connectivity and repository fingerprints."
+            )
+
     def _determine_status(self, relationships: List[SymbolRelationship], installed_version: str) -> str:
         if not relationships:
             return "healthy"

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from app.models.migration_models import HealthReport
-from app.reports.health_report import HealthReportGenerator
+from app.reports.health_report import HealthReportGenerator, compute_overall_risk_score
 
 
 @dataclass
@@ -33,6 +33,10 @@ class MigrationDocumentGenerator:
     def _render_header(self, report: HealthReport) -> str:
         confidences = [a.confidence for a in report.recommended_actions if isinstance(a.confidence, float)]
         avg_conf = f"{sum(confidences) / len(confidences):.2f}" if confidences else "N/A"
+        risk_score = compute_overall_risk_score(report)
+        warning_lines = ""
+        if report.intelligence_warnings:
+            warning_lines = "\n".join(f"- ⚠ {w}" for w in report.intelligence_warnings) + "\n"
         return (
             "# RepoHeal Migration Document\n\n"
             "**Immutable**: this document is an append-only migration record and "
@@ -40,6 +44,8 @@ class MigrationDocumentGenerator:
             f"**Repository**: {report.repository}\n"
             f"**Generated**: {report.generated_at}\n"
             f"**Overall Risk Level**: {report.overall_risk_level.upper()}\n"
+            f"**Migration Risk Score**: {risk_score}/100\n"
             f"**Health Score**: {report.overall_health_score}/100\n"
-            f"**Average Confidence**: {avg_conf}"
+            f"**Average Confidence**: {avg_conf}\n"
+            f"{warning_lines}"
         )

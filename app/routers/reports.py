@@ -56,7 +56,9 @@ async def get_health_report_data(
             **report,
             "generated_at": data.get("generated_at"),
             "analysis_id": data.get("analysis_id"),
-            "repository_snapshot_id": data.get("repository_snapshot_id")
+            "repository_snapshot_id": data.get("repository_snapshot_id"),
+            "overall_risk_score": data.get("risk_score", report.get("overall_risk_score", 0)),
+            "intelligence_warnings": data.get("intelligence_warnings", report.get("intelligence_warnings", [])),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
