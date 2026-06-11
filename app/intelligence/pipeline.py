@@ -40,15 +40,24 @@ class MigrationPipeline:
         repo: Any,
         analysis_id: str | None = None,
         source_branch: str | None = None,
-        commit_sha: str | None = None
+        commit_sha: str | None = None,
+        progress_callback: callable = None,
     ) -> HealthReport:
         logger.info(f"Starting migration pipeline for {repo_id}")
+
+        def _report_progress(step: int, total_steps: int, msg: str):
+            if progress_callback:
+                progress_callback(step, total_steps, msg)
+        
+        total_steps = 6
         
         # 1. Correlate
+        _report_progress(1, total_steps, "Querying Restricted Webtool for API intelligence")
         correlation = await self.correlator.correlate(analysis, repo_id)
         self._check_cancelled()
         
         # 2. Impact
+        _report_progress(2, total_steps, "Analyzing impact on files and functions")
         impacts = self.impact_analyzer.analyze(
             analysis.get("semantic_graph", {}),
             correlation.assessments
@@ -56,20 +65,23 @@ class MigrationPipeline:
         self._check_cancelled()
         
         # 3. Risk
+        _report_progress(3, total_steps, "Classifying migration risk")
         total_files = len(analysis.get("semantic_graph", {}).get("files", {}))
         risks = self.risk_classifier.classify(correlation.assessments, impacts, total_files)
         self._check_cancelled()
         
         # 4. Report
+        _report_progress(4, total_steps, "Generating health report")
         report = self.report_generator.generate(correlation, impacts, risks, analysis)
         self._check_cancelled()
         
         # 5. Document
+        _report_progress(5, total_steps, "Generating migration document")
         document = self.document_generator.generate(report)
         self._check_cancelled()
         
         # 6. Metadata Branch
-        # Use provided analysis_id or fallback to a short hash if missing
+        _report_progress(6, total_steps, "Saving artifacts to repoheal.meta branch")
         final_analysis_id = analysis_id or analysis.get("analysis_id") or uuid.uuid4().hex[:10]
         
         self.metadata_manager.save_migration_artifacts(

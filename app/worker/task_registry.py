@@ -758,9 +758,35 @@ def run_analysis_in_background(
         # --- Phase: Migration pipeline ---
         from app.intelligence.webtool_client import WebtoolClient as _Webtool
 
+        # Calculate ETA for the whole pipeline based on number of libraries/symbols
+        _fingerprints = analysis.get("fingerprints", {})
+        _dep_graph = analysis.get("dependency_graph", {})
+        _libs_to_check = [lib for lib, fp in _fingerprints.items()
+                          if fp.get("symbols") and lib in _dep_graph]
+        _symbol_count = sum(len(_fingerprints[lib].get("symbols", [])) for lib in _libs_to_check)
+        _per_symbol_s = 6  # rough estimate per symbol for web discovery
+        _estimated_total_seconds = 15 + _symbol_count * _per_symbol_s
+        _migration_start = dt_mod.now(tz_mod.utc)
+
+        def _migration_progress(step: int, total_steps: int, msg: str):
+            nonlocal _migration_start
+            pct = 95 + int(step / total_steps * 4)  # maps steps to 95-99% range
+            elapsed = (dt_mod.now(tz_mod.utc) - _migration_start).total_seconds()
+            remaining = max(0, _estimated_total_seconds - elapsed)
+            eta_str = f"~{int(remaining)}s" if remaining < 120 else f"~{int(remaining // 60)}m {int(remaining % 60)}s" if remaining < 3600 else f">1h"
+            full_msg = f"{msg} | ETA: {eta_str}"
+
+            set_analysis_progress(
+                job_id, repo_owner, repo_name, JobStatus.GENERATING_MIGRATIONS, pct,
+                full_msg, job_type=job_type, selected_branch=selected_branch,
+                target_commit_sha=commit_sha, current_head=current_head,
+                analysis_id=analysis_id, repository_snapshot_id=snapshot_id,
+                current_step=msg.split(" ")[0].lower(),
+            )
+
         set_analysis_progress(
             job_id, repo_owner, repo_name, JobStatus.GENERATING_MIGRATIONS, 95,
-            "Correlating intelligence and generating migration documents",
+            "Querying Restricted Webtool for API intelligence (this can take a while)",
             job_type=job_type, selected_branch=selected_branch,
             target_commit_sha=commit_sha, current_head=current_head,
             analysis_id=analysis_id, repository_snapshot_id=snapshot_id,
@@ -784,6 +810,7 @@ def run_analysis_in_background(
                         analysis_id=analysis_id,
                         source_branch=selected_branch,
                         commit_sha=commit_sha,
+                        progress_callback=_migration_progress,
                     )
                     logger.info(f"Migration pipeline finished for {repo_id} with score {report.overall_health_score}")
                 finally:
@@ -791,6 +818,21 @@ def run_analysis_in_background(
 
             asyncio.run(run_pipeline())
             _pipeline_success = True
+
+            # Phase 5.5: Check webtool responded — flag empty correlation as warning
+            from app.github.metadata_branch import MetadataBranchManager as _MetaMgr
+            _meta_mgr = _MetaMgr(github_client)
+            _report_data = _meta_mgr.load_latest_report(repo_obj)
+            if _report_data and _report_data.get("report"):
+                _r = _report_data["report"]
+                _assessments = _r.get("assessments", []) if isinstance(_r, dict) else []
+                _deprecated = [a for a in _assessments if a.get("status") == "deprecated"]
+                _breaking = [a for a in _assessments if a.get("status") == "breaking"]
+                if not _deprecated and not _breaking:
+                    logger.warning(
+                        f"Webtool returned no actionable assessments for {repo_id} — "
+                        "discovery pipeline may still be populating data"
+                    )
         except Exception as pipeline_err:
             logger.error(f"Migration pipeline failed for {repo_id}: {pipeline_err}")
 

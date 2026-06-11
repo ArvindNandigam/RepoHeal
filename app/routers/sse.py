@@ -31,10 +31,26 @@ async def status_event_generator(request: Request, repo_owner: str, repo_name: s
         })
         
         if status:
+            message = status.get("message", "")
+            progress = status.get("progress", 0)
+            eta_seconds = None
+            if "ETA:" in message:
+                import re as _re
+                eta_match = _re.search(r"ETA:\s*([\d]+[smh])", message)
+                if eta_match:
+                    eta_raw = eta_match.group(1)
+                    if eta_raw.endswith("s"):
+                        eta_seconds = int(eta_raw[:-1])
+                    elif eta_raw.endswith("m"):
+                        eta_seconds = int(eta_raw[:-1]) * 60
+                    elif eta_raw.endswith("h"):
+                        eta_seconds = int(eta_raw[:-1]) * 3600
+
             current_state = {
                 "status": status.get("status"),
-                "progress": status.get("progress"),
-                "message": status.get("message"),
+                "progress": progress,
+                "message": message,
+                "eta_seconds": eta_seconds,
                 "job_id": status.get("job_id"),
                 "analysis_id": status.get("analysis_id"),
                 "repository_snapshot_id": status.get("repository_snapshot_id"),

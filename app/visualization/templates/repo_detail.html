@@ -66,6 +66,7 @@
         <span data-status-message style="color: var(--muted); font-size: 13px;">Loading...</span>
         <div class="repo-progress"><span data-progress-bar></span></div>
       </div>
+      <div data-eta-display style="display:none; font-size: 12px; color: var(--muted); margin-bottom: 8px; text-align: center;"></div>
       <div class="stat-grid">
         <div class="stat-box"><div class="label">Last Analysis</div><div class="value" data-last-analysis>--</div></div>
         <div class="stat-box"><div class="label">Status</div><div class="value" data-code-state>--</div></div>
@@ -247,6 +248,7 @@
       const badge = document.querySelector("[data-status-badge]");
       const msg = document.querySelector("[data-status-message]");
       const bar = document.querySelector("[data-progress-bar]");
+      const etaDisplay = document.querySelector("[data-eta-display]");
       const lastAnalysis = document.querySelector("[data-last-analysis]");
       const codeState = document.querySelector("[data-code-state]");
       const currentHead = document.querySelector("[data-current-head]");
@@ -261,6 +263,39 @@
         else badge.classList.add("status");
       }
       if (msg) msg.textContent = `${data.message || ""} (${Number(data.progress || 0)}%)`;
+
+      // ETA display with coffee break message
+      if (etaDisplay) {
+        const eta = data.eta_seconds;
+        if (eta != null && eta > 0) {
+          let etaText = "";
+          if (eta >= 900) { // 15+ minutes
+            const mins = Math.floor(eta / 60);
+            etaText = `☕ Estimated time: ~${mins} minutes — grab a coffee break!`;
+            etaDisplay.style.color = "#f0a500";
+            etaDisplay.style.fontWeight = "bold";
+          } else if (eta >= 120) {
+            const mins = Math.floor(eta / 60);
+            const secs = eta % 60;
+            etaText = `Estimated time: ~${mins}m ${secs}s remaining`;
+            etaDisplay.style.color = "var(--muted)";
+            etaDisplay.style.fontWeight = "normal";
+          } else if (eta >= 30) {
+            etaText = `Estimated time: ~${eta}s remaining`;
+            etaDisplay.style.color = "var(--muted)";
+            etaDisplay.style.fontWeight = "normal";
+          } else {
+            etaText = `~${eta}s remaining`;
+            etaDisplay.style.color = "var(--muted)";
+            etaDisplay.style.fontWeight = "normal";
+          }
+          etaDisplay.textContent = etaText;
+          etaDisplay.style.display = "block";
+        } else {
+          etaDisplay.style.display = "none";
+        }
+      }
+
       if (bar) bar.style.setProperty("--progress-width", `${Math.max(0, Math.min(100, Number(data.progress || 0)))}%`);
       if (lastAnalysis) lastAnalysis.textContent = data.last_analysis || data.completed_at || "--";
       if (codeState) codeState.textContent = data.code_state_status || "--";
@@ -323,20 +358,35 @@
       sel.disabled = true;
       if (!branch) {
         sel.innerHTML = '<option value="">Select a branch first</option>';
+        sel.disabled = false;
         return;
       }
-      sel.innerHTML = '<option value="">Select a commit…</option>';
+      sel.innerHTML = '<option value="">Loading commits…</option>';
       try {
         const res = await fetch(`/repos/${OWNER}/${REPO}/commits?branch=${encodeURIComponent(branch)}`, { credentials: "same-origin" });
-        if (res.ok) {
-          for (const c of (await res.json()).commits.slice(0, 50)) {
-            const o = document.createElement("option");
-            o.value = c.sha; o.textContent = `${c.sha.slice(0,7)} — ${c.message.slice(0,60)}`;
-            sel.appendChild(o);
-          }
+        if (!res.ok) {
+          sel.innerHTML = `<option value="">Failed to load commits (${res.status})</option>`;
           sel.disabled = false;
+          return;
         }
-      } catch (_) { sel.disabled = false; }
+        const data = await res.json();
+        const commits = data.commits || [];
+        if (commits.length === 0) {
+          sel.innerHTML = '<option value="">No commits found on this branch</option>';
+          sel.disabled = false;
+          return;
+        }
+        sel.innerHTML = '<option value="">Select a commit…</option>';
+        for (const c of commits.slice(0, 50)) {
+          const o = document.createElement("option");
+          o.value = c.sha; o.textContent = `${c.sha.slice(0,7)} — ${c.message.slice(0,60)}`;
+          sel.appendChild(o);
+        }
+        sel.disabled = false;
+      } catch (err) {
+        sel.innerHTML = '<option value="">Error loading commits</option>';
+        sel.disabled = false;
+      }
     }
 
     populateBranches(branchSelect);

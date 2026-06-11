@@ -202,7 +202,7 @@ class HealthReportGenerator:
     def _render_executive_summary(self, report: HealthReport) -> str:
         summary = report.executive_summary
         return "\n".join([
-            "# Migration Health Report",
+            "# Migration Assessment",
             "",
             f"**Repository**: {report.repository}",
             f"**Generated**: {report.generated_at}",

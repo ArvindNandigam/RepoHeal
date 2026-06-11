@@ -31,7 +31,7 @@ class WebtoolClient:
         
         # Connection pooling config
         limits = httpx.Limits(max_keepalive_connections=20, max_connections=100)
-        timeout = httpx.Timeout(10.0, connect=5.0)
+        timeout = httpx.Timeout(300.0, connect=30.0)
         
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
@@ -113,6 +113,13 @@ class WebtoolClient:
             CacheManager.set(cache_key, result, ttl_seconds=86400)
             return result
 
+        return await self._coalesce_request(cache_key, outbound)
+
+    async def _request_fresh(self, method: str, endpoint: str, **kwargs):
+        """Same retry logic but bypasses CacheManager — always hits the webtool."""
+        async def outbound():
+            return await self._request_uncached(method, endpoint, **kwargs)
+        cache_key = f"fresh:{method}:{endpoint}:{json.dumps(kwargs, sort_keys=True, default=str)}"
         return await self._coalesce_request(cache_key, outbound)
 
     def _check_cancelled(self):
@@ -202,18 +209,18 @@ class WebtoolClient:
         return await self._request_with_retry("POST", endpoint, json=payload)
         
     async def get_symbol_intelligence(self, library: str, symbols: List[str]) -> Dict[str, Any]:
-        """Fetch intelligence for specific symbols in a library."""
+        """Fetch intelligence for specific symbols in a library (no cache — always hits the webtool)."""
         endpoint = "/symbol-intelligence"
         payload = {"library": library, "symbols": symbols}
-        return await self._request_with_retry("POST", endpoint, json=payload)
+        return await self._request_fresh("POST", endpoint, json=payload)
 
     async def get_bulk_intelligence(self, libraries: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Fetch intelligence for multiple libraries and symbols.
+        """Fetch intelligence for multiple libraries and symbols (no cache — always hits the webtool).
         Expected format for libraries: [{"library": "flask", "symbols": ["Flask.before_request"]}]
         """
         endpoint = "/bulk-library-intelligence"
         payload = {"libraries": libraries}
-        return await self._request_with_retry("POST", endpoint, json=payload)
+        return await self._request_fresh("POST", endpoint, json=payload)
 
     async def close(self):
         await self.client.aclose()
