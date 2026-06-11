@@ -16,7 +16,7 @@ router = APIRouter(tags=["library-intelligence"])
 
 
 @router.post("/bulk-library-intelligence")
-@limiter.limit("100/minute")
+@limiter.limit("3000/minute")
 async def bulk_library_intelligence(
     request: Request,
     service: MigrationEngine = Depends(get_migration_engine),
