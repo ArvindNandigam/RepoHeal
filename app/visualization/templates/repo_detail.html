@@ -70,6 +70,7 @@
       <div class="stat-grid">
         <div class="stat-box"><div class="label">Last Analysis</div><div class="value" data-last-analysis>--</div></div>
         <div class="stat-box"><div class="label">Status</div><div class="value" data-code-state>--</div></div>
+        <div class="stat-box"><div class="label">Branch</div><div class="value" data-last-branch>--</div></div>
         <div class="stat-box"><div class="label">HEAD</div><div class="value" data-current-head>--</div></div>
         <div class="stat-box"><div class="label">Last Analyzed</div><div class="value" data-last-commit>--</div></div>
       </div>
@@ -80,6 +81,7 @@
       <div class="grid-3">
         <button class="button secondary" type="button" data-action="analyze-latest" data-queued-text="Queued...">Latest Commit</button>
         <button class="button secondary" type="button" data-action="analyze-branch" data-queued-text="Queued...">Analyze Branch</button>
+        <button class="button secondary" type="button" data-action="analyze-commit" disabled data-queued-text="Queued...">Analyze Commit</button>
         <button class="button tertiary" type="button" data-action="reanalyze" data-queued-text="Queued...">Refresh Analysis</button>
         <button class="button tertiary" type="button" data-action="health" data-queued-text="Queued...">Refresh Health Report</button>
       </div>
@@ -251,6 +253,7 @@
       const etaDisplay = document.querySelector("[data-eta-display]");
       const lastAnalysis = document.querySelector("[data-last-analysis]");
       const codeState = document.querySelector("[data-code-state]");
+      const lastBranch = document.querySelector("[data-last-branch]");
       const currentHead = document.querySelector("[data-current-head]");
       const lastCommit = document.querySelector("[data-last-commit]");
 
@@ -299,6 +302,7 @@
       if (bar) bar.style.setProperty("--progress-width", `${Math.max(0, Math.min(100, Number(data.progress || 0)))}%`);
       if (lastAnalysis) lastAnalysis.textContent = data.last_analysis || data.completed_at || "--";
       if (codeState) codeState.textContent = data.code_state_status || "--";
+      if (lastBranch) lastBranch.textContent = data.selected_branch || (data.job_type === "analysis" ? "main" : "--");
       if (currentHead) currentHead.textContent = data.current_head ? data.current_head.slice(0, 7) : "--";
       if (lastCommit) lastCommit.textContent = data.last_commit_analyzed ? data.last_commit_analyzed.slice(0, 7) : "--";
     }
@@ -424,6 +428,21 @@
         const response = await queueAnalyze(payload);
         return { payload, response };
       }, "Analysis")
+    );
+    const analyzeCommitBtn = document.querySelector('[data-action="analyze-commit"]');
+    function updateAnalyzeCommitBtn() {
+      if (!analyzeCommitBtn) return;
+      const hasCommit = commitSelect && !commitSelect.disabled && commitSelect.value.trim();
+      analyzeCommitBtn.disabled = !hasCommit;
+      analyzeCommitBtn.style.opacity = hasCommit ? "1" : "0.4";
+    }
+    commitSelect.addEventListener("change", updateAnalyzeCommitBtn);
+    analyzeCommitBtn.addEventListener("click", (e) =>
+      clickAndQueue(e.currentTarget, async () => {
+        const payload = targetPayload("commit");
+        const response = await queueAnalyze(payload);
+        return { payload, response };
+      }, "Commit analysis")
     );
     document.querySelector('[data-action="reanalyze"]').addEventListener("click", (e) =>
       clickAndQueue(e.currentTarget, async () => {

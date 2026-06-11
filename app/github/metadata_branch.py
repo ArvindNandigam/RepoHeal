@@ -206,6 +206,7 @@ class MetadataBranchManager:
             "migration_id": migration_id,
             "analysis_id": analysis_id,
             "repository_snapshot_id": analysis.get("repository_snapshot_id", ""),
+            "branch": source_branch,
             "generated_from_commit": commit_sha,
             "generated_at": refreshed_at.isoformat(),
             "health_score": getattr(report, "overall_health_score", 0),

@@ -54,6 +54,8 @@ async def get_health_report_data(
         report = data.get("report", {})
         return {
             **report,
+            "branch": data.get("branch"),
+            "commit_sha": data.get("generated_from_commit"),
             "generated_at": data.get("generated_at"),
             "analysis_id": data.get("analysis_id"),
             "repository_snapshot_id": data.get("repository_snapshot_id"),

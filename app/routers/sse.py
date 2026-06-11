@@ -37,15 +37,18 @@ async def status_event_generator(request: Request, repo_owner: str, repo_name: s
             eta_seconds = None
             if "ETA:" in message:
                 import re as _re
-                eta_match = _re.search(r"ETA:\s*([\d]+[smh])", message)
-                if eta_match:
-                    eta_raw = eta_match.group(1)
-                    if eta_raw.endswith("s"):
-                        eta_seconds = int(eta_raw[:-1])
-                    elif eta_raw.endswith("m"):
-                        eta_seconds = int(eta_raw[:-1]) * 60
-                    elif eta_raw.endswith("h"):
-                        eta_seconds = int(eta_raw[:-1]) * 3600
+                total = 0
+                for eta_match in _re.finditer(r"([\d]+)\s*([smh])", message.split("ETA:")[-1]):
+                    val = int(eta_match.group(1))
+                    unit = eta_match.group(2)
+                    if unit == "s":
+                        total += val
+                    elif unit == "m":
+                        total += val * 60
+                    elif unit == "h":
+                        total += val * 3600
+                if total > 0:
+                    eta_seconds = total
 
             def _to_str(val):
                 if isinstance(val, datetime):
@@ -61,13 +64,17 @@ async def status_event_generator(request: Request, repo_owner: str, repo_name: s
                 "analysis_id": status.get("analysis_id"),
                 "repository_snapshot_id": status.get("repository_snapshot_id"),
                 "job_type": status.get("job_type"),
+                "selected_branch": status.get("selected_branch"),
+                "target_commit_sha": status.get("target_commit_sha"),
+                "current_head": status.get("current_head"),
+                "last_commit_analyzed": status.get("last_commit_analyzed"),
                 "last_analysis": _to_str(status.get("last_analysis")),
                 "last_health_refresh": _to_str(status.get("last_health_refresh")),
                 "code_state_status": status.get("code_state_status"),
             }
             
             if current_state != last_status:
-                yield f"event: analysis\ndata: {json.dumps(current_state)}\n\n"
+                yield f"data: {json.dumps(current_state)}\n\n"
                 last_status = current_state
         
         # Migration and PR status (check manifest every 10 iterations = ~20s)
