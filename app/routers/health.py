@@ -20,3 +20,8 @@ def healthz():
         "status": "healthy",
         "mongodb": "healthy" if check_mongo_health() else "unhealthy"
     }
+from fastapi import Response
+
+@router.head("/healthz")
+def healthz_head():
+    return Response(status_code=200)
