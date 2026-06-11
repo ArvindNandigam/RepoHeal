@@ -31,3 +31,8 @@ def health(request: Request) -> dict:
         "uptime_seconds": uptime_seconds,
     }
 
+from fastapi import Response
+
+@router.head("/healthz")
+def healthz_head():
+    return Response(status_code=200)
