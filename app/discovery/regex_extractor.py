@@ -35,28 +35,58 @@ def extract_arrow_patterns(text: str) -> list[dict]:
     Extracts patterns like:
     A -> B
     A replaced by B
+    A is deprecated, use B
+    A deprecated in favor of B
     etc.
     """
     relationships = []
-    
-    # Common transition phrases
-    phrases = [
-        r"->", r"→", r"replaced\s+by", r"renamed\s+to", r"migrated\s+to", 
-        r"use\s+([^\s]+)\s+instead", r"should\s+be\s+replaced\s+with", 
-        r"is\s+no\s+longer\s+supported;?\s+use", r"superseded\s+by", 
-        r"becomes", r"replaced\s+with"
-    ]
-    
-    for phrase in phrases:
-        # Match "Symbol A [phrase] Symbol B"
-        # Exception: "use B instead (of A)" has a different order, but the regex above matches "use B instead"
-        if "instead" in phrase:
-             # Let's use a broader regex for all phrases for simplicity: 
-             # just find the phrase, grab token before and token after
-             pass
-        
-    # Better approach: precise regexes for A -> B
-    # A -> B, A → B, A replaced by B, A renamed to B, A migrated to B, A superseded by B, A becomes B, A replaced with B
+
+    # Patterns for deprecation language
+    deprecated_phrases = r"(?:is\s+)?deprecated\s+(?:since\s+[\d.]+\s*[,;]?\s*)?(?:in\s+favor\s+of\s+|\.\s*use\s+|,\s*use\s+|;?\s*use\s+)"
+    deprecated_pattern = rf"([a-zA-Z0-9_\.]+)\s*(?:\(\))?\s*{deprecated_phrases}\s*([a-zA-Z0-9_\.]+)(?:\(\))?"
+    for match in re.finditer(deprecated_pattern, text, re.IGNORECASE):
+        from_sym = normalize_symbol(match.group(1))
+        to_sym = normalize_symbol(match.group(2))
+        if is_valid_symbol(from_sym) and is_valid_symbol(to_sym) and from_sym != to_sym:
+            relationships.append({
+                "from": from_sym,
+                "relation": "deprecated_in_favor_of",
+                "to": to_sym,
+                "confidence": 1.0,
+                "extraction_method": "regex"
+            })
+
+    # "deprecated since version X" — marks the deprecation version, no replacement
+    dep_version_phrases = r"(?:is\s+)?deprecated\s+(?:as\s+of|since|from)\s+version\s+([\d.]+)"
+    dep_version_pattern = rf"([a-zA-Z0-9_\.]+)\s*(?:\(\))?\s*{dep_version_phrases}"
+    for match in re.finditer(dep_version_pattern, text, re.IGNORECASE):
+        from_sym = normalize_symbol(match.group(1))
+        ver_sym = normalize_symbol(match.group(2))
+        if is_valid_symbol(from_sym):
+            relationships.append({
+                "from": from_sym,
+                "relation": "deprecated_in",
+                "to": ver_sym,
+                "confidence": 1.0,
+                "extraction_method": "regex"
+            })
+
+    # "removed in version X"
+    removed_phrases = r"(?:is\s+)?removed\s+(?:as\s+of|since|from|in)\s+(?:version\s+)?([\d.]+)"
+    removed_pattern = rf"([a-zA-Z0-9_\.]+)\s*(?:\(\))?\s*{removed_phrases}"
+    for match in re.finditer(removed_pattern, text, re.IGNORECASE):
+        from_sym = normalize_symbol(match.group(1))
+        ver_sym = normalize_symbol(match.group(2))
+        if is_valid_symbol(from_sym):
+            relationships.append({
+                "from": from_sym,
+                "relation": "removed_in",
+                "to": ver_sym,
+                "confidence": 1.0,
+                "extraction_method": "regex"
+            })
+            
+    # Forward transition patterns
     forward_phrases = r"(?:->|→|(?:was\s+|is\s+|has\s+been\s+)?replaced\s+by|(?:was\s+|is\s+|has\s+been\s+)?renamed\s+to|(?:was\s+|is\s+|has\s+been\s+)?migrated\s+to|(?:was\s+|is\s+|has\s+been\s+)?superseded\s+by|becomes|(?:was\s+|is\s+|has\s+been\s+)?replaced\s+with|should\s+be\s+replaced\s+with|is\s+no\s+longer\s+supported;?\s*use)"
     
     pattern = rf"([a-zA-Z0-9_\.]+)\s*(?:\(\))?\s*{forward_phrases}\s*([a-zA-Z0-9_\.]+)(?:\(\))?"
@@ -68,7 +98,7 @@ def extract_arrow_patterns(text: str) -> list[dict]:
         if is_valid_symbol(from_sym) and is_valid_symbol(to_sym) and from_sym != to_sym:
             relationships.append({
                 "from": from_sym,
-                "relation": "replaced_by",
+                "relation": "deprecated_in_favor_of",
                 "to": to_sym,
                 "confidence": 1.0,
                 "extraction_method": "regex"

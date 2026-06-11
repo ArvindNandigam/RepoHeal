@@ -86,8 +86,8 @@ class MigrationEngine:
             known_symbol = self.knowledge_repository.lookup_symbol(symbol)
             known_relationships = self.knowledge_repository.lookup_relationships(symbol)
             
-            if known_symbol:
-                # Cache HIT!
+            if known_symbol and known_relationships:
+                # Cache HIT — symbol has relationships
                 results.append({
                     "symbol": symbol,
                     "known": True,
@@ -95,6 +95,12 @@ class MigrationEngine:
                     "_debug": {"flow": "mongo_hit"} if debug else None
                 })
                 continue
+
+            if known_symbol and not known_relationships:
+                # Symbol exists but has stale/empty relationships — re-run discovery
+                # (don't return cached empty — fall through to discovery below)
+                if debug:
+                    logger.info("Symbol %s has empty relationships, re-running discovery", symbol)
                 
             # Miss: we don't know the symbol — run discovery first, insert after
                 
@@ -127,12 +133,11 @@ class MigrationEngine:
             ranked_results = rank_sources(search_results)
             if debug: debug_trace["ranked_results"] = [{"title": r.get("title"), "url": r.get("url"), "score": r.get("score")} for r in ranked_results]
             
-            # Step 3 & 4: Fetch pages and extraction
+            # Step 3 & 4: Fetch pages and extraction (HYBRID mode)
+            # Fetch ALL pages first, then run both regex AND Groq on everything,
+            # then merge and deduplicate results from both extractors.
             
-            # PHASE 1: Regex Extraction
-            # We process pages until we find a validated regex relationship.
-            found_valid_regex = False
-            page_data_cache = [] # Cache pages we fetch in case we need Groq fallback
+            page_data_cache = []
             
             for result in ranked_results:
                 url = result.get("url")
@@ -146,61 +151,66 @@ class MigrationEngine:
                 if not snippets: continue
                 if debug: debug_trace["snippets_extracted"].extend(snippets)
                 
-                # Cache for groq just in case
                 page_data_cache.append({"url": url, "page_text": page_text, "snippets": snippets})
-                
-                regex_rels = extract_relationships_regex(symbol, library, snippets)
+            
+            if not page_data_cache:
+                # No content fetched — skip discovery for this symbol
+                if debug: debug_trace["skip_reason"] = "no_page_content"
+                self.knowledge_repository.insert_symbol(symbol, library)
+                results.append({
+                    "symbol": symbol,
+                    "known": False,
+                    "relationships": [],
+                    "_debug": debug_trace
+                })
+                continue
+            
+            # Run BOTH extractors on all fetched content
+            all_rels = []
+            
+            # PHASE 1: Regex extraction on every page
+            if debug: debug_trace["regex_used"] = True
+            for page_data in page_data_cache:
+                regex_rels = extract_relationships_regex(symbol, library, page_data["snippets"])
                 if regex_rels:
                     if debug:
-                        debug_trace["regex_used"] = True
                         debug_trace["regex_relationships"].extend(regex_rels)
                         debug_trace["relationships_extracted"].extend(regex_rels)
-                        
-                    deduped = _deduplicate_relationships(regex_rels)
-                    if debug: debug_trace["deduplicated_relationships"].extend(deduped)
-                    
-                    for rel in deduped:
-                        is_valid, rejection_reason = validate_relationship(rel, page_text)
-                        if debug: 
-                            debug_trace["validation_results"].append({"relationship": rel, "valid": is_valid})
-                            if not is_valid:
-                                debug_trace["rejected_relationships"].append({"relationship": rel, "reason": rejection_reason})
-                        
-                        if is_valid:
-                            self._store_relationship(rel, url, snippets, known_relationships, library, debug_trace)
-                            found_valid_regex = True
-                            
-                # If regex found valid relationships on this page, we STOP entirely.
-                if found_valid_regex:
-                    if debug: debug_trace["skip_reason"] = "regex_relationship_found"
-                    break
-                    
-            # PHASE 2: Groq Fallback
-            if not found_valid_regex:
-                if debug: debug_trace["groq_used"] = True
+                    all_rels.extend(regex_rels)
+            
+            # PHASE 2: Groq extraction on all snippets (always runs alongside regex)
+            if debug: debug_trace["groq_used"] = True
+            all_snippets = [s for page in page_data_cache for s in page["snippets"]]
+            groq_rels = extract_relationships_groq(symbol, library, all_snippets, ranked_results)
+            if groq_rels:
+                if debug:
+                    debug_trace["groq_relationships"].extend(groq_rels)
+                    debug_trace["relationships_extracted"].extend(groq_rels)
+                all_rels.extend(groq_rels)
+            
+            # MERGE: deduplicate across both methods, highest confidence wins
+            if all_rels:
+                deduped = _deduplicate_relationships(all_rels)
+                if debug: debug_trace["deduplicated_relationships"] = deduped
                 
-                all_snippets = [s for page in page_data_cache for s in page["snippets"]]
-                if all_snippets:
-                    groq_rels = extract_relationships_groq(symbol, library, all_snippets, ranked_results)
-                    if groq_rels:
-                        if debug:
-                            debug_trace["groq_relationships"].extend(groq_rels)
-                            debug_trace["relationships_extracted"].extend(groq_rels)
-                            
-                        deduped = _deduplicate_relationships(groq_rels)
-                        if debug: debug_trace["deduplicated_relationships"].extend(deduped)
-                        
-                        fallback_page = page_data_cache[0] if page_data_cache else None
-                        if fallback_page:
-                            for rel in deduped:
-                                is_valid, rejection_reason = validate_relationship(rel, fallback_page["page_text"])
-                                if debug:
-                                    debug_trace["validation_results"].append({"relationship": rel, "valid": is_valid})
-                                    if not is_valid:
-                                        debug_trace["rejected_relationships"].append({"relationship": rel, "reason": rejection_reason})
-                                        
-                                if is_valid:
-                                    self._store_relationship(rel, fallback_page["url"], fallback_page["snippets"], known_relationships, library, debug_trace)
+                for rel in deduped:
+                    # Use the first page that has evidence for this relationship
+                    evidence_page = page_data_cache[0]
+                    for page_data in page_data_cache:
+                        page_text_lower = page_data["page_text"].lower()
+                        if (rel.get("to", "").lower() in page_text_lower or 
+                            rel.get("from", "").lower() in page_text_lower):
+                            evidence_page = page_data
+                            break
+                    
+                    is_valid, rejection_reason = validate_relationship(rel, evidence_page["page_text"])
+                    if debug:
+                        debug_trace["validation_results"].append({"relationship": rel, "valid": is_valid})
+                        if not is_valid:
+                            debug_trace["rejected_relationships"].append({"relationship": rel, "reason": rejection_reason})
+                    
+                    if is_valid:
+                        self._store_relationship(rel, evidence_page["url"], evidence_page["snippets"], known_relationships, library, debug_trace)
 
             # Discovery completed without crashing — NOW insert the symbol as known
             self.knowledge_repository.insert_symbol(symbol, library)
