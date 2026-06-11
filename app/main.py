@@ -62,7 +62,7 @@ def create_app() -> FastAPI:
         operational_repository = get_operational_repository()
         start = perf_counter()
 
-        if request.url.path != "/health":
+        if request.url.path != "/health" and request.url.path != "/healthz":
             raw_token = _extract_bearer_token(request)
             if raw_token is None:
                 response = _failure_response("unauthorized", 401)
