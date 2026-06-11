@@ -48,7 +48,7 @@ def fingerprint_libraries(analysis: Dict[str, Any]) -> bool:
 
 class HealthReportGenerator:
     def generate(self, correlation: CorrelationResult, impacts: List[ImpactReport], risks: List[RiskAssessment], analysis: Dict[str, Any]) -> HealthReport:
-        # Calculate Executive Summary metrics
+        # Health Score: how healthy is the repo today (0-100)
         overall_health_score = 100
         critical_count = 0
         
@@ -60,15 +60,20 @@ class HealthReportGenerator:
         deprecated_count = sum(1 for a in correlation.assessments if a.status == "deprecated")
         breaking_count = sum(1 for a in correlation.assessments if a.status == "breaking")
         
-        overall_risk_score = compute_overall_risk_score_from_inputs(
+        # Migration Risk: how risky would upgrading be (0-100)
+        migration_risk_score = compute_overall_risk_score_from_inputs(
             risks, deprecated_count, breaking_count
         )
-        if overall_risk_score >= 70 or overall_health_score < 40:
-            overall_risk_level = "high"
-        elif overall_risk_score >= 40 or overall_health_score < 70:
-            overall_risk_level = "medium"
+        if migration_risk_score >= 70:
+            migration_risk_level = "high"
+        elif migration_risk_score >= 40:
+            migration_risk_level = "medium"
         else:
-            overall_risk_level = "low"
+            migration_risk_level = "low"
+            
+        # Keep old fields for backward compat
+        overall_risk_score = migration_risk_score
+        overall_risk_level = migration_risk_level
             
         exec_summary = ExecutiveSummary(
             overall_health_score=overall_health_score,
@@ -156,6 +161,8 @@ class HealthReportGenerator:
             overall_health_score=overall_health_score,
             overall_risk_score=overall_risk_score,
             overall_risk_level=overall_risk_level,
+            migration_risk_score=migration_risk_score,
+            migration_risk_level=migration_risk_level,
             intelligence_warnings=intelligence_warnings,
             executive_summary=exec_summary,
             dependency_inventory=inventory,
@@ -200,7 +207,8 @@ class HealthReportGenerator:
             f"**Repository**: {report.repository}",
             f"**Generated**: {report.generated_at}",
             f"**Overall Health Score**: {report.overall_health_score}/100",
-            f"**Overall Risk Level**: {report.overall_risk_level.upper()}",
+            f"**Migration Risk Score**: {report.migration_risk_score}/100",
+            f"**Migration Risk Level**: {report.migration_risk_level.upper()}",
             "",
             "## Executive Summary",
             "",

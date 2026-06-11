@@ -18,8 +18,13 @@ logger = get_logger(__name__)
 EXTERNAL_API_ROOTS = {
     "boto3",
     "cv2",
+    "matplotlib",
+    "numpy",
     "openai",
+    "pandas",
     "requests",
+    "scipy",
+    "seaborn",
     "sklearn",
     "torch",
 }
@@ -100,6 +105,18 @@ def extract_imports_from_python_source(source, module_index=None, import_aliases
                 for imported in node.names:
                     local_name = imported.asname or imported.name
                     import_aliases[local_name] = f"{node.module}.{imported.name}"
+
+        # Track variable origins: df -> pandas (from df = pd.DataFrame(...))
+        variable_origins = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Attribute):
+                call_chain = _attribute_chain_parts(node.value.func)
+                if call_chain and len(call_chain) >= 2:
+                    lhs_root = call_chain[0]
+                    resolved = import_aliases.get(lhs_root, lhs_root)
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            variable_origins[target.id] = normalize_package_name(resolved)
 
         for node in ast.walk(tree):
 
@@ -197,14 +214,14 @@ def extract_imports_from_python_source(source, module_index=None, import_aliases
                 parts = chain_parts
                 leftmost = parts[0]
 
-                # resolve alias if present
-                resolved_root = import_aliases.get(leftmost, leftmost)
+                # resolve alias if present, also check variable origins
+                resolved_root = import_aliases.get(leftmost, variable_origins.get(leftmost, leftmost))
                 canonical_root = normalize_package_name(resolved_root)
 
                 # strict heuristic: only synthesize if leftmost is an import alias, known normalized import, external root, or local module
                 should_synthesize = False
 
-                if leftmost in import_aliases:
+                if leftmost in import_aliases or leftmost in variable_origins:
                     should_synthesize = True
 
                 if canonical_root in EXTERNAL_API_ROOTS:
@@ -369,6 +386,18 @@ def extract_python_semantics(source, module_name=None, module_index=None):
                     local_name = imported.asname or imported.name
                     import_aliases[local_name] = f"{node.module}.{imported.name}"
 
+        # Track variable origins: df -> pandas (from df = pd.DataFrame(...))
+        variable_origins = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Attribute):
+                call_chain = _attribute_chain_parts(node.value.func)
+                if call_chain and len(call_chain) >= 2:
+                    lhs_root = call_chain[0]
+                    resolved = import_aliases.get(lhs_root, lhs_root)
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            variable_origins[target.id] = normalize_package_name(resolved)
+
         function_stack = []
 
         class SemanticVisitor(ast.NodeVisitor):
@@ -388,7 +417,7 @@ def extract_python_semantics(source, module_name=None, module_index=None):
 
                 if call_name:
                     root_name = call_name.split(".")[0]
-                    resolved_root = import_aliases.get(root_name, root_name)
+                    resolved_root = import_aliases.get(root_name, variable_origins.get(root_name, root_name))
                     canonical_root = normalize_package_name(resolved_root)
 
                     is_local = is_local_import(

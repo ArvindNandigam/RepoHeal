@@ -114,6 +114,8 @@ class HealthReport(BaseModel):
     overall_health_score: int
     overall_risk_score: int = 0
     overall_risk_level: str
+    migration_risk_score: int = 0
+    migration_risk_level: str = "unknown"
     intelligence_warnings: List[str] = Field(default_factory=list)
     executive_summary: ExecutiveSummary
     dependency_inventory: List[DependencyEntry] = Field(default_factory=list)

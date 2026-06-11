@@ -64,9 +64,9 @@
     <div id="reportContent" class="hidden">
       <div class="panel grid-4">
         <div class="stat"><span>Health Score</span><strong id="healthScore">--</strong></div>
+        <div class="stat"><span>Migration Risk</span><strong id="migrationRiskScore">--</strong></div>
         <div class="stat"><span>Issues</span><strong id="issueCount">--</strong></div>
         <div class="stat"><span>Recommendations</span><strong id="recCount">--</strong></div>
-        <div class="stat"><span>Risk Level</span><strong id="riskLevel">--</strong></div>
       </div>
 
       <div class="panel">
@@ -112,7 +112,7 @@
           <a id="fullHistoryLink" class="btn" href="#">View Full Timeline →</a>
         </div>
         <table id="historyTable">
-          <thead><tr><th>Timestamp</th><th>Branch</th><th>Commit</th><th>Score</th></tr></thead>
+          <thead><tr><th>Timestamp</th><th>Branch</th><th>Commit</th><th>Health</th></tr></thead>
           <tbody></tbody>
         </table>
         <div id="historyEmpty" class="empty-state hidden">No analysis history available.</div>
@@ -159,7 +159,17 @@
 
         document.getElementById("issueCount").textContent = data.executive_summary?.critical_findings_count || data.risk_assessment?.length || 0;
         document.getElementById("recCount").textContent = data.recommended_actions?.length || 0;
-        document.getElementById("riskLevel").textContent = (data.overall_risk_level || "unknown").toUpperCase();
+
+        const migScore = data.migration_risk_score != null ? data.migration_risk_score : data.overall_risk_score;
+        const migLevel = data.migration_risk_level || data.overall_risk_level || "unknown";
+        const migEl = document.getElementById("migrationRiskScore");
+        if (migScore != null) {
+          migEl.textContent = `${migScore}/100`;
+          migEl.className = migScore > 70 ? "score-low" : migScore > 40 ? "score-med" : "score-high";
+        } else {
+          migEl.textContent = migLevel.toUpperCase();
+          migEl.className = migLevel === "high" ? "score-low" : migLevel === "medium" ? "score-med" : "score-high";
+        }
 
         const summary = data.executive_summary || {};
         const summaryEl = document.getElementById("execSummary");

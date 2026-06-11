@@ -338,6 +338,7 @@
 
     .pill.health { background: rgba(66,214,164,0.15); color: var(--accent); border-color: rgba(66,214,164,0.25); }
     .pill.risk { background: rgba(249,112,102,0.15); color: var(--danger); border-color: rgba(249,112,102,0.25); }
+    .pill.migration-risk { background: rgba(239,131,84,0.15); color: var(--accent-3); border-color: rgba(239,131,84,0.25); }
 
     .repo-progress {
       height: 4px;
@@ -840,7 +841,7 @@ async function refreshRepositoryStatus(repo) {
       if (healthRes.ok) {
         const healthData = await healthRes.json();
         const healthBadge = card.querySelector("[data-health-badge]");
-        const riskBadge = card.querySelector("[data-risk-badge]");
+        const migRiskBadge = card.querySelector("[data-migration-risk-badge]");
         if (healthBadge && healthData.overall_health_score != null) {
           const score = healthData.overall_health_score;
           healthBadge.style.display = "inline-flex";
@@ -848,12 +849,13 @@ async function refreshRepositoryStatus(repo) {
           healthBadge.style.background = score > 70 ? "rgba(66,214,164,0.2)" : score > 40 ? "rgba(244,201,93,0.2)" : "rgba(249,112,102,0.2)";
           healthBadge.style.color = score > 70 ? "var(--accent)" : score > 40 ? "var(--warning)" : "var(--danger)";
         }
-        if (riskBadge) {
-          const risk = healthData.overall_risk_level || "unknown";
-          riskBadge.style.display = "inline-flex";
-          riskBadge.textContent = `Risk: ${risk.toUpperCase()}`;
-          riskBadge.style.background = risk === "low" ? "rgba(66,214,164,0.2)" : risk === "medium" ? "rgba(244,201,93,0.2)" : "rgba(249,112,102,0.2)";
-          riskBadge.style.color = risk === "low" ? "var(--accent)" : risk === "medium" ? "var(--warning)" : "var(--danger)";
+        if (migRiskBadge) {
+          const migScore = healthData.migration_risk_score != null ? healthData.migration_risk_score : healthData.overall_risk_score;
+          const migLevel = healthData.migration_risk_level || healthData.overall_risk_level || "unknown";
+          migRiskBadge.style.display = "inline-flex";
+          migRiskBadge.textContent = `Migration Risk: ${migScore != null ? migScore + '/100' : migLevel.toUpperCase()}`;
+          migRiskBadge.style.background = migLevel === "low" ? "rgba(66,214,164,0.2)" : migLevel === "medium" ? "rgba(244,201,93,0.2)" : "rgba(249,112,102,0.2)";
+          migRiskBadge.style.color = migLevel === "low" ? "var(--accent)" : migLevel === "medium" ? "var(--warning)" : "var(--danger)";
         }
       }
     } catch (e) {}
@@ -905,7 +907,7 @@ async function refreshRepositoryStatus(repo) {
           <div class="repo-progress"><span data-progress-bar></span></div>
           <div class="repo-card-bottom">
             <span class="pill health" data-health-badge style="display:none">Health: --</span>
-            <span class="pill risk" data-risk-badge style="display:none">Risk: --</span>
+            <span class="pill migration-risk" data-migration-risk-badge style="display:none">Migration Risk: --</span>
             <span data-last-analysis style="font-size:10px;color:var(--muted);flex:1;"></span>
             <span data-status-message style="display:none"></span>
             <button class="button tertiary" type="button" data-action="analyze-latest" data-queued-text="...">Analyze</button>
@@ -1053,14 +1055,14 @@ async function refreshRepositoryStatus(repo) {
             const item = document.createElement("div");
             item.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid var(--border);";
             const ts = m.timestamp ? new Date(m.timestamp).toLocaleString() : "N/A";
-            const riskScore = m.risk_score != null ? Number(m.risk_score) : null;
-            const riskLevel = (m.overall_risk_level || "").toUpperCase();
-            const riskText = riskScore != null
-              ? (riskLevel ? `${riskLevel} (${riskScore}/100)` : `${riskScore}/100`)
-              : (riskLevel || "?");
+            const migScore = m.migration_risk_score != null ? Number(m.migration_risk_score) : (m.risk_score != null ? Number(m.risk_score) : null);
+            const migLevel = (m.migration_risk_level || m.overall_risk_level || "").toUpperCase();
+            const riskText = migScore != null
+              ? (migLevel ? `${migLevel} (${migScore}/100)` : `${migScore}/100`)
+              : (migLevel || "?");
             item.innerHTML = `<span><strong>${repo.name}</strong> · <span style="color: var(--muted);">${ts}</span></span>
               <span style="display: flex; gap: 8px; align-items: center;">
-                <span style="color: ${riskScore != null && riskScore > 70 ? 'var(--danger)' : riskScore != null && riskScore > 30 ? 'var(--warning)' : 'var(--accent)'};">Migration risk: ${riskText}</span>
+                <span style="color: ${migScore != null && migScore > 70 ? 'var(--danger)' : migScore != null && migScore > 30 ? 'var(--warning)' : 'var(--accent)'};">Migration Risk: ${riskText}</span>
                 <a class="pill" href="/reports/${repo.owner}/${repo.repo}/migration-page?analysis_id=${m.analysis_id}">View</a>
                 <a class="pill" href="/reports/${repo.owner}/${repo.repo}/migration-review?migration_id=${m.migration_id || m.analysis_id}&repo_owner=${repo.owner}&repo_name=${repo.repo}">Review</a>
               </span>`;

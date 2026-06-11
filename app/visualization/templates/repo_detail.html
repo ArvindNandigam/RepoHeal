@@ -57,7 +57,7 @@
       <h1>{{ owner }}/{{ repo }}</h1>
       <span class="pill" data-status-badge>Loading</span>
       <span class="pill health" data-health-badge style="display:none">Health: --</span>
-      <span class="pill risk" data-risk-badge style="display:none">Risk: --</span>
+      <span class="pill risk" data-migration-risk-badge style="display:none">Migration Risk: --</span>
     </header>
 
     <div class="card">
@@ -78,17 +78,18 @@
       <h3>Analyze</h3>
       <div class="grid-3">
         <button class="button secondary" type="button" data-action="analyze-latest" data-queued-text="Queued...">Latest Commit</button>
-        <button class="button secondary" type="button" data-action="analyze-branch" data-queued-text="Queued...">Specific Branch</button>
-        <button class="button secondary" type="button" data-action="analyze-commit" data-queued-text="Queued...">Specific Commit</button>
+        <button class="button secondary" type="button" data-action="analyze-branch" data-queued-text="Queued...">Analyze Branch</button>
         <button class="button tertiary" type="button" data-action="reanalyze" data-queued-text="Queued...">Refresh Analysis</button>
         <button class="button tertiary" type="button" data-action="health" data-queued-text="Queued...">Refresh Health Report</button>
       </div>
       <div class="flex-row" style="margin-top: 12px;">
         <label class="field">
-          <select data-target-branch><option value="">Branch (default)</option></select>
+          <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-right:4px;">Branch</span>
+          <select data-target-branch><option value="">(default branch)</option></select>
         </label>
         <label class="field">
-          <select data-target-commit><option value="">Commit (latest)</option></select>
+          <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-right:4px;">Commit</span>
+          <select data-target-commit disabled><option value="">Select a branch first</option></select>
         </label>
       </div>
     </div>
@@ -157,7 +158,7 @@
         </label>
         <label class="field">
           <span style="font-size:11px;color:var(--muted);">Commit A</span>
-          <select id="commitA" class="field-select" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;min-width:180px;"><option value="">(latest)</option></select>
+          <select id="commitA" class="field-select" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;min-width:180px;" disabled><option value="">Select branch first</option></select>
         </label>
         <label class="field">
           <span style="font-size:11px;color:var(--muted);">Branch B</span>
@@ -165,7 +166,7 @@
         </label>
         <label class="field">
           <span style="font-size:11px;color:var(--muted);">Commit B</span>
-          <select id="commitB" class="field-select" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;min-width:180px;"><option value="">(latest)</option></select>
+          <select id="commitB" class="field-select" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;min-width:180px;" disabled><option value="">Select branch first</option></select>
         </label>
         <button class="button secondary" type="button" data-action="compare">Compare</button>
       </div>
@@ -234,7 +235,7 @@
 
     function targetPayload(mode) {
       const branch = branchSelect ? branchSelect.value.trim() : "";
-      const commit = commitSelect ? commitSelect.value.trim() : "";
+      const commit = commitSelect && !commitSelect.disabled ? commitSelect.value.trim() : "";
       return {
         mode: mode || (commit ? "commit" : branch ? "branch" : "latest"),
         branch: branch || null,
@@ -280,14 +281,16 @@
         if (healthRes.ok) {
           const h = await healthRes.json();
           const hb = document.querySelector("[data-health-badge]");
-          const rb = document.querySelector("[data-risk-badge]");
+          const rb = document.querySelector("[data-migration-risk-badge]");
           if (hb && h.overall_health_score != null) {
             hb.style.display = "inline-flex";
             hb.textContent = `Health: ${h.overall_health_score}/100`;
           }
-          if (rb && h.overall_risk_level) {
+          if (rb) {
+            const migScore = h.migration_risk_score != null ? h.migration_risk_score : h.overall_risk_score;
+            const migLevel = h.migration_risk_level || h.overall_risk_level || "unknown";
             rb.style.display = "inline-flex";
-            rb.textContent = `Risk: ${h.overall_risk_level.toUpperCase()}`;
+            rb.textContent = migScore != null ? `Migration Risk: ${migScore}/100` : `Risk: ${migLevel.toUpperCase()}`;
           }
         }
       } catch (_) {}
@@ -317,9 +320,12 @@
       } catch (_) {}
     }
     async function populateCommits(branch, sel) {
-      sel.innerHTML = '<option value="">Commit (latest)</option>';
       sel.disabled = true;
-      if (!branch) { sel.disabled = false; return; }
+      if (!branch) {
+        sel.innerHTML = '<option value="">Select a branch first</option>';
+        return;
+      }
+      sel.innerHTML = '<option value="">Select a commit…</option>';
       try {
         const res = await fetch(`/repos/${OWNER}/${REPO}/commits?branch=${encodeURIComponent(branch)}`, { credentials: "same-origin" });
         if (res.ok) {
@@ -355,7 +361,8 @@
 
     document.querySelector('[data-action="analyze-latest"]').addEventListener("click", (e) =>
       clickAndQueue(e.currentTarget, async () => {
-        const payload = { mode: "latest" };
+        const branch = branchSelect ? branchSelect.value.trim() : "";
+        const payload = branch ? { mode: "branch", branch: branch, commit_sha: null } : { mode: "latest" };
         const response = await queueAnalyze(payload);
         return { payload, response };
       }, "Analysis")
@@ -363,13 +370,6 @@
     document.querySelector('[data-action="analyze-branch"]').addEventListener("click", (e) =>
       clickAndQueue(e.currentTarget, async () => {
         const payload = targetPayload("branch");
-        const response = await queueAnalyze(payload);
-        return { payload, response };
-      }, "Analysis")
-    );
-    document.querySelector('[data-action="analyze-commit"]').addEventListener("click", (e) =>
-      clickAndQueue(e.currentTarget, async () => {
-        const payload = targetPayload("commit");
         const response = await queueAnalyze(payload);
         return { payload, response };
       }, "Analysis")
