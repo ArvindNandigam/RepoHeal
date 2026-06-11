@@ -125,3 +125,4 @@ class HealthReport(BaseModel):
     impact_reports: List[ImpactReport] = Field(default_factory=list)
     risk_assessment: List[RiskAssessment] = Field(default_factory=list)
     recommended_actions: List[RecommendedAction] = Field(default_factory=list)
+    compatibility_shims: str = ""

@@ -27,17 +27,23 @@ async def list_commits(
     branch: str = "main",
     user=Depends(verify_session_token)
 ):
+    from app.utils.logger import get_logger as _get_log
+    _log = _get_log(__name__)
     installation = ensure_repoheal_installed(repo_owner, repo_name)
     client = RepoHealGitHubClient(installation["id"])
     try:
         repo = client.github.get_repo(f"{repo_owner}/{repo_name}")
-        commits = []
-        for c in repo.get_commits(sha=branch, until=None, per_page=50):
-            commits.append({
-                "sha": c.sha,
-                "message": c.commit.message.split("\n")[0],
-                "date": c.commit.author.date.isoformat() if c.commit.author else None,
-            })
-        return {"commits": commits}
+        try:
+            commits = []
+            for c in repo.get_commits(sha=branch, per_page=50):
+                commits.append({
+                    "sha": c.sha,
+                    "message": c.commit.message.split("\n")[0],
+                    "date": c.commit.author.date.isoformat() if c.commit and c.commit.author else None,
+                })
+            return {"commits": commits}
+        except Exception as gh_err:
+            _log.warning("GitHub API error fetching commits for %s/%s branch=%s: %s", repo_owner, repo_name, branch, gh_err)
+            return {"commits": [], "error": str(gh_err)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

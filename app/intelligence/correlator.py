@@ -285,7 +285,7 @@ class MigrationCorrelator:
                 has_removed = True
                 if _is_version_gte(installed_version, rel.target):
                     return "breaking"
-            elif rel.relation == "deprecated_in_favor_of":
+            elif rel.relation in ("deprecated_in_favor_of", "replaced_by"):
                 has_deprecated = True
             elif rel.relation == "deprecated_in":
                 if _is_version_gte(installed_version, rel.target):

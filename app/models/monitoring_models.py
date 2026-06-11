@@ -84,7 +84,7 @@ class MonitorSchedule(BaseModel):
     digest_enabled: bool = True
     last_run: Optional[str] = None
     next_run: Optional[str] = None
-    updated_at: str
+    updated_at: Optional[str] = None
 
 
 class RepositoryRiskIndex(BaseModel):

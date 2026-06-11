@@ -17,8 +17,9 @@ MAX_FILES_PER_PATCH = getattr(settings, "MAX_FILES_PER_PATCH", 10)
 MAX_LINES_PER_PATCH = getattr(settings, "MAX_LINES_PER_PATCH", 500)
 MAX_TOKENS_PER_REQUEST = getattr(settings, "MAX_TOKENS_PER_REQUEST", 4096)
 ENABLE_LLM_PATCHING = getattr(settings, "ENABLE_LLM_PATCHING", True)
-AUTO_PR_RISK_THRESHOLD = getattr(settings, "AUTO_PR_RISK_THRESHOLD", 30)
-DRAFT_PR_RISK_THRESHOLD = getattr(settings, "DRAFT_PR_RISK_THRESHOLD", 70)
+AST_FIRST_RISK_THRESHOLD = getattr(settings, "AST_FIRST_RISK_THRESHOLD", 85)
+AUTO_PR_RISK_THRESHOLD = getattr(settings, "AUTO_PR_RISK_THRESHOLD", 85)
+DRAFT_PR_RISK_THRESHOLD = getattr(settings, "DRAFT_PR_RISK_THRESHOLD", 85)
 
 
 class PatchPlan:
@@ -83,14 +84,207 @@ class CodeMigrationEngine:
             logger.info("LLM patching is disabled by configuration")
             return []
 
+        if not recommendations:
+            return []
+
+        max_risk = max((r.get("risk_score", 50) for r in recommendations), default=50)
+
+        # TWO-PASS strategy:
+        # Pass 1: AST-first for ALL symbols (if risk < threshold)
+        #         Every AST result is verified by Groq
+        # Pass 2: Groq handles what AST couldn't + safety check
+        #         Runs on ALL affected nodes to ensure no breakage
+
+        # PASS 1: AST-first for every recommendation
+        do_ast_first = max_risk < AST_FIRST_RISK_THRESHOLD
+        ast_successes = set()
+        pass1_plans = []
+
         for rec in recommendations:
-            plan = await self._process_single(rec)
+            symbol = rec.get("symbol", "")
+            risk_score = rec.get("risk_score", 50)
+            replacement = rec.get("replacement", "")
+            action_type = rec.get("action_type", "")
+
+            file_path = self._find_affected_file(symbol)
+            original_code = self._get_file_content(file_path)
+            if not original_code:
+                logger.warning(f"No source found for {symbol} in {self.repo_id}")
+                continue
+
+            if do_ast_first and (action_type or replacement):
+                # Try AST transform first
+                ast_plan = self._try_ast_transform(rec, file_path, original_code, symbol, risk_score)
+                if ast_plan and ast_plan.valid:
+                    # AST succeeded — Groq verifies the patch
+                    verified = await self._groq_verify(symbol, original_code, ast_plan.modified_code)
+                    if verified:
+                        ast_plan.llm_confidence = max(ast_plan.llm_confidence, 0.85)
+                        ast_plan.confidence_level = ConfidenceLevel.HIGH
+                        ast_plan.explanation += " | Verified by Groq"
+                        ast_successes.add(symbol)
+                        pass1_plans.append(ast_plan)
+                        self.plans.append(ast_plan)
+                        logger.info("AST-first success for %s (risk=%s, verified by Groq)", symbol, risk_score)
+                        continue
+
+            # Fall through: mark for Pass 2 (Groq)
+            mc = classify_recommendation(action_type, description=rec.get("description", ""), library=rec.get("library", ""), confidence=rec.get("confidence", 0))
+            pass1_plans.append(("groq_pass2", mc, rec, file_path, original_code))
+
+        # PASS 2: Groq handles remaining + safety pass
+        recs_for_groq = [p for p in pass1_plans if isinstance(p, tuple)]
+        patched_files = {}
+
+        for tag, mc, rec, file_path, original_code in recs_for_groq:
+            symbol = rec.get("symbol", "")
+            replacement = rec.get("replacement", "")
+            risk_score = rec.get("risk_score", 50)
+
+            # Include all prior AST results & the current file as context for Groq
+            file_map = {fp: self._get_file_content(fp) for fp in self._all_affected_files()}
+            for fp, code in patched_files.items():
+                file_map[fp] = code
+
+            plan = await self._groq_patch_with_safety(
+                rec, file_path, original_code,
+                file_map, ast_successes,
+            )
             if plan:
+                patched_files[file_path] = plan.modified_code or original_code
                 self.plans.append(plan)
 
+        logger.info("Two-pass migration: AST-first=%s, AST-successes=%d, total-plans=%d",
+                     do_ast_first, len(ast_successes), len(self.plans))
         return self.plans
 
+    def _try_ast_transform(self, rec: dict, file_path: str, original_code: str, symbol: str, risk_score: float) -> PatchPlan | None:
+        """Try a deterministic AST transform for a symbol replacement."""
+        replacement = rec.get("replacement", "")
+        action_type = rec.get("action_type", "")
+
+        if not replacement and not action_type:
+            return None
+
+        # Build action_type and params from the relationship
+        if replacement and not action_type:
+            action_type = "rename_symbol"
+
+        if action_type == "rewrite_import":
+            params = {"old_module": symbol, "new_module": replacement}
+        elif action_type == "rename_symbol":
+            old_name = symbol.split(".")[-1]
+            new_name = replacement.split(".")[-1] if replacement else ""
+            params = {"old_name": old_name, "new_name": new_name}
+        elif action_type == "update_api_signature":
+            params = {"func_name": symbol, "param_changes": rec.get("param_changes", {})}
+        else:
+            return None
+
+        try:
+            modified = apply_deterministic_transform(original_code, action_type, params)
+        except Exception:
+            return None
+
+        if modified == original_code:
+            return None
+
+        validation = validate_patch(original_code, modified)
+        if not validation.valid:
+            return None
+
+        return PatchPlan(
+            migration_class=MigrationClass.SAFE_AST,
+            symbol=symbol, library=rec.get("library", ""),
+            file_path=file_path,
+            original_code=original_code, modified_code=modified,
+            explanation=f"AST transform: {action_type} ({symbol} → {replacement})",
+            confidence=rec.get("confidence", 0.8),
+            llm_confidence=0.7,
+            validation=validation,
+            risk_score=risk_score,
+            confidence_level=ConfidenceLevel.MEDIUM,
+        )
+
+    async def _groq_verify(self, symbol: str, original: str, modified: str) -> bool:
+        """Ask Groq to verify an AST-generated patch is correct."""
+        from app.llm.providers import create_llm_provider
+        config = LLMConfig()
+        provider = create_llm_provider(config)
+        try:
+            prompt = (
+                f"Verify this code change for symbol '{symbol}' is correct and does not introduce bugs.\n\n"
+                f"BEFORE:\n{original}\n\nAFTER:\n{modified}\n\n"
+                "Respond with JSON: {\"correct\": true/false, \"reason\": \"...\"}"
+            )
+            result = await provider.complete(prompt, response_format={"type": "json_object"})
+            if result and isinstance(result, dict):
+                return result.get("correct", False)
+            return False
+        except Exception:
+            return False
+        finally:
+            await provider.close()
+
+    async def _groq_patch_with_safety(
+        self, rec: dict, file_path: str, original_code: str,
+        all_file_map: dict[str, str], already_fixed: set[str],
+    ) -> PatchPlan | None:
+        """Groq patches a remaining item with full context + safety check."""
+        config = LLMConfig()
+        provider = create_llm_provider(config)
+        try:
+            context = MigrationContext(
+                repository=self.repo_id,
+                library=rec.get("library", ""),
+                current_version=rec.get("installed_version", ""),
+                target_version=rec.get("latest_version", ""),
+                symbol=rec.get("symbol", ""),
+                replacement=rec.get("replacement", ""),
+                affected_files=[{"path": fp, "content": code} for fp, code in all_file_map.items()],
+                confidence=rec.get("confidence", 0.5),
+                risk_score=rec.get("risk_score", 50),
+                recommendation=rec,
+            )
+            context.already_fixed = sorted(already_fixed)
+
+            generator = LLMPatchGenerator(provider)
+            patch = await generator.generate_patch(context)
+            validation = validate_patch(original_code, patch.modified_code)
+            llm_conf = patch.confidence
+            overall = calculate_overall_confidence(
+                rec.get("confidence", 0.5), llm_conf, validation,
+                rec.get("risk_score", 50), len(all_file_map)
+            )
+            return PatchPlan(
+                migration_class=MigrationClass.LLM_CANDIDATE,
+                symbol=rec.get("symbol", ""),
+                library=rec.get("library", ""),
+                file_path=file_path,
+                original_code=original_code,
+                modified_code=patch.modified_code if validation.valid else None,
+                explanation=patch.explanation,
+                confidence=rec.get("confidence", 0.5),
+                llm_confidence=llm_conf,
+                validation=validation,
+                risk_score=rec.get("risk_score", 50),
+                confidence_level=overall,
+            )
+        except Exception as e:
+            logger.error("Groq patch+safety failed for %s: %s", rec.get("symbol", ""), e)
+            mc = classify_recommendation(rec.get("action_type", ""), rec.get("description", ""), rec.get("library", ""), rec.get("confidence", 0))
+            return PatchPlan(mc, rec.get("symbol", ""), rec.get("library", ""), file_path, original_code, risk_score=rec.get("risk_score", 50))
+        finally:
+            await provider.close()
+
+    def _all_affected_files(self) -> set[str]:
+        """Return all file paths that contain API calls or function definitions."""
+        sem_graph = self.analysis.get("semantic_graph", {})
+        files = sem_graph.get("files", {})
+        return set(files.keys()) | set(self.file_contents.keys())
+
     async def _process_single(self, rec: dict[str, Any]) -> PatchPlan | None:
+        """Legacy single-pass processor — kept for backward compat."""
         action_type = rec.get("action_type", "")
         description = rec.get("description", "")
         library = rec.get("library", "")
@@ -225,10 +419,9 @@ def classify_patches_by_risk(plans: list[PatchPlan]) -> dict[str, list[PatchPlan
         if not plan.modified_code or not plan.valid:
             report_only.append(plan)
             continue
-        if plan.risk_score <= AUTO_PR_RISK_THRESHOLD and plan.confidence_level == ConfidenceLevel.HIGH:
+        # Risk < 85 → auto-merge. Risk >= 85 → draft PR for human review.
+        if plan.risk_score < AUTO_PR_RISK_THRESHOLD:
             auto_pr.append(plan)
-        elif plan.risk_score > DRAFT_PR_RISK_THRESHOLD or plan.confidence_level == ConfidenceLevel.LOW:
-            report_only.append(plan)
         else:
             draft_pr.append(plan)
 

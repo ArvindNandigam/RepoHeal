@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import datetime
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import StreamingResponse
 from app.auth.jwt_manager import verify_session_token
@@ -46,6 +47,11 @@ async def status_event_generator(request: Request, repo_owner: str, repo_name: s
                     elif eta_raw.endswith("h"):
                         eta_seconds = int(eta_raw[:-1]) * 3600
 
+            def _to_str(val):
+                if isinstance(val, datetime):
+                    return val.isoformat()
+                return str(val) if val is not None else None
+
             current_state = {
                 "status": status.get("status"),
                 "progress": progress,
@@ -55,8 +61,8 @@ async def status_event_generator(request: Request, repo_owner: str, repo_name: s
                 "analysis_id": status.get("analysis_id"),
                 "repository_snapshot_id": status.get("repository_snapshot_id"),
                 "job_type": status.get("job_type"),
-                "last_analysis": status.get("last_analysis"),
-                "last_health_refresh": status.get("last_health_refresh"),
+                "last_analysis": _to_str(status.get("last_analysis")),
+                "last_health_refresh": _to_str(status.get("last_health_refresh")),
                 "code_state_status": status.get("code_state_status"),
             }
             

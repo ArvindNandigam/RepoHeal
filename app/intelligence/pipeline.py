@@ -76,9 +76,19 @@ class MigrationPipeline:
         self._check_cancelled()
         
         # 5. Document
-        _report_progress(5, total_steps, "Generating migration document")
+        _report_progress(5, total_steps, "Generating migration document and compatibility shims")
         document = self.document_generator.generate(report)
         self._check_cancelled()
+        
+        # 5b. Compatibility shims for deprecated APIs with known replacements
+        try:
+            from app.migrations.compatibility_shims import generate_shims
+            shims_code = generate_shims(report, analysis)
+            if shims_code:
+                logger.info("Generated compatibility shims for deprecated APIs")
+                report.compatibility_shims = shims_code
+        except Exception as shim_err:
+            logger.warning("Compatibility shim generation failed: %s", shim_err)
         
         # 6. Metadata Branch
         _report_progress(6, total_steps, "Saving artifacts to repoheal.meta branch")

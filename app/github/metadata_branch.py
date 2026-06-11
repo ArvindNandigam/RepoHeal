@@ -242,8 +242,19 @@ class MetadataBranchManager:
             f"{self.base_path}/metadata.json": self._json(manifest),
             health_report_path: self._json(health_data),
             migration_report_path: document.content,
-            legacy_doc_path: document.content # Backward compat
+            legacy_doc_path: document.content, # Backward compat
         }
+
+        shims_path = f"{analysis_base}/repoheal_fixes.py"
+        shims_content = getattr(report, "compatibility_shims", "")
+        if shims_content:
+            files_to_commit[shims_path] = shims_content
+            manifest.setdefault("compatibility_shims", [])
+            manifest["compatibility_shims"].append({
+                "analysis_id": analysis_id,
+                "timestamp": refreshed_at.isoformat(),
+                "path": shims_path,
+            })
 
         readme_path = f"{self.base_path}/README.md"
         if not self._path_exists(repo, readme_path):
