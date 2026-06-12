@@ -68,6 +68,9 @@ class Settings:
     LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "2048"))
     LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.3"))
 
+    # Feedback
+    FEEDBACK_LINK = os.getenv("FEEDBACK_LINK", "")
+
     # Email / Notifications
     EMAIL_ENABLED = os.getenv("EMAIL_ENABLED", "false").lower() in ("1", "true", "yes")
     SMTP_HOST = os.getenv("SMTP_HOST", "")

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from app.auth.jwt_manager import verify_session_token
+from app.config import settings
 from app.errors.exceptions import AnalysisError
 from app.github.client import RepoHealGitHubClient
 from app.github.metadata_branch import MetadataBranchManager
@@ -21,6 +22,13 @@ async def health_report_page(repo_owner: str, repo_name: str, user=Depends(verif
 @router.get("/{repo_owner}/{repo_name}/migration-page", response_class=HTMLResponse)
 async def migration_center_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
     return HTMLResponse(get_template("migration_center.html"))
+
+@router.get("/{repo_owner}/{repo_name}/compare-page", response_class=HTMLResponse)
+async def compare_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
+    template = get_template("compare.html")
+    link = settings.FEEDBACK_LINK
+    html = template.replace("{{ feedback_link }}", link or "")
+    return HTMLResponse(html)
 
 @router.get("/{repo_owner}/{repo_name}/health")
 async def get_health_report_data(

@@ -511,6 +511,25 @@ def _enforce_cache_governance() -> None:
             logger.info(f"Evicted cache for {repo_dir} (total={total_mb:.0f}MB, free_disk_critical={disk_critical})")
 
 
+def _compute_eta_message(msg: str, start: datetime, progress_pct: int) -> str:
+    """Append formatted ETA to a progress message based on elapsed time and progress."""
+    if progress_pct < 5:
+        return msg
+    elapsed = (datetime.now(timezone.utc) - start).total_seconds()
+    if elapsed < 5 or progress_pct <= 0:
+        return msg
+    remaining = (elapsed / progress_pct) * (100 - progress_pct)
+    if remaining <= 0:
+        return msg
+    if remaining < 120:
+        eta = f"~{int(remaining)}s"
+    elif remaining < 3600:
+        eta = f"~{int(remaining // 60)}m {int(remaining % 60)}s"
+    else:
+        eta = ">1h"
+    return f"{msg} | ETA: {eta}"
+
+
 def run_analysis_in_background(
     job_id: str,
     repo_owner: str,
@@ -580,7 +599,7 @@ def run_analysis_in_background(
         # --- Phase: Download ---
         set_analysis_progress(
             job_id, repo_owner, repo_name, JobStatus.ANALYZING, 10,
-            "Downloading repository snapshot", job_type=job_type,
+            _compute_eta_message("Downloading repository snapshot", _start, 10), job_type=job_type,
             selected_branch=selected_branch, target_commit_sha=commit_sha, current_head=current_head,
             current_step="download",
         )
@@ -595,7 +614,7 @@ def run_analysis_in_background(
         def _tree_blob_progress(_repo, _status, _pct, _msg, _step):
             set_analysis_progress(
                 job_id, repo_owner, repo_name, JobStatus.ANALYZING, _pct,
-                _msg, job_type=job_type,
+                _compute_eta_message(_msg, _start, _pct), job_type=job_type,
                 selected_branch=selected_branch, target_commit_sha=commit_sha,
                 current_head=current_head, current_step=_step,
             )
@@ -665,13 +684,13 @@ def run_analysis_in_background(
         # --- Phase: Analyze ---
         set_analysis_progress(
             job_id, repo_owner, repo_name, JobStatus.ANALYZING, 30,
-            "Extracting imports and dependencies", job_type=job_type,
+            _compute_eta_message("Extracting imports and dependencies", _start, 30), job_type=job_type,
             selected_branch=selected_branch, target_commit_sha=commit_sha, current_head=current_head,
             current_step="extracting",
         )
         set_analysis_progress(
             job_id, repo_owner, repo_name, JobStatus.ANALYZING, 50,
-            "Analyzing repository structure", job_type=job_type,
+            _compute_eta_message("Analyzing repository structure", _start, 50), job_type=job_type,
             selected_branch=selected_branch, target_commit_sha=commit_sha, current_head=current_head,
             current_step="analyzing",
         )
@@ -713,7 +732,7 @@ def run_analysis_in_background(
         # --- Phase: Graph Build ---
         set_analysis_progress(
             job_id, repo_owner, repo_name, JobStatus.GENERATING_GRAPH, 75,
-            "Building Neo4j knowledge graph", job_type=job_type,
+            _compute_eta_message("Building Neo4j knowledge graph", _start, 75), job_type=job_type,
             selected_branch=selected_branch, target_commit_sha=commit_sha, current_head=current_head,
             current_step="graph",
         )
@@ -736,7 +755,7 @@ def run_analysis_in_background(
         # --- Phase: Metadata persistence ---
         set_analysis_progress(
             job_id, repo_owner, repo_name, JobStatus.UPDATING_METADATA, 90,
-            "Writing analysis metadata to repoheal.meta", job_type=job_type,
+            _compute_eta_message("Writing analysis metadata to repoheal.meta", _start, 90), job_type=job_type,
             selected_branch=selected_branch, target_commit_sha=commit_sha, current_head=current_head,
             current_step="metadata",
         )
@@ -957,6 +976,7 @@ def run_health_refresh_in_background(
     selected_branch = target_branch
     commit_sha = target_commit_sha
     current_head = None
+    _start = datetime.now(timezone.utc)
 
     try:
         set_analysis_progress(
@@ -977,7 +997,7 @@ def run_health_refresh_in_background(
 
         set_analysis_progress(
             job_id, repo_owner, repo_name, JobStatus.GENERATING_REPORTS, 50,
-            "Generating health reports and migration documents",
+            _compute_eta_message("Generating health reports and migration documents", _start, 50),
             job_type=job_type, selected_branch=selected_branch,
             target_commit_sha=commit_sha, current_head=current_head,
             current_step="reports",

@@ -383,7 +383,18 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
         overlay.innerHTML = message;
       };
 
-      const setBuildingStatus = (message, progress = 0) => {
+      const formatEta = (etaSeconds) => {
+        if (etaSeconds == null || etaSeconds <= 0) return "";
+        if (etaSeconds >= 900) return `☕ ~${Math.floor(etaSeconds / 60)}m — grab a coffee break!`;
+        if (etaSeconds >= 120) return `~${Math.floor(etaSeconds / 60)}m ${etaSeconds % 60}s remaining`;
+        if (etaSeconds >= 30) return `~${etaSeconds}s remaining`;
+        return `~${etaSeconds}s`;
+      };
+
+      const setBuildingStatus = (message, progress = 0, etaSeconds = null) => {
+        const etaHtml = etaSeconds != null && etaSeconds > 0
+          ? `<span style="font-size:13px;color:var(--accent);margin-top:4px;">${formatEta(etaSeconds)}</span>`
+          : "";
         setStatus(`
           <div class="build-state">
             <div class="build-animation" aria-hidden="true">
@@ -395,6 +406,7 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
             <strong>${escapeHtml(message)}</strong>
             <div class="build-track"><span></span></div>
             <span>${Number(progress || 0)}% complete</span>
+            ${etaHtml}
             <span class="build-note">Please keep this page open. Refreshing is unnecessary and may interrupt progress updates while RepoHeal builds the graph.</span>
           </div>
         `);
@@ -442,8 +454,9 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
 
           const progress = Number(status.progress || 0);
           const message = status.message || "Analysis in progress";
+          const eta = status.eta_seconds || null;
           statusLabel.textContent = `${message} (${progress}%)`;
-          setBuildingStatus(message, progress);
+          setBuildingStatus(message, progress, eta);
 
           await sleep(3000);
           status = await fetchJson(

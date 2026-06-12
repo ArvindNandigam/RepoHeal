@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RepoHeal Compare Analysis</title>
+  <style>
+    :root { color-scheme: dark; --bg: #0f1113; --panel: #1c1f22; --panel-2: #25282b; --border: rgba(255,255,255,0.1); --text: #f4f6f8; --muted: #a8b0b8; --accent: #42d6a4; --danger: #f97066; --warning: #f4c95d; }
+    * { box-sizing: border-box; }
+    body { font-family: Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; }
+    .container { max-width: 1000px; margin: 0 auto; display: grid; gap: 20px; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+    h1,h2,h3 { margin: 0; }
+    .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: 0.2em; color: var(--accent); margin-bottom: 14px; }
+    .vs-grid { display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px; align-items: center; }
+    .side { display: grid; gap: 8px; padding: 16px; border-radius: 10px; background: var(--panel-2); }
+    .side-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--muted); }
+    .side-value { font-size: 13px; color: var(--text); }
+    .side .health { font-size: 28px; font-weight: 700; }
+    .vs-badge { font-size: 14px; font-weight: 800; color: var(--muted); text-align: center; padding: 8px; }
+    .delta-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-radius: 8px; background: var(--panel-2); }
+    .delta-label { font-size: 13px; color: var(--muted); }
+    .delta-value { font-size: 15px; font-weight: 700; }
+    .delta-up { color: var(--accent); }
+    .delta-down { color: var(--danger); }
+    .delta-neutral { color: var(--warning); }
+    .dep-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .dep-pill { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; background: rgba(255,255,255,0.06); border: 1px solid var(--border); }
+    .dep-added { background: rgba(66,214,164,0.12); border-color: rgba(66,214,164,0.2); color: var(--accent); }
+    .dep-removed { background: rgba(249,112,102,0.12); border-color: rgba(249,112,102,0.2); color: var(--danger); }
+    .dep-changed { background: rgba(244,201,93,0.12); border-color: rgba(244,201,93,0.2); color: var(--warning); }
+    .empty-state { padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
+    .loading-state { padding: 40px; text-align: center; color: var(--muted); }
+    .hidden { display: none !important; }
+    .btn { display: inline-flex; align-items: center; padding: 8px 14px; border-radius: 999px; text-decoration: none; font-weight: 700; font-size: 12px; color: var(--text); background: rgba(255,255,255,0.08); border: 1px solid var(--border); cursor: pointer; }
+    .btn:hover { background: rgba(255,255,255,0.12); }
+    .feedback-btn { position: fixed; bottom: 20px; right: 20px; z-index: 100; padding: 10px 18px; border-radius: 999px; background: var(--accent); color: #0f1113; font-weight: 700; font-size: 13px; text-decoration: none; border: none; cursor: pointer; box-shadow: 0 4px 20px rgba(66,214,164,0.3); }
+    .feedback-btn:hover { background: #5ce6b4; }
+    .error-box { padding: 16px; border-radius: 8px; background: rgba(249,112,102,0.12); border: 1px solid rgba(249,112,102,0.2); color: var(--danger); font-size: 13px; }
+    .param-info { font-size: 12px; color: var(--muted); padding: 12px 16px; border-radius: 8px; background: var(--panel-2); display: flex; gap: 16px; flex-wrap: wrap; }
+    .param-info span { display: flex; gap: 4px; }
+    .param-info code { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>Compare Analysis</h1>
+        <p id="repoLabel" style="color: var(--muted); margin-top: 4px;"></p>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <a href="/dashboard" class="btn">Dashboard</a>
+        <a id="backLink" class="btn" href="#">Back to Repo</a>
+      </div>
+    </div>
+
+    <div id="paramInfo" class="param-info hidden"></div>
+
+    <div id="loadingState" class="loading-state">Comparing analyses...</div>
+    <div id="errorState" class="error-box hidden"></div>
+
+    <div id="compareContent" class="hidden" style="display: grid; gap: 20px;">
+      <div class="panel vs-grid" id="vsSection">
+        <div class="side" id="leftSide">
+          <div class="side-label">Left</div>
+          <div class="side-value" id="leftBranch"></div>
+          <div class="side-value" id="leftCommit"></div>
+          <div class="health" id="leftHealth">--</div>
+        </div>
+        <div class="vs-badge">VS</div>
+        <div class="side" id="rightSide">
+          <div class="side-label">Right</div>
+          <div class="side-value" id="rightBranch"></div>
+          <div class="side-value" id="rightCommit"></div>
+          <div class="health" id="rightHealth">--</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="section-title">Health Score</div>
+        <div class="delta-row">
+          <span class="delta-label">Delta</span>
+          <span class="delta-value" id="healthDelta">--</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="section-title">Risk Score</div>
+        <div class="delta-row">
+          <span class="delta-label">Left</span>
+          <span class="delta-value" id="riskLeft">--</span>
+        </div>
+        <div class="delta-row" style="margin-top: 6px;">
+          <span class="delta-label">Right</span>
+          <span class="delta-value" id="riskRight">--</span>
+        </div>
+        <div class="delta-row" style="margin-top: 6px;">
+          <span class="delta-label">Delta</span>
+          <span class="delta-value" id="riskDelta">--</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="section-title">Breaking API Changes</div>
+        <div class="delta-row">
+          <span class="delta-label">Left</span>
+          <span class="delta-value" id="breakingLeft">--</span>
+        </div>
+        <div class="delta-row" style="margin-top: 6px;">
+          <span class="delta-label">Right</span>
+          <span class="delta-value" id="breakingRight">--</span>
+        </div>
+        <div class="delta-row" style="margin-top: 6px;">
+          <span class="delta-label">Delta</span>
+          <span class="delta-value" id="breakingDelta">--</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="section-title">Graph Size</div>
+        <div class="delta-row">
+          <span class="delta-label">Left Nodes</span>
+          <span class="delta-value" id="graphLeft">--</span>
+        </div>
+        <div class="delta-row" style="margin-top: 6px;">
+          <span class="delta-label">Right Nodes</span>
+          <span class="delta-value" id="graphRight">--</span>
+        </div>
+        <div class="delta-row" style="margin-top: 6px;">
+          <span class="delta-label">Delta</span>
+          <span class="delta-value" id="graphDelta">--</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="section-title">Dependency Changes</div>
+        <div id="depAdded"><div class="empty-state">No dependencies added.</div></div>
+        <div id="depRemoved" style="margin-top: 10px;"><div class="empty-state">No dependencies removed.</div></div>
+        <div id="depChanged" style="margin-top: 10px;"><div class="empty-state">No dependencies changed.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <a id="feedbackBtn" class="feedback-btn hidden" href="{{ feedback_link }}" target="_blank" rel="noopener">Feedback</a>
+
+  <script>
+    const pathParts = window.location.pathname.split("/");
+    const repoOwner = pathParts[2];
+    const repoName = pathParts[3];
+    const repoFull = `${repoOwner}/${repoName}`;
+
+    document.getElementById("backLink").href = `/repos/${repoOwner}/${repoName}`;
+    document.getElementById("repoLabel").textContent = repoFull;
+
+    const feedbackLink = "{{ feedback_link }}";
+    if (feedbackLink) {
+      document.getElementById("feedbackBtn").classList.remove("hidden");
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const branchA = params.get("branch_a") || "main";
+    const commitA = params.get("commit_a") || "";
+    const branchB = params.get("branch_b") || "";
+    const commitB = params.get("commit_b") || "";
+
+    if (branchB) {
+      document.getElementById("paramInfo").classList.remove("hidden");
+      document.getElementById("paramInfo").innerHTML = `
+        <span>Branch A: <code>${branchA}</code> <small>${commitA ? "@ " + commitA.slice(0,7) : ""}</small></span>
+        <span>Branch B: <code>${branchB}</code> <small>${commitB ? "@ " + commitB.slice(0,7) : ""}</small></span>
+      `;
+    }
+
+    async function loadComparison() {
+      try {
+        const payload = { branch_a: branchA, commit_a: commitA || null, branch_b: branchB || null, commit_b: commitB || null };
+        const response = await fetch(`/compare/${repoOwner}/${repoName}`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error(`Compare returned ${response.status}`);
+        const data = await response.json();
+
+        document.getElementById("loadingState").classList.add("hidden");
+        document.getElementById("compareContent").classList.remove("hidden");
+        document.getElementById("errorState").classList.add("hidden");
+
+        const comp = data.delta || data.comparison || data;
+        const left = comp.left || {};
+        const right = comp.right || {};
+
+        // Side panels
+        if (left.branch || left.commit_sha) {
+          document.getElementById("leftBranch").textContent = `Branch: ${left.branch || "--"}`;
+          document.getElementById("leftCommit").textContent = `Commit: ${left.commit_sha ? left.commit_sha.slice(0, 7) : "--"}`;
+        }
+        if (right.branch || right.commit_sha) {
+          document.getElementById("rightBranch").textContent = `Branch: ${right.branch || "--"}`;
+          document.getElementById("rightCommit").textContent = `Commit: ${right.commit_sha ? right.commit_sha.slice(0, 7) : "--"}`;
+        }
+
+        // Health
+        const leftHealth = left.health_score;
+        const rightHealth = right.health_score;
+        const healthDelta = comp.health_score_delta;
+        if (leftHealth != null) {
+          const el = document.getElementById("leftHealth");
+          el.textContent = `${leftHealth}/100`;
+          el.className = "health " + (leftHealth > 70 ? "delta-up" : leftHealth > 40 ? "delta-neutral" : "delta-down");
+        }
+        if (rightHealth != null) {
+          const el = document.getElementById("rightHealth");
+          el.textContent = `${rightHealth}/100`;
+          el.className = "health " + (rightHealth > 70 ? "delta-up" : rightHealth > 40 ? "delta-neutral" : "delta-down");
+        }
+        if (healthDelta != null) {
+          const el = document.getElementById("healthDelta");
+          const sign = healthDelta > 0 ? "+" : "";
+          el.textContent = `${sign}${healthDelta}`;
+          el.className = "delta-value " + (healthDelta > 0 ? "delta-up" : healthDelta < 0 ? "delta-down" : "delta-neutral");
+        }
+
+        // Risk
+        const risk = comp.risk_score_delta || {};
+        if (risk.left != null) document.getElementById("riskLeft").textContent = `${risk.left}/100`;
+        if (risk.right != null) document.getElementById("riskRight").textContent = `${risk.right}/100`;
+        if (risk.delta != null) {
+          const el = document.getElementById("riskDelta");
+          const sign = risk.delta > 0 ? "+" : "";
+          el.textContent = `${sign}${risk.delta}`;
+          el.className = "delta-value " + (risk.delta > 0 ? "delta-down" : risk.delta < 0 ? "delta-up" : "delta-neutral");
+        }
+
+        // Breaking
+        const breaking = comp.breaking_api_delta || {};
+        if (breaking.left != null) document.getElementById("breakingLeft").textContent = breaking.left;
+        if (breaking.right != null) document.getElementById("breakingRight").textContent = breaking.right;
+        if (breaking.delta != null) {
+          const el = document.getElementById("breakingDelta");
+          const sign = breaking.delta > 0 ? "+" : "";
+          el.textContent = `${sign}${breaking.delta}`;
+          el.className = "delta-value " + (breaking.delta > 0 ? "delta-down" : breaking.delta < 0 ? "delta-up" : "delta-neutral");
+        }
+
+        // Graph
+        const graph = comp.graph_delta || {};
+        if (graph.left_node_count != null) document.getElementById("graphLeft").textContent = graph.left_node_count;
+        if (graph.right_node_count != null) document.getElementById("graphRight").textContent = graph.right_node_count;
+        if (graph.delta != null) {
+          const el = document.getElementById("graphDelta");
+          const sign = graph.delta > 0 ? "+" : "";
+          el.textContent = `${sign}${graph.delta}`;
+          el.className = "delta-value " + (graph.delta > 0 ? "delta-up" : graph.delta < 0 ? "delta-down" : "delta-neutral");
+        }
+
+        // Dependencies
+        const deps = comp.dependency_delta || {};
+        if (deps.added && deps.added.length) {
+          document.getElementById("depAdded").innerHTML = `<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Added (${deps.added.length})</div><div class="dep-list">${deps.added.map(d => `<span class="dep-pill dep-added">+ ${d}</span>`).join("")}</div>`;
+        }
+        if (deps.removed && deps.removed.length) {
+          document.getElementById("depRemoved").innerHTML = `<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Removed (${deps.removed.length})</div><div class="dep-list">${deps.removed.map(d => `<span class="dep-pill dep-removed">- ${d}</span>`).join("")}</div>`;
+        }
+        if (deps.changed && deps.changed.length) {
+          document.getElementById("depChanged").innerHTML = `<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Changed (${deps.changed.length})</div><div class="dep-list">${deps.changed.map(d => `<span class="dep-pill dep-changed">~ ${d}</span>`).join("")}</div>`;
+        }
+
+      } catch (err) {
+        document.getElementById("loadingState").classList.add("hidden");
+        document.getElementById("errorState").classList.remove("hidden");
+        document.getElementById("errorState").textContent = `Comparison failed: ${err.message}`;
+      }
+    }
+
+    loadComparison();
+  </script>
+</body>
+</html>

@@ -149,6 +149,7 @@
         <a class="button tertiary" href="/reports/{{ owner }}/{{ repo }}/history-page">Analysis History</a>
         <a class="button tertiary" href="/visualize/{{ owner }}/{{ repo }}">Graph</a>
         <a class="button tertiary" href="/reports/{{ owner }}/{{ repo }}/migration-review">Migration Review</a>
+        <a id="feedbackBtn" class="button tertiary" href="{{ feedback_link }}" target="_blank" rel="noopener" style="display:none;">Feedback</a>
       </div>
     </div>
 
@@ -458,18 +459,17 @@
         return { payload, response };
       }, "Health refresh")
     );
-    document.querySelector('[data-action="compare"]').addEventListener("click", (e) =>
-      clickAndQueue(e.currentTarget, async () => {
-        const payload = {
-          branch_a: document.getElementById("branchA").value || "main",
-          commit_a: document.getElementById("commitA").value || null,
-          branch_b: document.getElementById("branchB").value || null,
-          commit_b: document.getElementById("commitB").value || null
-        };
-        const response = await (await fetch(compareUrl, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) })).json();
-        return { payload, response };
-      }, "Comparison")
-    );
+    const fbLink = "{{ feedback_link }}";
+    if (fbLink) document.getElementById("feedbackBtn").style.display = "inline-flex";
+
+    document.querySelector('[data-action="compare"]').addEventListener("click", (e) => {
+      const branchA = document.getElementById("branchA").value || "main";
+      const commitA = document.getElementById("commitA").value || "";
+      const branchB = document.getElementById("branchB").value || "";
+      const commitB = document.getElementById("commitB").value || "";
+      const qs = new URLSearchParams({ branch_a: branchA, commit_a: commitA, branch_b: branchB, commit_b: commitB });
+      window.location.href = `/reports/${OWNER}/${REPO}/compare-page?${qs}`;
+    });
 
     // Auto Analysis
     const autoToggle = document.getElementById("autoAnalysisToggle");

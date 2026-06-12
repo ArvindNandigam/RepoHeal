@@ -797,14 +797,40 @@ function setupSSE(repo, initialStatus) {
   eventSources.set(repo.name, source);
 }
 
+function formatEta(etaSeconds) {
+  if (etaSeconds == null || etaSeconds <= 0) return "";
+  if (etaSeconds >= 900) {
+    const mins = Math.floor(etaSeconds / 60);
+    return `☕ ~${mins}m — grab a coffee break!`;
+  }
+  if (etaSeconds >= 120) {
+    const mins = Math.floor(etaSeconds / 60);
+    const secs = etaSeconds % 60;
+    return `~${mins}m ${secs}s remaining`;
+  }
+  if (etaSeconds >= 30) return `~${etaSeconds}s remaining`;
+  return `~${etaSeconds}s`;
+}
+
 function updateCardFromStatus(card, status) {
   const statusBadge = card.querySelector("[data-status-badge]");
   const statusMessage = card.querySelector("[data-status-message]");
   const progressBar = card.querySelector("[data-progress-bar]");
+  const etaDisplay = card.querySelector("[data-eta-display]");
 
   setStatusBadge(statusBadge, status);
   if (statusMessage) statusMessage.textContent = `${status.message || "Analysis status available"} (${Number(status.progress || 0)}%)`;
   if (progressBar) progressBar.style.setProperty("--progress-width", `${Math.max(0, Math.min(100, Number(status.progress || 0)))}%`);
+
+  if (etaDisplay) {
+    const eta = status.eta_seconds;
+    if (eta != null && eta > 0) {
+      etaDisplay.textContent = formatEta(eta);
+      etaDisplay.style.display = "inline";
+    } else {
+      etaDisplay.style.display = "none";
+    }
+  }
 
   if (status.last_analysis) {
     const el = card.querySelector("[data-last-analysis]");
@@ -822,14 +848,14 @@ async function refreshRepositoryStatus(repo) {
   const statusMessage = card.querySelector("[data-status-message]");
   const progressBar = card.querySelector("[data-progress-bar]");
   const lastAnalysis = card.querySelector("[data-last-analysis]");
+  const etaDisplay = card.querySelector("[data-eta-display]");
 
   try {
     const response = await fetch(repo.status_url, { credentials: "same-origin" });
     if (!response.ok) throw new Error(`Status returned ${response.status}`);
     const status = await response.json();
     setStatusBadge(statusBadge, status);
-    if (statusMessage) statusMessage.textContent = `${status.message || "Analysis status available"} (${Number(status.progress || 0)}%)`;
-    if (progressBar) progressBar.style.setProperty("--progress-width", `${Math.max(0, Math.min(100, Number(status.progress || 0)))}%`);
+    updateCardFromStatus(card, status);
     const lastDate = status.last_analysis || status.completed_at;
     if (lastAnalysis) lastAnalysis.textContent = lastDate ? `Last analysis: ${formatDate(lastDate)}` : "";    
 
@@ -909,6 +935,7 @@ async function refreshRepositoryStatus(repo) {
             <span class="pill health" data-health-badge style="display:none">Health: --</span>
             <span class="pill migration-risk" data-migration-risk-badge style="display:none">Migration Risk: --</span>
             <span data-last-analysis style="font-size:10px;color:var(--muted);flex:1;"></span>
+            <span data-eta-display style="font-size:10px;color:var(--muted);margin-right:6px;display:none;"></span>
             <span data-status-message style="display:none"></span>
             <button class="button tertiary" type="button" data-action="analyze-latest" data-queued-text="...">Analyze</button>
             <a class="button tertiary" href="${repo.visualize_url}">Graph</a>
