@@ -6,18 +6,11 @@ from groq import Groq, BadRequestError, APIStatusError
 
 from app.config import get_settings
 
-from app.discovery.regex_extractor import extract_relationships_regex
-
 logger = logging.getLogger(__name__)
 
-# llama-3.3-70b-versatile has 128K token context window.
-# Rough estimate: 1 token ~= 4 chars. Reserve ~20K tokens for completion.
-# Budget for the prompt (system + user): ~108K tokens ~= 432K chars.
-# System prompt is fixed, header is small — the rest goes to snippets.
-_SYS_PROMPT_CHARS = 683
-_HEADER_OVERHEAD = 200  # approximate chars for "Target symbol: ... Library: ... Ranked Sources: ..."
 _SEPARATOR = "\n\n---\n\n"
-_MAX_BATCH_CHARS = 400_000  # generous per-batch limit (~100K tokens)
+_MAX_BATCH_CHARS = 100_000
+_FALLBACK_MODEL = "llama-3.1-8b-instant"
 
 SYSTEM_PROMPT = """
 You are an evidence extraction engine.
@@ -48,30 +41,34 @@ Use "deprecated_in_favor_of" when the old symbol is deprecated and a replacement
 """
 
 
-def _batch_snippets(snippets: list[str], symbol: str, library: str, source_context: list[dict]) -> list[list[str]]:
-    """
-    Split snippets into batches that each fit within the per-budget char limit.
-    Preserves all snippets — no truncation, no `[:10]` cap.
-    """
+def _build_user_prompt(symbol: str, library: str, batch: list[str], source_context: list[dict]) -> str:
     context_str = json.dumps(
         [{"title": c.get("title"), "url": c.get("url")} for c in source_context], indent=2
     ) if source_context else "[]"
-    header = f"Target symbol: {symbol}\nLibrary: {library}\n\nRanked Sources:\n{context_str}\n\nSnippets:\n"
-    overhead = _SYS_PROMPT_CHARS + len(header)
+    combined = _SEPARATOR.join(batch)
+    return (
+        f"Target symbol: {symbol}\nLibrary: {library}\n\n"
+        f"Ranked Sources:\n{context_str}\n\nSnippets:\n{combined}"
+    )
+
+
+def _batch_snippets(snippets: list[str], symbol: str, library: str, source_context: list[dict]) -> list[list[str]]:
+    header = _build_user_prompt(symbol, library, [], source_context)
+    overhead = len(SYSTEM_PROMPT) + len(header)
 
     batches: list[list[str]] = []
     current_batch: list[str] = []
     current_size = 0
 
     for s in snippets:
-        snippet_cost = len(s) + len(_SEPARATOR)
-        batch_overhead = overhead + len(_SEPARATOR) * max(0, len(current_batch) - 1)
-        if current_batch and (current_size + snippet_cost + batch_overhead > _MAX_BATCH_CHARS):
+        cost = len(s) + len(_SEPARATOR)
+        batch_header = overhead + len(_SEPARATOR) * max(0, len(current_batch))
+        if current_batch and (current_size + cost + batch_header > _MAX_BATCH_CHARS):
             batches.append(current_batch)
             current_batch = []
             current_size = 0
         current_batch.append(s)
-        current_size += snippet_cost
+        current_size += cost
 
     if current_batch:
         batches.append(current_batch)
@@ -79,81 +76,87 @@ def _batch_snippets(snippets: list[str], symbol: str, library: str, source_conte
     return batches
 
 
-def _send_groq_batch(
+def _parse_json_response(text: str | None) -> list[dict]:
+    if not text:
+        return []
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.startswith("json"):
+            text = text[4:]
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    rels = parsed.get("relationships", []) if isinstance(parsed, dict) else []
+    for r in rels:
+        r["extraction_method"] = "groq"
+    return rels
+
+
+def _call_groq(
+    client: Groq,
+    model: str,
+    messages: list[dict],
+    use_json_format: bool,
+    symbol: str,
+    library: str,
+) -> list[dict]:
+    kwargs = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0,
+        "max_completion_tokens": 4096,
+    }
+    if use_json_format:
+        kwargs["response_format"] = {"type": "json_object"}
+
+    logger.debug(
+        "Groq call: library=%s symbol=%s model=%s json_format=%s messages_chars=%d",
+        library, symbol, model, use_json_format, sum(len(m.get("content", "")) for m in messages),
+    )
+
+    completion = client.chat.completions.create(**kwargs)
+    return _parse_json_response(completion.choices[0].message.content)
+
+
+def _try_extraction(
     client: Groq,
     model: str,
     symbol: str,
     library: str,
-    batch_snippets: list[str],
-    source_context: list[dict],
+    user_prompt: str,
 ) -> list[dict]:
-    """Send a single batch of snippets to Groq and return parsed relationships."""
-    context_str = json.dumps(
-        [{"title": c.get("title"), "url": c.get("url")} for c in source_context], indent=2
-    ) if source_context else "[]"
-    combined = _SEPARATOR.join(batch_snippets)
-    user_prompt = (
-        f"Target symbol: {symbol}\nLibrary: {library}\n\n"
-        f"Ranked Sources:\n{context_str}\n\nSnippets:\n{combined}"
-    )
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ]
 
-    request_body = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0,
-        "response_format": {"type": "json_object"},
-    }
+    # Strategy 1: with json_object response_format
+    try:
+        return _call_groq(client, model, messages, use_json_format=True, symbol=symbol, library=library)
+    except BadRequestError as e:
+        body = e.body if isinstance(e.body, dict) else {"raw": str(e.body)}
+        logger.warning(
+            "Groq 400 with json_object (library=%s symbol=%s model=%s): %s",
+            library, symbol, model, json.dumps(body),
+        )
+    except APIStatusError as e:
+        logger.warning(
+            "Groq HTTP %d (library=%s symbol=%s model=%s): %s",
+            e.status_code, library, symbol, model, e.message,
+        )
+        return []
 
-    logger.debug(
-        "Groq batch: library=%s symbol=%s model=%s sys=%d user=%d chars",
-        library, symbol, model, _SYS_PROMPT_CHARS, len(user_prompt),
-    )
-
-    for attempt in range(3):
-        try:
-            completion = client.chat.completions.create(**request_body)
-            response_text = completion.choices[0].message.content
-            if not response_text:
-                logger.warning("Groq returned empty response (attempt %d)", attempt + 1)
-                continue
-
-            parsed = json.loads(response_text)
-            rels = parsed.get("relationships", [])
-            for r in rels:
-                r["extraction_method"] = "groq"
-            return rels
-
-        except BadRequestError as e:
-            error_detail = e.body if isinstance(e.body, dict) else {"raw": str(e.body)}
-            logger.error(
-                "Groq HTTP 400 (attempt %d/3): %s | library=%s symbol=%s | sys=%d user=%d chars | body=%s",
-                attempt + 1, e.message, library, symbol,
-                _SYS_PROMPT_CHARS, len(user_prompt),
-                json.dumps(error_detail),
-            )
-            if attempt == 2:
-                return []
-
-        except APIStatusError as e:
-            logger.error(
-                "Groq HTTP %d (attempt %d/3): %s | library=%s symbol=%s",
-                e.status_code, attempt + 1, e.message, library, symbol,
-            )
-            if attempt == 2:
-                return []
-
-        except Exception as e:
-            logger.error(
-                "Groq extraction failed (attempt %d/3): %s | library=%s symbol=%s",
-                attempt + 1, e, library, symbol,
-            )
-            if attempt == 2:
-                return []
-
-    return []
+    # Strategy 2: without response_format (parse JSON from raw text)
+    try:
+        return _call_groq(client, model, messages, use_json_format=False, symbol=symbol, library=library)
+    except APIStatusError as e:
+        logger.warning(
+            "Groq HTTP %d without json_object (library=%s symbol=%s model=%s): %s",
+            e.status_code, library, symbol, model, e.message,
+        )
+        return []
 
 
 def extract_relationships_groq(symbol: str, library: str, snippets: list[str], source_context: list[dict]) -> list[dict]:
@@ -164,15 +167,26 @@ def extract_relationships_groq(symbol: str, library: str, snippets: list[str], s
         return []
 
     client = Groq(api_key=api_key)
-    model = settings.groq_model
+    primary_model = settings.groq_model
 
-    # Batch snippets to preserve ALL information — no `[:10]` cap, no truncation
     batches = _batch_snippets(snippets, symbol, library, source_context)
-    logger.debug("Groq: %d snippet(s) split into %d batch(es)", len(snippets), len(batches))
+    logger.info("Groq: %d snippet(s) split into %d batch(es)", len(snippets), len(batches))
 
     all_rels: list[dict] = []
+
     for i, batch in enumerate(batches):
-        batch_rels = _send_groq_batch(client, model, symbol, library, batch, source_context)
-        all_rels.extend(batch_rels)
+        user_prompt = _build_user_prompt(symbol, library, batch, source_context)
+
+        # Try primary model first
+        rels = _try_extraction(client, primary_model, symbol, library, user_prompt)
+
+        # Fallback to secondary model if primary returned nothing
+        if not rels and primary_model != _FALLBACK_MODEL:
+            logger.info("Groq primary model %s returned nothing, trying fallback %s", primary_model, _FALLBACK_MODEL)
+            rels = _try_extraction(client, _FALLBACK_MODEL, symbol, library, user_prompt)
+
+        if rels:
+            logger.info("Groq batch %d/%d: extracted %d relationship(s)", i + 1, len(batches), len(rels))
+            all_rels.extend(rels)
 
     return all_rels
