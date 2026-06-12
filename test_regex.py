@@ -56,6 +56,50 @@ def test_validation():
     assert reason == "invalid_target"
     print("Validation OK")
 
+def test_is_valid_symbol_enhanced():
+    from app.discovery.regex_extractor import is_valid_symbol
+    # Should accept valid dotted symbols
+    assert is_valid_symbol("pandas.DataFrame.append") is True
+    assert is_valid_symbol("sklearn.cross_validation.train_test_split") is True
+    assert is_valid_symbol("openai.ChatCompletion.create") is True
+    # Should reject version numbers (dots but not code)
+    assert is_valid_symbol("1.0") is False
+    assert is_valid_symbol("v2.0.0") is False
+    assert is_valid_symbol("3.14") is False
+    # Should reject prose fragments
+    assert is_valid_symbol("deprecated.since") is False
+    assert is_valid_symbol("none.null") is False
+    assert is_valid_symbol("e.g") is False
+    print("is_valid_symbol enhanced OK")
+
+def test_multi_line_deprecation():
+    from app.discovery.regex_extractor import extract_relationships_regex
+    # Sentence-boundary: "deprecated. Use Y instead"
+    snippet1 = "pandas.DataFrame.append is deprecated. Use pandas.concat instead."
+    rels1 = extract_relationships_regex("pandas.DataFrame.append", "pandas", [snippet1])
+    assert len(rels1) >= 1
+    assert rels1[0]["to"] == "pandas.concat"
+    # Multi-line: "is deprecated,\\nuse Y"
+    snippet2 = "pandas.DataFrame.append is deprecated,\n use pandas.concat."
+    rels2 = extract_relationships_regex("pandas.DataFrame.append", "pandas", [snippet2])
+    assert len(rels2) >= 1
+    assert rels2[0]["to"] == "pandas.concat"
+    # "deprecated. Please use Y"
+    snippet3 = "pandas.DataFrame.append is deprecated. Please use pandas.concat instead."
+    rels3 = extract_relationships_regex("pandas.DataFrame.append", "pandas", [snippet3])
+    assert len(rels3) >= 1
+    assert rels3[0]["to"] == "pandas.concat"
+    print("Multi-line deprecation OK")
+
+def test_instead_of_pattern():
+    from app.discovery.regex_extractor import extract_relationships_regex
+    snippet = "Instead of openai.ChatCompletion.create, use openai.chat.completions.create."
+    rels = extract_relationships_regex("openai.ChatCompletion.create", "openai", [snippet])
+    assert len(rels) >= 1
+    assert rels[0]["from"] == "openai.ChatCompletion.create"
+    assert rels[0]["to"] == "openai.chat.completions.create"
+    print("Instead-of pattern OK")
+
 def test_deduplication():
     rels = [
         {"from": "A.B", "relation": "replaced_by", "to": "C.D", "confidence": 1.0, "extraction_method": "groq"},
@@ -72,6 +116,9 @@ if __name__ == "__main__":
     test_normalization()
     test_extraction()
     test_validation()
+    test_is_valid_symbol_enhanced()
+    test_multi_line_deprecation()
+    test_instead_of_pattern()
     test_deduplication()
     
     # Test groq import

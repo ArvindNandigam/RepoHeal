@@ -5,30 +5,74 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+_VERSION_NUM_RE = re.compile(r"^v?\d+(\.\d+)*$")
+_PROSE_WITH_DOTS = {
+    "deprecated.since", "removed.in", "replaced.by", "use.instead",
+    "none.null", "true.false", "version.x", "see.also", "note.that",
+    "e.g", "i.e", "et.al", "w.r.t",
+}
+
 def normalize_symbol(raw: str) -> str:
     """
     Strips trailing parens, punctuation, markdown formatting, and whitespace.
     """
     s = raw.strip()
-    # Remove all markdown formatting characters like backticks or asterisks
     s = re.sub(r"[`*'\"]", "", s)
-    s = s.rstrip("();:,!?")
+    s = s.rstrip(".;():,!?")
     return s.strip()
 
 def is_valid_symbol(s: str) -> bool:
     """
     Must contain a dot (or be a recognized method call).
-    Must not be a common generic word.
+    Must not be a common generic word, version number, or prose fragment.
     """
     if not s or len(s) < 3:
         return False
     if " " in s:
-        # If it has spaces, it's not a single symbol, unless it's just trailing parens
         if not (s.endswith("()") and s.count(" ") == 1):
             return False
     if "." not in s:
         return False
+    # Reject pure version numbers: 1.0, v1.2.3, 2.0.0rc1, etc.
+    if _VERSION_NUM_RE.match(s):
+        return False
+    # Reject known prose fragments
+    if s.lower() in _PROSE_WITH_DOTS:
+        return False
+    # Reject if both parts of "a.b" are version-like or purely numeric
+    parts = s.split(".")
+    if all(_VERSION_NUM_RE.match(p) for p in parts[:2]):
+        return False
     return True
+
+def _normalize_text_for_matching(text: str) -> str:
+    """
+    Preprocess text to handle line breaks and sentence boundaries in
+    deprecation patterns:
+
+    - "is deprecated.\nUse Y" -> "is deprecated. use Y"
+    - "is deprecated. Please use Y" -> "is deprecated. use Y"
+    - "is deprecated.\n\nYou should use Y" -> "is deprecated. use Y"
+    """
+    s = text
+    # Collapse line breaks within sentences (replace newline+spaces with space)
+    s = re.sub(r"\n\s*", " ", s)
+    # Normalize "deprecated. Use" / "deprecated. Please use" / "deprecated. You should use"
+    s = re.sub(
+        r"deprecated\.\s+(Please\s+|You\s+should\s+)?(use|consider)",
+        "deprecated, use",
+        s,
+        flags=re.IGNORECASE,
+    )
+    # Normalize "removed. Use" -> "removed, use"
+    s = re.sub(
+        r"removed\.\s+(Please\s+|You\s+should\s+)?(use|consider)",
+        "removed, use",
+        s,
+        flags=re.IGNORECASE,
+    )
+    return s
+
 
 def extract_arrow_patterns(text: str) -> list[dict]:
     """
@@ -37,12 +81,14 @@ def extract_arrow_patterns(text: str) -> list[dict]:
     A replaced by B
     A is deprecated, use B
     A deprecated in favor of B
+    A is deprecated. Use B instead (spanning sentences/line breaks)
     etc.
     """
     relationships = []
+    text = _normalize_text_for_matching(text)
 
     # Patterns for deprecation language
-    deprecated_phrases = r"(?:is\s+)?deprecated\s+(?:since\s+[\d.]+\s*[,;]?\s*)?(?:in\s+favor\s+of\s+|\.\s*use\s+|,\s*use\s+|;?\s*use\s+)"
+    deprecated_phrases = r"(?:is\s+)?deprecated\s*,?\s*(?:since\s+[\d.]+\s*[,;]?\s*)?(?:in\s+favor\s+of\s+|\.\s*use\s+|,\s*use\s+|;?\s*use\s+|\.\s*please\s+use\s+)"
     deprecated_pattern = rf"([a-zA-Z0-9_\.]+)\s*(?:\(\))?\s*{deprecated_phrases}\s*([a-zA-Z0-9_\.]+)(?:\(\))?"
     for match in re.finditer(deprecated_pattern, text, re.IGNORECASE):
         from_sym = normalize_symbol(match.group(1))
@@ -85,16 +131,16 @@ def extract_arrow_patterns(text: str) -> list[dict]:
                 "confidence": 1.0,
                 "extraction_method": "regex"
             })
-            
+
     # Forward transition patterns
     forward_phrases = r"(?:->|→|(?:was\s+|is\s+|has\s+been\s+)?replaced\s+by|(?:was\s+|is\s+|has\s+been\s+)?renamed\s+to|(?:was\s+|is\s+|has\s+been\s+)?migrated\s+to|(?:was\s+|is\s+|has\s+been\s+)?superseded\s+by|becomes|(?:was\s+|is\s+|has\s+been\s+)?replaced\s+with|should\s+be\s+replaced\s+with|is\s+no\s+longer\s+supported;?\s*use)"
-    
+
     pattern = rf"([a-zA-Z0-9_\.]+)\s*(?:\(\))?\s*{forward_phrases}\s*([a-zA-Z0-9_\.]+)(?:\(\))?"
-    
+
     for match in re.finditer(pattern, text, re.IGNORECASE):
         from_sym = normalize_symbol(match.group(1))
         to_sym = normalize_symbol(match.group(2))
-        
+
         if is_valid_symbol(from_sym) and is_valid_symbol(to_sym) and from_sym != to_sym:
             relationships.append({
                 "from": from_sym,
@@ -103,13 +149,13 @@ def extract_arrow_patterns(text: str) -> list[dict]:
                 "confidence": 1.0,
                 "extraction_method": "regex"
             })
-            
+
     # "use B instead of A" or "use B instead"
     use_pattern = r"use\s+([a-zA-Z0-9_\.]+)(?:\(\))?\s+instead(?:\s+of\s+([a-zA-Z0-9_\.]+)(?:\(\))?)?"
     for match in re.finditer(use_pattern, text, re.IGNORECASE):
         to_sym = normalize_symbol(match.group(1))
         from_sym = normalize_symbol(match.group(2)) if match.group(2) else None
-        
+
         if to_sym and is_valid_symbol(to_sym):
             if from_sym and is_valid_symbol(from_sym) and from_sym != to_sym:
                 relationships.append({
@@ -119,8 +165,20 @@ def extract_arrow_patterns(text: str) -> list[dict]:
                     "confidence": 1.0,
                     "extraction_method": "regex"
                 })
-            # If from_sym is not in the regex but we have target symbol, we can't easily extract the from_sym from context with simple regex.
-            # We rely on extract_relationships_regex passing the target_symbol down.
+
+    # "instead of A, use B" pattern
+    instead_pattern = r"instead\s+of\s+([a-zA-Z0-9_\.]+)(?:\(\))?[,;.]*\s+use\s+([a-zA-Z0-9_\.]+)(?:\(\))?"
+    for match in re.finditer(instead_pattern, text, re.IGNORECASE):
+        from_sym = normalize_symbol(match.group(1))
+        to_sym = normalize_symbol(match.group(2))
+        if is_valid_symbol(from_sym) and is_valid_symbol(to_sym) and from_sym != to_sym:
+            relationships.append({
+                "from": from_sym,
+                "relation": "replaced_by",
+                "to": to_sym,
+                "confidence": 1.0,
+                "extraction_method": "regex"
+            })
 
     return relationships
 

@@ -8,6 +8,7 @@ from app.discovery.web_search import generate_search_queries, serper_search, ran
 from app.discovery.document_extractor import fetch_page, extract_relevant_sections
 from app.discovery.regex_extractor import extract_relationships_regex
 from app.discovery.llm_extractor import extract_relationships_groq
+from app.discovery.fallback_extractor import extract_relationships_fallback
 from app.discovery.validation import validate_relationship
 from app.services.version_resolver import resolve_library_metadata
 
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def _deduplicate_relationships(rels: list[dict]) -> list[dict]:
     best: dict[tuple, dict] = {}
-    METHOD_RANK = {"regex": 2, "groq": 1}
+    METHOD_RANK = {"regex": 2, "groq": 1, "fallback": 3}
     for rel in rels:
         key = (rel.get("from"), rel.get("relation"), rel.get("to"))
         existing = best.get(key)
@@ -115,6 +116,10 @@ class MigrationEngine:
                 "relationships_extracted": [],
                 "regex_used": False,
                 "groq_used": False,
+                "groq_failed": False,
+                "groq_skip_reason": None,
+                "fallback_used": False,
+                "fallback_relationships": [],
                 "skip_reason": None,
                 "regex_relationships": [],
                 "groq_relationships": [],
@@ -187,6 +192,19 @@ class MigrationEngine:
                     debug_trace["groq_relationships"].extend(groq_rels)
                     debug_trace["relationships_extracted"].extend(groq_rels)
                 all_rels.extend(groq_rels)
+            else:
+                # PHASE 2b: Fallback when Groq returns nothing (unavailable, error, or timeout)
+                if debug:
+                    debug_trace["groq_failed"] = True
+                    debug_trace["groq_skip_reason"] = "no_relationships_returned"
+                    debug_trace["fallback_used"] = True
+                fallback_rels = extract_relationships_fallback(symbol, library)
+                if fallback_rels:
+                    if debug:
+                        debug_trace["fallback_relationships"].extend(fallback_rels)
+                        debug_trace["relationships_extracted"].extend(fallback_rels)
+                    logger.info("Fallback matched %d known migration rules for %s.%s", len(fallback_rels), library, symbol)
+                    all_rels.extend(fallback_rels)
             
             # MERGE: deduplicate across both methods, highest confidence wins
             if all_rels:

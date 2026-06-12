@@ -90,8 +90,8 @@ def validate_relationship(relationship: dict, source_text: str) -> tuple[bool, s
         logger.warning(msg)
         return False, "new_symbol_not_found"
         
-    # 4. Relationship phrase exists (bypass for regex-extracted migration tables)
-    if relationship.get("extraction_method") != "regex":
+    # 4. Relationship phrase exists (bypass for regex and fallback methods)
+    if relationship.get("extraction_method") not in ("regex", "fallback"):
         if not any(phrase in text_lower for phrase in RELATIONSHIP_PHRASES):
             msg = f"Validation failed: no relationship phrase found in source text"
             logger.warning(msg)
