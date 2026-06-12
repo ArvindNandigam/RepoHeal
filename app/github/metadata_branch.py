@@ -170,6 +170,62 @@ class MetadataBranchManager:
         logger.info(f"Synchronized analysis {analysis_id} for {repo_id}")
         return analysis_id
 
+    def save_health_report(
+        self,
+        repo,
+        report: HealthReport,
+        analysis_id: str,
+        analysis: Dict[str, Any],
+        source_branch: str | None = None,
+        commit_sha: str | None = None
+    ) -> str:
+        """Persist health report immediately after generation (before migration docs)."""
+        self.client.ensure_branch(repo, self.branch_name)
+        repo_id = getattr(repo, "full_name", report.repository)
+        source_branch = source_branch or analysis.get("branch") or getattr(repo, "default_branch", None) or "main"
+        commit_sha = commit_sha or analysis.get("commit_sha") or self._get_branch_commit_sha(repo, source_branch)
+        short_commit = commit_sha[:7]
+        safe_branch = self._safe_name(source_branch)
+        analysis_base = f"{self.base_path}/analyses/{safe_branch}/{short_commit}"
+        health_report_path = f"{analysis_base}/health_report_{analysis_id}.json"
+        manifest = self._load_manifest(repo)
+        risk_score = compute_overall_risk_score(report)
+        health_data = {
+            "migration_id": f"mig_{analysis_id}",
+            "analysis_id": analysis_id,
+            "repository_snapshot_id": analysis.get("repository_snapshot_id", ""),
+            "branch": source_branch,
+            "generated_from_commit": commit_sha,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "health_score": getattr(report, "overall_health_score", 0),
+            "risk_score": risk_score,
+            "overall_risk_level": getattr(report, "overall_risk_level", "unknown"),
+            "intelligence_warnings": getattr(report, "intelligence_warnings", []),
+            "report": report.model_dump(),
+        }
+        manifest.update({
+            "last_health_refresh": health_data["generated_at"],
+            "latest_health_report": health_report_path,
+        })
+        manifest.setdefault("health_reports", [])
+        manifest["health_reports"].append({
+            "analysis_id": analysis_id,
+            "timestamp": health_data["generated_at"],
+            "path": health_report_path,
+        })
+        files_to_commit = {
+            f"{self.base_path}/metadata.json": self._json(manifest),
+            health_report_path: self._json(health_data),
+        }
+        self.client.batch_upsert_files(
+            repo,
+            self.branch_name,
+            files_to_commit,
+            f"Health report {analysis_id} for {repo_id}",
+        )
+        logger.info(f"Saved health report for {analysis_id}")
+        return health_report_path
+
     def save_migration_artifacts(
         self,
         repo,
@@ -329,13 +385,13 @@ class MetadataBranchManager:
         )
         return comparison_id
 
-    def compare_analyses(
+    def compare_analyses_by_id(
         self,
         repo,
         left_analysis_id: str,
         right_analysis_id: str
     ) -> Dict[str, Any]:
-        """Calculate deltas between two analysis snapshots."""
+        """Calculate deltas between two analysis snapshots by analysis ID."""
         manifest = self._load_manifest(repo)
 
         def load_analysis(analysis_id):
@@ -430,7 +486,7 @@ class MetadataBranchManager:
             **comparison_results
         }
 
-    def compare_analyses(
+    def compare_analyses_by_branch(
         self,
         repo,
         repo_id: str,

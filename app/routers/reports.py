@@ -71,6 +71,8 @@ async def get_health_report_data(
             "intelligence_warnings": data.get("intelligence_warnings", report.get("intelligence_warnings", [])),
         }
     except Exception as e:
+        if hasattr(e, "status") and e.status == 404:
+            raise HTTPException(status_code=404, detail="Health report not found on GitHub")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{repo_owner}/{repo_name}/migration")
@@ -102,6 +104,8 @@ async def get_migration_doc_data(
         content = repo.get_contents(path, ref=metadata_manager.branch_name)
         return {"content": content.decoded_content.decode("utf-8")}
     except Exception as e:
+        if hasattr(e, "status") and e.status == 404:
+            raise HTTPException(status_code=404, detail="Migration document not found on GitHub")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -145,6 +149,8 @@ async def get_comparison(
                     import json
                     return json.loads(content.decoded_content.decode("utf-8"))
                 except Exception as e:
+                    if hasattr(e, "status") and e.status == 404:
+                        raise HTTPException(status_code=404, detail="Comparison file not found on GitHub")
                     raise HTTPException(status_code=500, detail=str(e))
 
     raise HTTPException(status_code=404, detail="Comparison not found")

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from app.analysis.fingerprint import expand_symbols_for_intelligence
 from app.intelligence.webtool_client import WebtoolClient
+from app.intelligence.local_deprecation import apply_local_fallback
 from app.models.migration_models import (
     CorrelationResult, SymbolAssessment, SymbolRelationship, VersionDistance
 )
@@ -176,6 +177,14 @@ class MigrationCorrelator:
             dependency_graph,
             errors,
         )
+
+        local_assessments = apply_local_fallback(
+            fingerprint_data,
+            dependency_graph,
+            [a.model_dump() for a in assessments],
+        )
+        for loc in local_assessments:
+            assessments.append(SymbolAssessment(**loc))
 
         return CorrelationResult(
             repository=repo_id,

@@ -241,50 +241,27 @@ async def get_repository_status(
             **_code_state_metadata(repo_id, installation["id"], analysis_status)
         }
 
-        with neo4j_connection.get_session() as session:
-            result = session.run(
-                """
-                MATCH (r:Repository {id: $repo_id})
-                OPTIONAL MATCH (r)-[:CONTAINS]->(f:File)
-                OPTIONAL MATCH (f)-[:IMPORTS]->(p:Package)
-                RETURN count(distinct f) as file_count, count(distinct p) as package_count
-                """,
-                repo_id=repo_id
-            )
-            record = result.single()
+        file_count = len(analysis.get("imports", {}).get("files", {})) if analysis else 0
+        package_count = len(analysis.get("dependency_graph", {})) if analysis else 0
 
-            if not record:
-                if not visual_graph:
-                    return missing_graph_response
-
-                return {
-                    "repository": repo_id,
-                    "status": "completed",
-                    "progress": 100,
-                    "message": "Analysis complete",
-                    "files": 0,
-                    "packages": 0,
-                    **_code_state_metadata(repo_id, installation["id"], analysis_status)
-                }
-
-            file_count = record["file_count"]
-            package_count = record["package_count"]
-            if not visual_graph:
-                return {
-                    **missing_graph_response,
-                    "files": file_count,
-                    "packages": package_count
-                }
-
+        if not visual_graph:
             return {
-                "repository": repo_id,
-                "status": "completed",
-                "progress": 100,
-                "message": "Analysis complete",
+                **missing_graph_response,
                 "files": file_count,
-                "packages": package_count,
-                **_code_state_metadata(repo_id, installation["id"], analysis_status)
+                "packages": package_count
             }
+
+        return {
+            "repository": repo_id,
+            "status": "completed",
+            "progress": 100,
+            "message": "Analysis complete",
+            "files": file_count,
+            "packages": package_count,
+            **_code_state_metadata(repo_id, installation["id"], analysis_status)
+        }
+
+
     except Exception as e:
         logger.error(f"Status endpoint failed for {repo_id}: {e}")
         raise GraphError(message=str(e))

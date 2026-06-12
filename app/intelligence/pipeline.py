@@ -110,7 +110,23 @@ class MigrationPipeline:
         report.migration_intelligence_status = intelligence_status
         report.intelligence_error = intelligence_error
         self._check_cancelled()
-        
+
+        # 4b. Persist health report immediately (before migration docs),
+        #     so it's available even if the rest of the pipeline fails.
+        try:
+            early_aid = analysis_id or analysis.get("analysis_id") or uuid.uuid4().hex[:10]
+            self.metadata_manager.save_health_report(
+                repo,
+                report,
+                early_aid,
+                analysis,
+                source_branch=source_branch,
+                commit_sha=commit_sha,
+            )
+            logger.info(f"Health report persisted early for {repo_id}")
+        except Exception as hr_err:
+            logger.warning(f"Early health report save failed (non-fatal): {hr_err}")
+
         # 5. Document
         _report_progress(5, total_steps, "Generating migration document and compatibility shims")
         document = self.document_generator.generate(report)

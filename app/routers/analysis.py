@@ -284,14 +284,14 @@ async def compare_analyses_endpoint(
         right_id = find_id(comparison.branch_b, comparison.commit_b)
         
         if left_id and right_id:
-            result = metadata_manager.compare_analyses(repo, left_id, right_id)
+            result = metadata_manager.compare_analyses_by_id(repo, left_id, right_id)
             return {
                 "repository": repo_id,
                 "comparison_id": result.get("comparison_id", ""),
                 "delta": result
             }
         
-        comparison_path, payload = metadata_manager.compare_analyses(
+        comparison_path, payload = metadata_manager.compare_analyses_by_branch(
             repo,
             repo_id,
             comparison.branch_a,
