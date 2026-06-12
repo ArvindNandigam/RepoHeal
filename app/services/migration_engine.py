@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from app.config import get_settings
 from app.knowledge.repository import KnowledgeRepository
 from app.discovery.web_search import generate_search_queries, serper_search, rank_sources
 from app.discovery.document_extractor import fetch_page, extract_relevant_sections
@@ -89,13 +91,30 @@ class MigrationEngine:
             
             if known_symbol and known_relationships:
                 # Cache HIT — symbol has relationships
-                results.append({
-                    "symbol": symbol,
-                    "known": True,
-                    "relationships": known_relationships,
-                    "_debug": {"flow": "mongo_hit"} if debug else None
-                })
-                continue
+                # Check if cache is still fresh; if expired, re-run discovery
+                updated_at = known_symbol.get("updated_at")
+                if updated_at:
+                    expiry = timedelta(days=get_settings().cache_expiry_days)
+                    if datetime.now(timezone.utc) - updated_at > expiry:
+                        if debug:
+                            logger.info("Symbol %s cache expired, re-running discovery", symbol)
+                        # Don't return cache — fall through to discovery
+                    else:
+                        results.append({
+                            "symbol": symbol,
+                            "known": True,
+                            "relationships": known_relationships,
+                            "_debug": {"flow": "mongo_hit"} if debug else None
+                        })
+                        continue
+                else:
+                    results.append({
+                        "symbol": symbol,
+                        "known": True,
+                        "relationships": known_relationships,
+                        "_debug": {"flow": "mongo_hit"} if debug else None
+                    })
+                    continue
 
             if known_symbol and not known_relationships:
                 # Symbol exists but has stale/empty relationships — re-run discovery
@@ -139,8 +158,8 @@ class MigrationEngine:
             if debug: debug_trace["ranked_results"] = [{"title": r.get("title"), "url": r.get("url"), "score": r.get("score")} for r in ranked_results]
             
             # Step 3 & 4: Fetch pages and extraction (HYBRID mode)
-            # Fetch ALL pages first, then run both regex AND Groq on everything,
-            # then merge and deduplicate results from both extractors.
+            # Fetch ALL pages first, then run regex, Groq, and fallback,
+            # then merge and deduplicate results from all extractors.
             
             page_data_cache = []
             
@@ -158,22 +177,39 @@ class MigrationEngine:
                 
                 page_data_cache.append({"url": url, "page_text": page_text, "snippets": snippets})
             
+            # PHASE 1: Fallback — runs UNCONDITIONALLY (independent of search/fetch success)
+            fallback_rels = extract_relationships_fallback(symbol, library)
+            
             if not page_data_cache:
-                # No content fetched — skip discovery for this symbol
+                # No content fetched from web — rely on fallback if available
                 if debug: debug_trace["skip_reason"] = "no_page_content"
+                if fallback_rels:
+                    if debug:
+                        debug_trace["fallback_used"] = True
+                        debug_trace["fallback_relationships"].extend(fallback_rels)
+                        debug_trace["relationships_extracted"].extend(fallback_rels)
+                    logger.info("Fallback matched %d known migration rules for %s.%s", len(fallback_rels), library, symbol)
+                    for rel in fallback_rels:
+                        rel_id = self.knowledge_repository.insert_relationship(
+                            from_sym=rel.get("from"), relation=rel.get("relation"), to_sym=rel.get("to"),
+                            confidence=rel.get("confidence", 1.0), library=library
+                        )
+                        rel["status"] = "candidate"
+                        known_relationships.append({"_id": rel_id, "to": rel.get("to"), "relation": rel.get("relation"), "status": "candidate"})
                 self.knowledge_repository.insert_symbol(symbol, library)
+                final_relationships = self.knowledge_repository.lookup_relationships(symbol)
                 results.append({
                     "symbol": symbol,
-                    "known": False,
-                    "relationships": [],
+                    "known": bool(final_relationships),
+                    "relationships": final_relationships,
                     "_debug": debug_trace
                 })
                 continue
             
-            # Run BOTH extractors on all fetched content
+            # Run all extractors on fetched content
             all_rels = []
             
-            # PHASE 1: Regex extraction on every page
+            # PHASE 2: Regex extraction on every page
             if debug: debug_trace["regex_used"] = True
             for page_data in page_data_cache:
                 regex_rels = extract_relationships_regex(symbol, library, page_data["snippets"])
@@ -183,7 +219,7 @@ class MigrationEngine:
                         debug_trace["relationships_extracted"].extend(regex_rels)
                     all_rels.extend(regex_rels)
             
-            # PHASE 2: Groq extraction on all snippets (always runs alongside regex)
+            # PHASE 3: Groq extraction on all snippets
             if debug: debug_trace["groq_used"] = True
             all_snippets = [s for page in page_data_cache for s in page["snippets"]]
             groq_rels = extract_relationships_groq(symbol, library, all_snippets, ranked_results)
@@ -193,28 +229,26 @@ class MigrationEngine:
                     debug_trace["relationships_extracted"].extend(groq_rels)
                 all_rels.extend(groq_rels)
             else:
-                # PHASE 2b: Fallback when Groq returns nothing (unavailable, error, or timeout)
                 if debug:
                     debug_trace["groq_failed"] = True
                     debug_trace["groq_skip_reason"] = "no_relationships_returned"
-                    debug_trace["fallback_used"] = True
-                fallback_rels = extract_relationships_fallback(symbol, library)
-                if fallback_rels:
-                    if debug:
-                        debug_trace["fallback_relationships"].extend(fallback_rels)
-                        debug_trace["relationships_extracted"].extend(fallback_rels)
-                    logger.info("Fallback matched %d known migration rules for %s.%s", len(fallback_rels), library, symbol)
-                    all_rels.extend(fallback_rels)
             
-            # MERGE: deduplicate across both methods, highest confidence wins
+            # PHASE 4: Merge fallback results (already fetched unconditionally above)
+            if fallback_rels:
+                if debug:
+                    debug_trace["fallback_used"] = True
+                    debug_trace["fallback_relationships"].extend(fallback_rels)
+                    debug_trace["relationships_extracted"].extend(fallback_rels)
+                logger.info("Fallback matched %d known migration rules for %s.%s", len(fallback_rels), library, symbol)
+                all_rels.extend(fallback_rels)
+            
+            # MERGE: deduplicate across all methods, highest confidence wins
             if all_rels:
                 deduped = _deduplicate_relationships(all_rels)
                 if debug: debug_trace["deduplicated_relationships"] = deduped
                 
                 for rel in deduped:
                     # Normalize 'from' to the symbol being discovered
-                    # Groq often returns just the method name (e.g. "append" instead of "pandas.DataFrame.append"),
-                    # which would cause lookup_relationships(symbol) to miss it later.
                     rel_from = rel.get("from", "")
                     if rel_from and rel_from != symbol:
                         rel_from_tail = rel_from.split(".")[-1] if "." in rel_from else rel_from

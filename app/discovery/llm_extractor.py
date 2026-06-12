@@ -117,7 +117,7 @@ def _call_groq(
         "model": model,
         "messages": messages,
         "temperature": 0,
-        "max_completion_tokens": 2048,
+        "max_tokens": 2048,
     }
     if use_json_format:
         kwargs["response_format"] = {"type": "json_object"}
@@ -172,6 +172,8 @@ def _try_extraction(
             e.status_code, library, symbol, model, json.dumps(body),
         )
         return []
+
+    return []
 
 
 def extract_relationships_groq(symbol: str, library: str, snippets: list[str], source_context: list[dict]) -> list[dict]:

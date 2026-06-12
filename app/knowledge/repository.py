@@ -60,6 +60,9 @@ class KnowledgeRepository:
                     "_id": symbol_id,
                     "library": library,
                     "created_at": now,
+                },
+                "$set": {
+                    "updated_at": now,
                 }
             },
             upsert=True,

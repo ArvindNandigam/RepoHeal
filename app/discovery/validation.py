@@ -56,7 +56,14 @@ def validate_relationship(relationship: dict, source_text: str) -> tuple[bool, s
     3. New symbol (`to`) appears in source text
     4. A relationship phrase exists in source text
     5. Target symbol is valid
+
+    Fallback relationships from the curated database bypass text-grounding
+    checks — they are pre-verified and do not depend on web-scraped evidence.
     """
+    # Fallback relationships are pre-verified from curated database — skip text checks
+    if relationship.get("extraction_method") == "fallback":
+        return True, None
+
     old_symbol = relationship.get("from", "")
     new_symbol = relationship.get("to", "")
     relation = relationship.get("relation", "")
