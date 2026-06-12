@@ -5,6 +5,9 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
 from app.intelligence.webtool_client import WebtoolClient
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class IntelligenceProvider(ABC):
@@ -75,7 +78,6 @@ class GroqProvider(IntelligenceProvider):
                 result = await self._query_library(lib, symbols)
                 results.append(result)
             except Exception as e:
-                logger = get_logger(__name__)
                 logger.error(f"Groq query failed for {lib}: {e}")
                 results.append({
                     "library": lib,
@@ -152,7 +154,6 @@ class GroqProvider(IntelligenceProvider):
                 return json.loads(json_match.group(0))
             except json.JSONDecodeError:
                 pass
-        logger = get_logger(__name__)
         logger.warning(f"Failed to parse Groq response for {library}, returning empty results")
         return {"library": library, "latest_version": "unknown", "results": []}
 
