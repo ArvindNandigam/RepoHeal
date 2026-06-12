@@ -24,9 +24,20 @@ class GroqProvider(BaseLLMProvider):
         }
         try:
             resp = await self.client.post(self.base_url, json=payload, headers=headers)
+            if not resp.is_success:
+                body = resp.text[:500]
+                logger.error(f"Groq API {resp.status_code} for model {self.config.model}: {body}")
             resp.raise_for_status()
             data = resp.json()
             return data["choices"][0]["message"]["content"]
+        except httpx.HTTPStatusError as e:
+            detail = ""
+            try:
+                detail = e.response.text[:500]
+            except Exception:
+                pass
+            logger.error(f"Groq API call failed (key_prefix={self.config.api_key[:8] if len(self.config.api_key) >= 8 else 'empty'}): {detail or e}")
+            raise RuntimeError(f"Groq API {e.response.status_code} — check LLM_API_KEY and LLM_MODEL ({self.config.model}). Response: {detail}")
         except Exception as e:
             logger.error(f"Groq API call failed: {e}")
             raise

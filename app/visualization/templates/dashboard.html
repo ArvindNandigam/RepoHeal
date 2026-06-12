@@ -930,13 +930,16 @@ async function refreshRepositoryStatus(repo) {
             <span class="pill status" data-status-badge>Loading</span>
             <span class="pill" data-auto-badge style="display:none;font-size:9px;padding:2px 6px;background:rgba(66,214,164,0.12);color:var(--accent);border-color:rgba(66,214,164,0.2);">Auto</span>
           </div>
-          <div class="repo-progress"><span data-progress-bar></span></div>
+          <div style="font-size:10px;color:var(--muted);padding:1px 0;display:flex;gap:8px;align-items:center;">
+            <span style="text-transform:uppercase;letter-spacing:0.08em;">Status:</span>
+            <span data-eta-display style="display:none;"></span>
+            <span data-status-message></span>
+          </div>
+          <div class="repo-progress" style="margin:2px 0 4px;"><span data-progress-bar></span></div>
           <div class="repo-card-bottom">
             <span class="pill health" data-health-badge style="display:none">Health: --</span>
             <span class="pill migration-risk" data-migration-risk-badge style="display:none">Migration Risk: --</span>
             <span data-last-analysis style="font-size:10px;color:var(--muted);flex:1;"></span>
-            <span data-eta-display style="font-size:10px;color:var(--muted);margin-right:6px;display:none;"></span>
-            <span data-status-message style="display:none"></span>
             <button class="button tertiary" type="button" data-action="analyze-latest" data-queued-text="...">Analyze</button>
             <a class="button tertiary" href="${repo.visualize_url}">Graph</a>
             <a class="button secondary" href="/repos/${repo.owner}/${repo.repo}">Manage</a>

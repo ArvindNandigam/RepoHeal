@@ -217,10 +217,13 @@ class CodeMigrationEngine:
                 f"BEFORE:\n{original}\n\nAFTER:\n{modified}\n\n"
                 "Respond with JSON: {\"correct\": true/false, \"reason\": \"...\"}"
             )
-            result = await provider.complete(prompt, response_format={"type": "json_object"})
-            if result and isinstance(result, dict):
+            raw = await provider.generate(prompt, max_tokens=1024)
+            import json
+            try:
+                result = json.loads(raw)
                 return result.get("correct", False)
-            return False
+            except (json.JSONDecodeError, KeyError, TypeError):
+                return False
         except Exception:
             return False
         finally:

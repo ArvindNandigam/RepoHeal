@@ -50,11 +50,45 @@ class MigrationPipeline:
                 progress_callback(step, total_steps, msg)
         
         total_steps = 6
+
+        # --- Diagnostics ---
+        fingerprints = analysis.get("fingerprints", {})
+        dep_graph = analysis.get("dependency_graph", {})
+        fp_count = len(fingerprints)
+        dep_count = len(dep_graph)
+        symbol_count = sum(len(fp.get("symbols", [])) for fp in fingerprints.values())
+        logger.info(
+            f"[DIAG] Fingerprints: {fp_count} libs, {symbol_count} symbols | "
+            f"Dependencies: {dep_count} packages"
+        )
         
         # 1. Correlate
         _report_progress(1, total_steps, "Querying Restricted Webtool for API intelligence")
         correlation = await self.correlator.correlate(analysis, repo_id)
         self._check_cancelled()
+
+        intelligence_status = "success"
+        intelligence_error = ""
+        webtool_errors = correlation.webtool_errors or []
+        if webtool_errors:
+            intelligence_status = "failed"
+            intelligence_error = webtool_errors[0] if webtool_errors else "Unknown intelligence error"
+            logger.warning(
+                f"[DIAG] Intelligence FAILED — errors: {len(webtool_errors)} | "
+                f"first: {intelligence_error}"
+            )
+        has_deprecated = any(a.status == "deprecated" for a in correlation.assessments)
+        if not has_deprecated and not webtool_errors:
+            logger.info("[DIAG] Intelligence returned 0 deprecated symbols (all healthy)")
+        elif not has_deprecated and webtool_errors:
+            logger.warning("[DIAG] Intelligence failed — deprecated count forced to UNKNOWN")
+        
+        logger.info(
+            f"[DIAG] Correlation: {correlation.libraries_checked} libs, "
+            f"{correlation.total_symbols} symbols, "
+            f"{len(correlation.assessments)} assessments, "
+            f"{len(webtool_errors)} errors"
+        )
         
         # 2. Impact
         _report_progress(2, total_steps, "Analyzing impact on files and functions")
@@ -73,6 +107,8 @@ class MigrationPipeline:
         # 4. Report
         _report_progress(4, total_steps, "Generating health report")
         report = self.report_generator.generate(correlation, impacts, risks, analysis)
+        report.migration_intelligence_status = intelligence_status
+        report.intelligence_error = intelligence_error
         self._check_cancelled()
         
         # 5. Document

@@ -117,6 +117,8 @@ class HealthReport(BaseModel):
     migration_risk_score: int = 0
     migration_risk_level: str = "unknown"
     intelligence_warnings: List[str] = Field(default_factory=list)
+    migration_intelligence_status: str = "unknown"  # "success" | "failed" | "unknown"
+    intelligence_error: str = ""
     executive_summary: ExecutiveSummary
     dependency_inventory: List[DependencyEntry] = Field(default_factory=list)
     deprecated_apis: List[SymbolAssessment] = Field(default_factory=list)

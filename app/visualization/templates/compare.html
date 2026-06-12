@@ -182,7 +182,16 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         });
-        if (!response.ok) throw new Error(`Compare returned ${response.status}`);
+        if (!response.ok) {
+          let detail = `Compare returned ${response.status}`;
+          try {
+            const errData = await response.json();
+            if (errData.detail) detail = errData.detail;
+            if (errData.reason) detail += ` — ${errData.reason}`;
+            if (errData.required_action) detail += `. ${errData.required_action}`;
+          } catch (_) {}
+          throw new Error(detail);
+        }
         const data = await response.json();
 
         document.getElementById("loadingState").classList.add("hidden");

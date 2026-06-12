@@ -304,9 +304,32 @@ async def compare_analyses_endpoint(
             "comparison_path": comparison_path,
             "comparison": payload
         }
+    except ValueError as e:
+        msg = str(e)
+        logger.warning(f"Comparison failed for {repo_id}: {msg}")
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": "comparison_unavailable",
+                "detail": "Comparison unavailable.",
+                "reason": "One or more analysis records do not exist.",
+                "required_action": "Run analysis for both commits before comparison.",
+                "message": msg,
+            }
+        )
     except Exception as e:
         logger.error(f"Comparison failed for {repo_id}: {e}")
-        raise AnalysisError(message=str(e))
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "comparison_failed",
+                "detail": "Comparison failed.",
+                "reason": str(e),
+                "required_action": "Check server logs for details.",
+            }
+        )
 
 
 @router.post("/analyze/simulate/{repo_owner}/{repo_name}")

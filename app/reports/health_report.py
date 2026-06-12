@@ -51,14 +51,13 @@ class HealthReportGenerator:
         # Health Score: how healthy is the repo today (0-100)
         overall_health_score = 100
         critical_count = 0
-        
+        deprecated_count = sum(1 for a in correlation.assessments if a.status == "deprecated")
+        breaking_count = sum(1 for a in correlation.assessments if a.status == "breaking")
+
         if risks:
             avg_risk = sum(r.risk_score for r in risks) / len(risks)
             overall_health_score = max(0, int(100 - avg_risk))
             critical_count = sum(1 for r in risks if r.risk_level == "high")
-            
-        deprecated_count = sum(1 for a in correlation.assessments if a.status == "deprecated")
-        breaking_count = sum(1 for a in correlation.assessments if a.status == "breaking")
         
         # Migration Risk: how risky would upgrading be (0-100)
         migration_risk_score = compute_overall_risk_score_from_inputs(
@@ -75,10 +74,12 @@ class HealthReportGenerator:
         overall_risk_score = migration_risk_score
         overall_risk_level = migration_risk_level
             
+        _intel_failed = bool(correlation.webtool_errors) and deprecated_count == 0 and breaking_count == 0
+
         exec_summary = ExecutiveSummary(
             overall_health_score=overall_health_score,
             critical_findings_count=critical_count,
-            deprecated_count=deprecated_count,
+            deprecated_count=-1 if _intel_failed else deprecated_count,
             breaking_count=breaking_count
         )
         
@@ -201,6 +202,16 @@ class HealthReportGenerator:
 
     def _render_executive_summary(self, report: HealthReport) -> str:
         summary = report.executive_summary
+        deprecated_str = "UNKNOWN" if summary.deprecated_count == -1 else str(summary.deprecated_count)
+        intel_lines = []
+        if report.migration_intelligence_status == "failed":
+            intel_lines.extend([
+                "",
+                "**Migration Intelligence Status**: FAILED",
+                f"**Root cause**: {report.intelligence_error or 'Intelligence provider returned no data'}",
+                "**Failing stage**: Symbol Correlation → Intelligence Provider Request",
+                "**Recommended fix**: Check `LLM_API_KEY` and `LLM_MODEL` environment variables.",
+            ])
         return "\n".join([
             "# Migration Assessment",
             "",
@@ -209,13 +220,14 @@ class HealthReportGenerator:
             f"**Overall Health Score**: {report.overall_health_score}/100",
             f"**Migration Risk Score**: {report.migration_risk_score}/100",
             f"**Migration Risk Level**: {report.migration_risk_level.upper()}",
+            f"**Migration Intelligence Status**: {report.migration_intelligence_status.upper()}",
             "",
             "## Executive Summary",
             "",
             f"- Critical findings: {summary.critical_findings_count}",
-            f"- Deprecated APIs: {summary.deprecated_count}",
+            f"- Deprecated APIs: {deprecated_str}",
             f"- Breaking changes: {summary.breaking_count}",
-        ])
+        ] + intel_lines)
 
     def _render_dependency_inventory(self, report: HealthReport) -> str:
         lines = ["## Dependency Inventory"]
