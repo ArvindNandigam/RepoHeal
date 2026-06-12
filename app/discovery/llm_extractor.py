@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from groq import Groq, BadRequestError, APIStatusError
 
 from app.config import get_settings
@@ -9,8 +10,18 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 _SEPARATOR = "\n\n---\n\n"
-_MAX_BATCH_CHARS = 100_000
 _FALLBACK_MODEL = "llama-3.1-8b-instant"
+
+# Groq free tier: 12,000 tokens/minute (TPM)
+# 1 token ~= 4 chars. Leave ~2K tokens for completion budget.
+# Max prompt tokens = 10,000 -> ~40,000 chars total.
+# System prompt ~700 chars, header variable. Safe snippet budget: 30,000 chars.
+_MAX_BATCH_CHARS = 30_000
+
+# Sleep between batches to let TPM counter reset.
+# At 12K TPM, sending X tokens means sleeping for (X/12000)*60 seconds.
+_TPM_LIMIT = 12_000
+_SAFE_WAIT_SECONDS = 3.0  # minimum sleep between batches
 
 SYSTEM_PROMPT = """
 You are an evidence extraction engine.
@@ -106,14 +117,16 @@ def _call_groq(
         "model": model,
         "messages": messages,
         "temperature": 0,
-        "max_completion_tokens": 4096,
+        "max_completion_tokens": 2048,
     }
     if use_json_format:
         kwargs["response_format"] = {"type": "json_object"}
 
+    total_chars = sum(len(m.get("content", "")) for m in messages)
+    estimated_tokens = total_chars // 4
     logger.debug(
-        "Groq call: library=%s symbol=%s model=%s json_format=%s messages_chars=%d",
-        library, symbol, model, use_json_format, sum(len(m.get("content", "")) for m in messages),
+        "Groq call: library=%s symbol=%s model=%s json_format=%s ~%d tokens",
+        library, symbol, model, use_json_format, estimated_tokens,
     )
 
     completion = client.chat.completions.create(**kwargs)
@@ -142,9 +155,10 @@ def _try_extraction(
             library, symbol, model, json.dumps(body),
         )
     except APIStatusError as e:
+        body = e.body if isinstance(e.body, dict) else {"raw": str(e.body)}
         logger.warning(
             "Groq HTTP %d (library=%s symbol=%s model=%s): %s",
-            e.status_code, library, symbol, model, e.message,
+            e.status_code, library, symbol, model, json.dumps(body),
         )
         return []
 
@@ -152,9 +166,10 @@ def _try_extraction(
     try:
         return _call_groq(client, model, messages, use_json_format=False, symbol=symbol, library=library)
     except APIStatusError as e:
+        body = e.body if isinstance(e.body, dict) else {"raw": str(e.body)}
         logger.warning(
             "Groq HTTP %d without json_object (library=%s symbol=%s model=%s): %s",
-            e.status_code, library, symbol, model, e.message,
+            e.status_code, library, symbol, model, json.dumps(body),
         )
         return []
 
@@ -170,12 +185,24 @@ def extract_relationships_groq(symbol: str, library: str, snippets: list[str], s
     primary_model = settings.groq_model
 
     batches = _batch_snippets(snippets, symbol, library, source_context)
-    logger.info("Groq: %d snippet(s) split into %d batch(es)", len(snippets), len(batches))
+    logger.info("Groq: %d snippet(s) split into %d batch(es) at %d chars/batch",
+                len(snippets), len(batches), _MAX_BATCH_CHARS)
 
     all_rels: list[dict] = []
 
     for i, batch in enumerate(batches):
+        # Rate limiting: sleep between batches to stay under 12K TPM
+        if i > 0:
+            time.sleep(_SAFE_WAIT_SECONDS)
+
         user_prompt = _build_user_prompt(symbol, library, batch, source_context)
+        prompt_tokens = len(user_prompt) // 4 + len(SYSTEM_PROMPT) // 4
+        logger.debug("Batch %d/%d: ~%d tokens (TPM limit: %d)", i + 1, len(batches), prompt_tokens, _TPM_LIMIT)
+
+        # Skip batch if it alone exceeds TPM limit
+        if prompt_tokens > _TPM_LIMIT:
+            logger.warning("Batch %d/%d too large (%d tokens > %d TPM), skipping", i + 1, len(batches), prompt_tokens, _TPM_LIMIT)
+            continue
 
         # Try primary model first
         rels = _try_extraction(client, primary_model, symbol, library, user_prompt)
