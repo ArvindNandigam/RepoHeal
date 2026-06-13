@@ -91,6 +91,15 @@ class InMemoryKnowledgeRepository:
     def lookup_library(self, library: str) -> dict[str, Any] | None:
         return self._libraries.get(library)
 
+    def get_today_relationships(self) -> list[dict[str, Any]]:
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        return [r for r in self._relationships.values() if r.get("created_at", datetime.min.replace(tzinfo=timezone.utc)) >= today_start]
+
+    def clear_evidence_cache(self) -> int:
+        count = len(self._evidence)
+        self._evidence.clear()
+        return count
+
     def upsert_library(
         self,
         library: str,

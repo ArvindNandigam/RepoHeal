@@ -21,6 +21,7 @@ from app.routes.health import router as health_router
 from app.routes.bulk_library_intelligence import router as bulk_library_router
 from app.routes.library_intelligence import router as library_router
 from app.routes.symbol_intelligence import router as symbol_router
+from app.routes.daily_report import router as report_router
 
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ def create_app() -> FastAPI:
     app.include_router(library_router)
     app.include_router(bulk_library_router)
     app.include_router(symbol_router)
+    app.include_router(report_router)
 
     @app.middleware("http")
     async def request_context_middleware(request: Request, call_next):

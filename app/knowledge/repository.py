@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
+import pymongo.errors
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.database import Database
 from bson.objectid import ObjectId
 
+logger = logging.getLogger(__name__)
 
 class KnowledgeRepository:
     def __init__(self, mongo_client: MongoClient, database_name: str) -> None:
@@ -31,17 +34,22 @@ class KnowledgeRepository:
         return self.database["libraries"]
 
     def ensure_indexes(self) -> None:
-        existing = set(self.database.list_collection_names())
-        for name in ("symbols", "relationships", "evidence", "libraries"):
-            if name not in existing:
-                self.database.create_collection(name)
+        try:
+            existing = set(self.database.list_collection_names())
+            for name in ("symbols", "relationships", "evidence", "libraries"):
+                if name not in existing:
+                    self.database.create_collection(name)
 
-        self.symbols.create_index("library")
-        self.relationships.create_index([("from", 1), ("relation", 1), ("to", 1)], unique=True)
-        self.relationships.create_index("from")
-        self.relationships.create_index("library")
-        self.evidence.create_index("relationship_id")
-        self.libraries.create_index("library", unique=True)
+            self.symbols.create_index("library")
+            self.relationships.create_index([("from", 1), ("relation", 1), ("to", 1)], unique=True)
+            self.relationships.create_index("from")
+            self.relationships.create_index("library")
+            self.evidence.create_index("relationship_id")
+            # TTL: auto-delete evidence older than cache expiry to save disk space
+            self.evidence.create_index("retrieved_at", expireAfterSeconds=86400 * 30)
+            self.libraries.create_index("library", unique=True)
+        except pymongo.errors.PyMongoError as e:
+            logger.warning("MongoDB index creation failed: %s", e)
 
     def lookup_symbol(self, symbol_id: str) -> dict[str, Any] | None:
         record = self.symbols.find_one({"_id": symbol_id})
@@ -53,94 +61,110 @@ class KnowledgeRepository:
 
     def insert_symbol(self, symbol_id: str, library: str) -> None:
         now = datetime.now(timezone.utc)
-        self.symbols.update_one(
-            {"_id": symbol_id},
-            {
-                "$setOnInsert": {
-                    "_id": symbol_id,
-                    "library": library,
-                    "created_at": now,
+        try:
+            self.symbols.update_one(
+                {"_id": symbol_id},
+                {
+                    "$setOnInsert": {
+                        "_id": symbol_id,
+                        "library": library,
+                        "created_at": now,
+                    },
+                    "$set": {
+                        "updated_at": now,
+                    }
                 },
-                "$set": {
-                    "updated_at": now,
-                }
-            },
-            upsert=True,
-        )
+                upsert=True,
+            )
+        except pymongo.errors.PyMongoError as e:
+            logger.warning("MongoDB write failed (insert_symbol %s): %s", symbol_id, e)
 
-    def insert_relationship(self, from_sym: str, relation: str, to_sym: str, confidence: float, library: str) -> ObjectId:
+    def insert_relationship(self, from_sym: str, relation: str, to_sym: str, confidence: float, library: str) -> ObjectId | None:
         now = datetime.now(timezone.utc)
-        result = self.relationships.find_one_and_update(
-            {
-                "from": from_sym,
-                "relation": relation,
-                "to": to_sym,
-            },
-            {
-                "$setOnInsert": {
+        try:
+            result = self.relationships.find_one_and_update(
+                {
                     "from": from_sym,
                     "relation": relation,
                     "to": to_sym,
-                    "confidence": confidence,
-                    "status": "candidate",
-                    "supporting_sources": 1,
-                    "library": library,
-                    "created_at": now,
                 },
-                "$set": {
-                    "updated_at": now,
-                }
-            },
-            upsert=True,
-            return_document=True,
-        )
-        return result["_id"]
+                {
+                    "$setOnInsert": {
+                        "from": from_sym,
+                        "relation": relation,
+                        "to": to_sym,
+                        "confidence": confidence,
+                        "status": "candidate",
+                        "supporting_sources": 1,
+                        "library": library,
+                        "created_at": now,
+                    },
+                    "$set": {
+                        "updated_at": now,
+                    }
+                },
+                upsert=True,
+                return_document=True,
+            )
+            return result["_id"]
+        except pymongo.errors.PyMongoError as e:
+            logger.warning("MongoDB write failed (insert_relationship %s.%s): %s", library, from_sym, e)
+            return None
 
     def increment_supporting_sources(self, relationship_id: ObjectId) -> dict[str, Any] | None:
         now = datetime.now(timezone.utc)
-        result = self.relationships.find_one_and_update(
-            {"_id": relationship_id},
-            {
-                "$inc": {"supporting_sources": 1},
-                "$set": {"updated_at": now}
-            },
-            return_document=True,
-        )
-        if result and result.get("supporting_sources", 1) >= 2 and result.get("status") == "candidate":
-            self.promote_to_verified(relationship_id)
-            result["status"] = "verified"
-            result["updated_at"] = datetime.now(timezone.utc)
-        return dict(result) if result else None
+        try:
+            result = self.relationships.find_one_and_update(
+                {"_id": relationship_id},
+                {
+                    "$inc": {"supporting_sources": 1},
+                    "$set": {"updated_at": now}
+                },
+                return_document=True,
+            )
+            if result and result.get("supporting_sources", 1) >= 2 and result.get("status") == "candidate":
+                self.promote_to_verified(relationship_id)
+                result["status"] = "verified"
+                result["updated_at"] = datetime.now(timezone.utc)
+            return dict(result) if result else None
+        except pymongo.errors.PyMongoError as e:
+            logger.warning("MongoDB write failed (increment_supporting_sources %s): %s", relationship_id, e)
+            return None
 
     def promote_to_verified(self, relationship_id: ObjectId) -> None:
-        self.relationships.update_one(
-            {"_id": relationship_id},
-            {
-                "$set": {
-                    "status": "verified",
-                    "updated_at": datetime.now(timezone.utc),
+        try:
+            self.relationships.update_one(
+                {"_id": relationship_id},
+                {
+                    "$set": {
+                        "status": "verified",
+                        "updated_at": datetime.now(timezone.utc),
+                    }
                 }
-            }
-        )
+            )
+        except pymongo.errors.PyMongoError as e:
+            logger.warning("MongoDB write failed (promote_to_verified %s): %s", relationship_id, e)
 
     def insert_evidence(self, relationship_id: ObjectId, url: str, source_type: str, snippet: str) -> None:
-        # Don't insert duplicate evidence for the same relationship
-        existing = self.evidence.find_one({
-            "relationship_id": relationship_id,
-            "url": url,
-            "snippet": snippet,
-        })
-        if existing:
-            return
+        try:
+            existing = self.evidence.find_one({
+                "relationship_id": relationship_id,
+                "url": url,
+                "snippet": snippet,
+            })
+            if existing:
+                return
 
-        now = datetime.now(timezone.utc)
-        self.evidence.insert_one({
-            "relationship_id": relationship_id,
-            "url": url,
-            "source_type": source_type,
-            "snippet": snippet,
-            "retrieved_at": now,
-        })
+            now = datetime.now(timezone.utc)
+            self.evidence.insert_one({
+                "relationship_id": relationship_id,
+                "url": url,
+                "source_type": source_type,
+                "snippet": snippet,
+                "retrieved_at": now,
+            })
+        except pymongo.errors.PyMongoError as e:
+            logger.warning("MongoDB write failed (insert_evidence %s): %s", relationship_id, e)
 
     def lookup_evidence(self, relationship_id: ObjectId) -> list[dict[str, Any]]:
         records = list(self.evidence.find({"relationship_id": relationship_id}))
@@ -150,6 +174,24 @@ class KnowledgeRepository:
         record = self.libraries.find_one({"library": library})
         return dict(record) if record else None
 
+    def get_today_relationships(self) -> list[dict[str, Any]]:
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            records = list(self.relationships.find({"created_at": {"$gte": today_start}}))
+            return [dict(r) for r in records]
+        except pymongo.errors.PyMongoError as e:
+            logger.warning("MongoDB query failed (get_today_relationships): %s", e)
+            return []
+
+    def clear_evidence_cache(self) -> int:
+        try:
+            result = self.evidence.delete_many({})
+            logger.info("Cleared %d evidence documents", result.deleted_count)
+            return result.deleted_count
+        except pymongo.errors.PyMongoError as e:
+            logger.warning("MongoDB delete failed (clear_evidence_cache): %s", e)
+            return 0
+
     def upsert_library(
         self,
         library: str,
@@ -158,26 +200,29 @@ class KnowledgeRepository:
         github_repo: str | None = None,
         pypi_url: str | None = None,
     ) -> None:
-        now = datetime.now(timezone.utc)
-        update_fields: dict[str, Any] = {"updated_at": now}
-        
-        if latest_version is not None:
-            update_fields["latest_version"] = latest_version
-        if official_docs is not None:
-            update_fields["official_docs"] = official_docs
-        if github_repo is not None:
-            update_fields["github_repo"] = github_repo
-        if pypi_url is not None:
-            update_fields["pypi_url"] = pypi_url
+        try:
+            now = datetime.now(timezone.utc)
+            update_fields: dict[str, Any] = {"updated_at": now}
+            
+            if latest_version is not None:
+                update_fields["latest_version"] = latest_version
+            if official_docs is not None:
+                update_fields["official_docs"] = official_docs
+            if github_repo is not None:
+                update_fields["github_repo"] = github_repo
+            if pypi_url is not None:
+                update_fields["pypi_url"] = pypi_url
 
-        self.libraries.update_one(
-            {"library": library},
-            {
-                "$set": update_fields,
-                "$setOnInsert": {
-                    "library": library,
-                    "created_at": now,
-                }
-            },
-            upsert=True,
-        )
+            self.libraries.update_one(
+                {"library": library},
+                {
+                    "$set": update_fields,
+                    "$setOnInsert": {
+                        "library": library,
+                        "created_at": now,
+                    }
+                },
+                upsert=True,
+            )
+        except pymongo.errors.PyMongoError as e:
+            logger.warning("MongoDB write failed (upsert_library %s): %s", library, e)

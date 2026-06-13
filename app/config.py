@@ -41,6 +41,15 @@ class Settings:
     max_search_results: int = 20
     serper_api_key: str | None = None
 
+    # Daily Report / Email
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    report_recipient: str = ""
+    report_hour: int = 6  # UTC hour to send daily report
+
     @classmethod
     def from_env(cls) -> "Settings":
         mongodb_uri = os.getenv("MONGODB_URI", "").strip()
@@ -64,6 +73,13 @@ class Settings:
         groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
         max_search_results = int(os.getenv("MAX_SEARCH_RESULTS", "20"))
         serper_api_key = os.getenv("SERPER_API_KEY", "").strip() or None
+        smtp_host = os.getenv("SMTP_HOST", "").strip()
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        smtp_user = os.getenv("SMTP_USER", "").strip()
+        smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
+        smtp_from = os.getenv("SMTP_FROM", "").strip()
+        report_recipient = os.getenv("REPORT_RECIPIENT", "").strip()
+        report_hour = int(os.getenv("REPORT_HOUR", "6"))
 
         return cls(
             mongodb_uri=mongodb_uri,
@@ -78,6 +94,13 @@ class Settings:
             groq_model=groq_model,
             max_search_results=max_search_results,
             serper_api_key=serper_api_key,
+            smtp_host=smtp_host,
+            smtp_port=smtp_port,
+            smtp_user=smtp_user,
+            smtp_password=smtp_password,
+            smtp_from=smtp_from,
+            report_recipient=report_recipient,
+            report_hour=report_hour,
         )
 
 

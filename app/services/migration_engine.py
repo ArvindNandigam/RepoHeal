@@ -50,12 +50,13 @@ class MigrationEngine:
                 from_sym=rel.get("from"), relation=rel.get("relation"), to_sym=rel.get("to"), confidence=rel.get("confidence", 1.0), library=library
             )
             rel["status"] = "candidate"
-            self.knowledge_repository.insert_evidence(
-                relationship_id=rel_id, url=url, source_type="discovery", snippet=snippets[0] if snippets else ""
-            )
-            if debug_trace:
-                debug_trace["storage_action"] = "candidate_created"
-            known_relationships.append({"_id": rel_id, "to": rel.get("to"), "relation": rel.get("relation"), "status": "candidate"})
+            if rel_id:
+                self.knowledge_repository.insert_evidence(
+                    relationship_id=rel_id, url=url, source_type="discovery", snippet=snippets[0] if snippets else ""
+                )
+                if debug_trace:
+                    debug_trace["storage_action"] = "candidate_created"
+                known_relationships.append({"_id": rel_id, "to": rel.get("to"), "relation": rel.get("relation"), "status": "candidate"})
 
     def resolve(self, library: str, symbols: list[str], debug: bool = False) -> dict[str, Any]:
         """
@@ -195,7 +196,8 @@ class MigrationEngine:
                             confidence=rel.get("confidence", 1.0), library=library
                         )
                         rel["status"] = "candidate"
-                        known_relationships.append({"_id": rel_id, "to": rel.get("to"), "relation": rel.get("relation"), "status": "candidate"})
+                        if rel_id:
+                            known_relationships.append({"_id": rel_id, "to": rel.get("to"), "relation": rel.get("relation"), "status": "candidate"})
                 self.knowledge_repository.insert_symbol(symbol, library)
                 final_relationships = self.knowledge_repository.lookup_relationships(symbol)
                 results.append({
