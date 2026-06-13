@@ -108,8 +108,11 @@ class MigrationCorrelator:
                 response = await self._fetch_batch_intelligence(batch)
             except Exception as e:
                 batch_names = ", ".join(item["library"] for item in batch)
-                logger.error(f"Error fetching bulk intelligence for {batch_names}: {e}")
-                errors.append(f"{batch_names}: {str(e)}")
+                error_msg = str(e)
+                if hasattr(e, "response") and hasattr(e.response, "text"):
+                    error_msg += f" - Response: {e.response.text}"
+                logger.error(f"Error fetching bulk intelligence for {batch_names}: {error_msg}")
+                errors.append(f"{batch_names}: {error_msg}")
                 continue
 
             for library_response in response.get("results", []):
@@ -120,6 +123,10 @@ class MigrationCorrelator:
                         f"{library_response.get('reason', 'source_unavailable')}"
                     )
                     continue
+
+                if library_response.get("intelligence_status") == "degraded":
+                    reason = library_response.get("intelligence_reason", "unknown_degradation")
+                    errors.append(f"{library}: degraded ({reason})")
 
                 fp_data = fingerprint_data.get(library, {})
                 installed_version = fp_data.get("version", "unknown")
@@ -163,6 +170,7 @@ class MigrationCorrelator:
                             latest_version=latest_version,
                             status=status,
                             relationships=relationships,
+                            intelligence_source="webtool",
                             version_distance=self._calculate_version_distance(
                                 installed_version,
                                 latest_version,
@@ -197,22 +205,28 @@ class MigrationCorrelator:
 
     async def _fetch_batch_intelligence(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         if hasattr(self.client, "get_bulk_intelligence"):
-            response = await self.client.get_bulk_intelligence(batch)
-            if isinstance(response, dict) and isinstance(response.get("results"), list):
-                return response
+            try:
+                response = await self.client.get_bulk_intelligence(batch)
+                if isinstance(response, dict) and isinstance(response.get("results"), list):
+                    return response
+            except Exception as e:
+                logger.warning(f"Bulk intelligence request failed: {e}")
 
         if not hasattr(self.client, "get_symbol_intelligence"):
             return {"results": []}
 
         results = []
         for item in batch:
-            response = await self.client.get_symbol_intelligence(
-                item["library"],
-                item["symbols"]
-            )
-            if isinstance(response, dict):
-                response.setdefault("library", item["library"])
-                results.append(response)
+            try:
+                response = await self.client.get_symbol_intelligence(
+                    item["library"],
+                    item["symbols"]
+                )
+                if isinstance(response, dict):
+                    response.setdefault("library", item["library"])
+                    results.append(response)
+            except Exception as e:
+                logger.warning(f"Symbol intelligence failed for {item['library']}: {e}")
 
         return {"results": results}
         
@@ -253,6 +267,7 @@ class MigrationCorrelator:
                     installed_version=installed_version,
                     latest_version=latest_version,
                     status=status,
+                    intelligence_source="version_gap",
                     relationships=[
                         SymbolRelationship(
                             relation="major_version_gap",
