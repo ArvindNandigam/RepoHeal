@@ -986,5 +986,144 @@
       "openai.Image": {"relation": "deprecated_in", "to": "1.0.0"},
       "openai.Model": {"relation": "deprecated_in", "to": "1.0.0"}
     }
+  },
+  "django": {
+    "5.1": {
+      "django.conf.DEFAULT_FILE_STORAGE": {"to": "django.conf.STORAGES", "relation": "deprecated_in_favor_of"},
+      "django.conf.STATICFILES_STORAGE": {"to": "django.conf.STORAGES", "relation": "deprecated_in_favor_of"}
+    },
+    "4.0": {
+      "django.utils.encoding.force_text": {"to": "builtins.str", "relation": "deprecated_in_favor_of"},
+      "django.utils.encoding.smart_text": {"to": "builtins.str", "relation": "deprecated_in_favor_of"},
+      "django.utils.encoding.smart_bytes": {"to": "builtins.bytes", "relation": "deprecated_in_favor_of"},
+      "django.utils.encoding.force_bytes": {"to": "builtins.bytes", "relation": "deprecated_in_favor_of"},
+      "django.utils.translation.ugettext": {"to": "django.utils.translation.gettext", "relation": "deprecated_in_favor_of"},
+      "django.utils.translation.ugettext_lazy": {"to": "django.utils.translation.gettext_lazy", "relation": "deprecated_in_favor_of"},
+      "django.utils.translation.ungettext": {"to": "django.utils.translation.ngettext", "relation": "deprecated_in_favor_of"}
+    },
+    "3.1": {
+      "django.utils.http.urlquote": {"to": "urllib.parse.quote", "relation": "deprecated_in_favor_of"},
+      "django.utils.http.urlquote_plus": {"to": "urllib.parse.quote_plus", "relation": "deprecated_in_favor_of"},
+      "django.utils.http.urlencode": {"to": "urllib.parse.urlencode", "relation": "deprecated_in_favor_of"}
+    },
+    "3.0": {
+      "django.utils.six": {"relation": "removed_in", "to": "3.0"}
+    },
+    "2.0": {
+      "django.core.urlresolvers.reverse": {"to": "django.urls.reverse", "relation": "deprecated_in_favor_of"},
+      "django.core.urlresolvers.resolve": {"to": "django.urls.resolve", "relation": "deprecated_in_favor_of"},
+      "django.core.urlresolvers.get_mod_func": {"to": "django.urls.get_mod_func", "relation": "deprecated_in_favor_of"},
+      "django.core.urlresolvers.get_callable": {"to": "django.urls.get_callable", "relation": "deprecated_in_favor_of"},
+      "django.core.urlresolvers.NoReverseMatch": {"to": "django.urls.NoReverseMatch", "relation": "deprecated_in_favor_of"}
+    },
+    "1.10": {
+      "django.conf.urls.patterns": {"relation": "removed_in", "to": "1.10"},
+      "django.views.generic.simple.direct_to_template": {"relation": "removed_in", "to": "1.10"}
+    }
+  },
+  "flask": {
+    "2.3": {
+      "flask.before_first_request": {"relation": "removed_in", "to": "2.3"},
+      "flask.Flask.before_first_request": {"relation": "removed_in", "to": "2.3"},
+      "flask._app_ctx_stack": {"relation": "removed_in", "to": "2.3"},
+      "flask._request_ctx_stack": {"relation": "removed_in", "to": "2.3"}
+    },
+    "2.0": {
+      "flask.Flask.open_resource": {"relation": "deprecated_in", "to": "2.0"},
+      "flask.json_encoder": {"to": "flask.json.provider.DefaultJSONProvider", "relation": "deprecated_in_favor_of"},
+      "flask.json_decoder": {"relation": "deprecated_in", "to": "2.0"}
+    }
+  },
+  "sqlalchemy": {
+    "2.0": {
+      "sqlalchemy.orm.Query.get": {"to": "sqlalchemy.orm.Session.get", "relation": "deprecated_in_favor_of"},
+      "sqlalchemy.orm.Query.all": {"to": "sqlalchemy.orm.Session.scalars", "relation": "deprecated_in_favor_of"},
+      "sqlalchemy.orm.Query.filter": {"to": "sqlalchemy.sql.expression.where", "relation": "deprecated_in_favor_of"},
+      "sqlalchemy.orm.Query.filter_by": {"to": "sqlalchemy.sql.expression.where", "relation": "deprecated_in_favor_of"},
+      "sqlalchemy.orm.Session.query": {"to": "sqlalchemy.orm.Session.execute", "relation": "deprecated_in_favor_of"},
+      "sqlalchemy.engine.Engine.execute": {"to": "sqlalchemy.engine.Connection.execute", "relation": "deprecated_in_favor_of"},
+      "sqlalchemy.orm.Session.autocommit": {"relation": "removed_in", "to": "2.0"},
+      "sqlalchemy.orm.query.Query": {"to": "sqlalchemy.sql.expression.select", "relation": "deprecated_in_favor_of"},
+      "sqlalchemy.sql.expression.text": {"to": "sqlalchemy.text", "relation": "deprecated_in_favor_of"}
+    },
+    "1.4": {
+      "sqlalchemy.ext.declarative.declarative_base": {"to": "sqlalchemy.orm.DeclarativeBase", "relation": "deprecated_in_favor_of"},
+      "sqlalchemy.orm.mapper.class_mapper": {"relation": "deprecated_in", "to": "1.4"}
+    }
+  },
+  "jinja2": {
+    "3.0": {
+      "jinja2.Markup": {"to": "markupsafe.Markup", "relation": "deprecated_in_favor_of"},
+      "jinja2.escape": {"to": "markupsafe.escape", "relation": "deprecated_in_favor_of"},
+      "jinja2.utils.contextfunction": {"to": "jinja2.pass_context", "relation": "deprecated_in_favor_of"},
+      "jinja2.utils.environmentfunction": {"to": "jinja2.pass_environment", "relation": "deprecated_in_favor_of"},
+      "jinja2.utils.evalcontextfunction": {"to": "jinja2.pass_eval_context", "relation": "deprecated_in_favor_of"}
+    }
+  },
+  "werkzeug": {
+    "3.0": {
+      "werkzeug.url_encode": {"to": "urllib.parse.urlencode", "relation": "deprecated_in_favor_of"},
+      "werkzeug.url_quote": {"to": "urllib.parse.quote", "relation": "deprecated_in_favor_of"},
+      "werkzeug.url_quote_plus": {"to": "urllib.parse.quote_plus", "relation": "deprecated_in_favor_of"},
+      "werkzeug.url_unquote": {"to": "urllib.parse.unquote", "relation": "deprecated_in_favor_of"},
+      "werkzeug.url_unquote_plus": {"to": "urllib.parse.unquote_plus", "relation": "deprecated_in_favor_of"}
+    },
+    "2.0": {
+      "werkzeug.MultiDict": {"relation": "deprecated_in", "to": "2.0"},
+      "werkzeug.ImmutableMultiDict": {"relation": "deprecated_in", "to": "2.0"}
+    }
+  },
+  "pillow": {
+    "10.0": {
+      "PIL.Image.tostring": {"to": "PIL.Image.tobytes", "relation": "deprecated_in_favor_of"},
+      "PIL.Image.fromstring": {"to": "PIL.Image.frombytes", "relation": "deprecated_in_favor_of"},
+      "PIL.Image.ENTROPY": {"relation": "deprecated_in", "to": "10.0"}
+    },
+    "9.0": {
+      "PIL.Image.save.palette": {"relation": "deprecated_in", "to": "9.0"}
+    }
+  },
+  "click": {
+    "8.0": {
+      "click.get_os_args": {"relation": "deprecated_in", "to": "8.0"},
+      "click.utils.LazyFile": {"relation": "deprecated_in", "to": "8.0"}
+    }
+  },
+  "pytest": {
+    "8.0": {
+      "pytest.warns(None)": {"relation": "removed_in", "to": "8.0"}
+    },
+    "7.0": {
+      "pytest._fillfuncargs": {"relation": "removed_in", "to": "7.0"},
+      "pytest.yield_fixture": {"to": "pytest.fixture", "relation": "deprecated_in_favor_of"}
+    }
+  },
+  "celery": {
+    "5.4": {
+      "celery.task.base.Task.__call__": {"relation": "deprecated_in", "to": "5.4"}
+    },
+    "5.3": {
+      "celery.app.base.Celery.task": {"to": "celery.app.base.Celery.task", "relation": "deprecated_in_favor_of"}
+    },
+    "5.0": {
+      "celery.platforms.Pidfile": {"relation": "deprecated_in", "to": "5.0"}
+    }
+  },
+  "cryptography": {
+    "42.0": {
+      "cryptography.x509.extensions.UnrecognizedExtension": {"relation": "deprecated_in", "to": "42.0"}
+    },
+    "40.0": {
+      "cryptography.hazmat.primitives.twofactor": {"relation": "deprecated_in", "to": "40.0"}
+    },
+    "35.0": {
+      "cryptography.hazmat.primitives.ciphers.algorithms.AES": {"relation": "deprecated_in", "to": "35.0"}
+    }
+  },
+  "boto3": {
+    "1.28": {
+      "boto3.client.machinelearning": {"relation": "removed_in", "to": "1.28"},
+      "boto3.client.codedeploy": {"relation": "deprecated_in", "to": "1.28"}
+    }
   }
 }

@@ -220,22 +220,8 @@ class MigrationEngine:
                         debug_trace["regex_relationships"].extend(regex_rels)
                         debug_trace["relationships_extracted"].extend(regex_rels)
                     all_rels.extend(regex_rels)
-            
-            # PHASE 3: Groq extraction on all snippets
-            if debug: debug_trace["groq_used"] = True
-            all_snippets = [s for page in page_data_cache for s in page["snippets"]]
-            groq_rels = extract_relationships_groq(symbol, library, all_snippets, ranked_results)
-            if groq_rels:
-                if debug:
-                    debug_trace["groq_relationships"].extend(groq_rels)
-                    debug_trace["relationships_extracted"].extend(groq_rels)
-                all_rels.extend(groq_rels)
-            else:
-                if debug:
-                    debug_trace["groq_failed"] = True
-                    debug_trace["groq_skip_reason"] = "no_relationships_returned"
-            
-            # PHASE 4: Merge fallback results (already fetched unconditionally above)
+
+            # PHASE 3: Merge fallback results (already fetched unconditionally above)
             if fallback_rels:
                 if debug:
                     debug_trace["fallback_used"] = True
@@ -243,6 +229,24 @@ class MigrationEngine:
                     debug_trace["relationships_extracted"].extend(fallback_rels)
                 logger.info("Fallback matched %d known migration rules for %s.%s", len(fallback_rels), library, symbol)
                 all_rels.extend(fallback_rels)
+            
+            # PHASE 4: Groq — ONLY if fallback + regex found nothing useful
+            if not all_rels:
+                if debug: debug_trace["groq_used"] = True
+                all_snippets = [s for page in page_data_cache for s in page["snippets"]]
+                groq_rels = extract_relationships_groq(symbol, library, all_snippets, ranked_results)
+                if groq_rels:
+                    if debug:
+                        debug_trace["groq_relationships"].extend(groq_rels)
+                        debug_trace["relationships_extracted"].extend(groq_rels)
+                    all_rels.extend(groq_rels)
+                else:
+                    if debug:
+                        debug_trace["groq_failed"] = True
+                        debug_trace["groq_skip_reason"] = "no_relationships_returned"
+            else:
+                if debug:
+                    debug_trace["groq_skip_reason"] = "fallback_or_regex_sufficient"
             
             # MERGE: deduplicate across all methods, highest confidence wins
             if all_rels:

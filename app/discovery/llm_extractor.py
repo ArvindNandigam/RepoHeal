@@ -12,15 +12,15 @@ logger = logging.getLogger(__name__)
 _SEPARATOR = "\n\n---\n\n"
 _FALLBACK_MODEL = "llama-3.1-8b-instant"
 
-# Groq free tier: 12,000 tokens/minute (TPM)
+# Groq free tier on_demand: 6,000 TPM per model.
 # 1 token ~= 4 chars. Leave ~2K tokens for completion budget.
-# Max prompt tokens = 10,000 -> ~40,000 chars total.
-# System prompt ~700 chars, header variable. Safe snippet budget: 30,000 chars.
-_MAX_BATCH_CHARS = 30_000
+# Max prompt tokens ~4,000 -> ~16,000 chars total.
+# System prompt ~700 chars, header variable. Safe snippet budget: 12,000 chars.
+_MAX_BATCH_CHARS = 12_000
 
 # Sleep between batches to let TPM counter reset.
-# At 12K TPM, sending X tokens means sleeping for (X/12000)*60 seconds.
-_TPM_LIMIT = 12_000
+# At 6K TPM, sending X tokens means sleeping for (X/6000)*60 seconds.
+_TPM_LIMIT = 6_000
 _SAFE_WAIT_SECONDS = 3.0  # minimum sleep between batches
 
 SYSTEM_PROMPT = """
@@ -166,10 +166,9 @@ def _try_extraction(
     try:
         return _call_groq(client, model, messages, use_json_format=False, symbol=symbol, library=library)
     except APIStatusError as e:
-        body = e.body if isinstance(e.body, dict) else {"raw": str(e.body)}
-        logger.warning(
-            "Groq HTTP %d without json_object (library=%s symbol=%s model=%s): %s",
-            e.status_code, library, symbol, model, json.dumps(body),
+        logger.info(
+            "Groq HTTP %d (library=%s symbol=%s model=%s): %s",
+            e.status_code, library, symbol, model, e.body.get("error", {}).get("message", str(e.body)) if isinstance(e.body, dict) else str(e.body),
         )
         return []
 

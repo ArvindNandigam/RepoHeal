@@ -70,12 +70,12 @@ def validate_relationship(relationship: dict, source_text: str) -> tuple[bool, s
     
     if not old_symbol or not new_symbol:
         msg = f"Validation failed: missing from/to in relationship {relationship}"
-        logger.warning(msg)
+        logger.debug(msg)
         return False, "missing_from_or_to"
         
     if not is_likely_symbol(new_symbol):
         msg = f"Validation failed: invalid target symbol '{new_symbol}'"
-        logger.warning(msg)
+        logger.debug(msg)
         return False, "invalid_target"
             
     text_lower = source_text.lower()
@@ -86,7 +86,7 @@ def validate_relationship(relationship: dict, source_text: str) -> tuple[bool, s
     old_tail = old_parts[-1].lower() if old_parts else ""
     if old_tail and old_tail not in text_lower:
         msg = f"Validation failed: old symbol '{old_tail}' not found in source text"
-        logger.warning(msg)
+        logger.debug(msg)
         return False, "old_symbol_not_found"
         
     # 3. New symbol appears
@@ -94,14 +94,14 @@ def validate_relationship(relationship: dict, source_text: str) -> tuple[bool, s
     new_tail = new_parts[-1].lower() if new_parts else ""
     if new_tail and new_tail not in text_lower:
         msg = f"Validation failed: new symbol '{new_tail}' not found in source text"
-        logger.warning(msg)
+        logger.debug(msg)
         return False, "new_symbol_not_found"
         
     # 4. Relationship phrase exists (bypass for regex and fallback methods)
     if relationship.get("extraction_method") not in ("regex", "fallback"):
         if not any(phrase in text_lower for phrase in RELATIONSHIP_PHRASES):
             msg = f"Validation failed: no relationship phrase found in source text"
-            logger.warning(msg)
+            logger.debug(msg)
             return False, "no_relationship_phrase"
         
     return True, None

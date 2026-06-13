@@ -33,7 +33,7 @@ def fetch_page(url: str, timeout: float = 10.0) -> str | None:
             response.raise_for_status()
             return _extract_text(response.text)
     except Exception as e:
-        logger.warning(f"Failed to fetch page {url}: {e}")
+        logger.debug("Failed to fetch page %s: %s", url, e)
         return None
 
 def extract_relevant_sections(text: str, symbol: str) -> list[str]:
@@ -51,7 +51,7 @@ def extract_relevant_sections(text: str, symbol: str) -> list[str]:
     if len(parts) >= 1:
         search_terms.append(parts[-1])                   # tail: parse_obj
     
-    window = 300
+    window = 100
     
     for term in search_terms:
         snippets = _extract_windows(text, term, window)
