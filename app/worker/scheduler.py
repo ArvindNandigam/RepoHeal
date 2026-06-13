@@ -6,6 +6,7 @@ Designed to be called from a cron job or APScheduler.
 """
 
 from datetime import datetime, timezone, timedelta
+from typing import Optional
 from app.db.database import get_mongo_db
 from app.worker.task_registry import create_job
 from app.utils.logger import get_logger
@@ -20,12 +21,13 @@ FREQUENCY_DELTAS = {
 }
 
 
-def compute_next_run(frequency: str) -> str:
+def compute_next_run(frequency: str, last_run: Optional[datetime] = None) -> str:
     if frequency.isdigit():
         delta = timedelta(days=int(frequency))
     else:
         delta = FREQUENCY_DELTAS.get(frequency, timedelta(weeks=1))
-    return (datetime.now(timezone.utc) + delta).isoformat()
+    base = last_run if last_run else datetime.now(timezone.utc)
+    return (base + delta).isoformat()
 
 
 def check_due_repositories() -> list[dict]:
@@ -56,12 +58,12 @@ def check_due_repositories() -> list[dict]:
                 queued.append({"repository": repo_id, "branch": branch, "job_id": job_id})
                 logger.info(f"Scheduled analysis queued for {repo_id} @ {branch}")
 
-        # Update next_run
+        # Update next_run based on last_run (not now) to prevent drift
         db.monitoring_config.update_one(
             {"repository": repo_id},
             {"$set": {
                 "last_run": now,
-                "next_run": compute_next_run(config.get("frequency", "weekly"))
+                "next_run": compute_next_run(config.get("frequency", "weekly"), last_run=now)
             }}
         )
 

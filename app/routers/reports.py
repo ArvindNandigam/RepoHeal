@@ -23,13 +23,6 @@ async def health_report_page(repo_owner: str, repo_name: str, user=Depends(verif
 async def migration_center_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
     return HTMLResponse(get_template("migration_center.html"))
 
-@router.get("/{repo_owner}/{repo_name}/compare-page", response_class=HTMLResponse)
-async def compare_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
-    template = get_template("compare.html")
-    link = settings.FEEDBACK_LINK
-    html = template.replace("{{ feedback_link }}", link or "")
-    return HTMLResponse(html)
-
 @router.get("/{repo_owner}/{repo_name}/health")
 async def get_health_report_data(
     repo_owner: str, 

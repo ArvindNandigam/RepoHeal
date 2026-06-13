@@ -49,7 +49,7 @@ class RepositoryConfig(BaseModel):
     reports_url: str
     reports_hub_url: str = ""
     history_url: str = ""
-    compare_url: str
+
 
 class DashboardResponse(BaseModel):
     user: str
@@ -90,17 +90,6 @@ class RepositoryStatus(BaseModel):
     code_state_status: Optional[str] = None
     analysis_id: Optional[str] = None
     repository_snapshot_id: Optional[str] = None
-
-class CompareAnalysesRequest(BaseModel):
-    branch_a: str
-    commit_a: str
-    branch_b: str
-    commit_b: str
-
-class CompareAnalysesResponse(BaseModel):
-    repository: str
-    comparison_path: str
-    comparison: Dict[str, Any]
 
 class GraphResponse(BaseModel):
     repository: str

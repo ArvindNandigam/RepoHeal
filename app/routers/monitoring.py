@@ -265,15 +265,13 @@ async def update_schedule(
     schedule.repository = repo_id
     now = datetime.now(timezone.utc)
     schedule.updated_at = now.isoformat()
-    # Compute next_run based on frequency
-    if schedule.frequency == "daily":
-        schedule.next_run = (now + timedelta(days=1)).isoformat()
-    elif schedule.frequency == "weekly":
-        schedule.next_run = (now + timedelta(weeks=1)).isoformat()
-    elif schedule.frequency == "monthly":
-        schedule.next_run = (now + timedelta(days=30)).isoformat()
-    elif schedule.frequency == "manual":
+    # Compute next_run based on last_run if available, otherwise now
+    from app.worker.scheduler import compute_next_run
+    if schedule.frequency == "manual":
         schedule.next_run = None
+    else:
+        base = datetime.fromisoformat(schedule.last_run) if schedule.last_run else now
+        schedule.next_run = compute_next_run(schedule.frequency, last_run=base)
     db = get_mongo_db()
     db.monitoring_config.update_one(
         {"repository": repo_id},

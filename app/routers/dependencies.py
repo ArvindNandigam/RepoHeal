@@ -72,6 +72,5 @@ def build_dashboard_repositories(github_token: str):
             "reports_url": f"/reports/{owner_login}/{repo_name}",
             "reports_hub_url": f"/reports/{owner_login}/{repo_name}/hub",
             "history_url": f"/reports/{owner_login}/{repo_name}/history-page",
-            "compare_url": f"/compare/{owner_login}/{repo_name}"
         })
     return dashboard_repositories

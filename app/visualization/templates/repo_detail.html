@@ -173,7 +173,7 @@
           <span style="font-size:11px;color:var(--muted);">Commit B</span>
           <select id="commitB" class="field-select" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;min-width:180px;" disabled><option value="">Select branch first</option></select>
         </label>
-        <button class="button secondary" type="button" data-action="compare">Compare</button>
+        
       </div>
     </div>
   </div>
@@ -462,15 +462,6 @@
     );
     const fbLink = "{{ feedback_link }}";
     if (fbLink) document.getElementById("feedbackBtn").style.display = "inline-flex";
-
-    document.querySelector('[data-action="compare"]').addEventListener("click", (e) => {
-      const branchA = document.getElementById("branchA").value || "main";
-      const commitA = document.getElementById("commitA").value || "";
-      const branchB = document.getElementById("branchB").value || "";
-      const commitB = document.getElementById("commitB").value || "";
-      const qs = new URLSearchParams({ branch_a: branchA, commit_a: commitA, branch_b: branchB, commit_b: commitB });
-      window.location.href = `/reports/${OWNER}/${REPO}/compare-page?${qs}`;
-    });
 
     // Auto Analysis
     const autoToggle = document.getElementById("autoAnalysisToggle");

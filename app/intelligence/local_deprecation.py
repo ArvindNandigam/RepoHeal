@@ -98,14 +98,11 @@ def check_local_deprecation(
             dep_in = entry["deprecated_in"]
             rem_in = entry["removed_in"]
 
-            status = "healthy"
+            status = "at_risk"
             if rem_in and _version_gte(installed_version, rem_in):
                 status = "breaking"
             elif dep_in and _version_gte(installed_version, dep_in):
                 status = "deprecated"
-
-            if status == "healthy":
-                return None
 
             return {
                 "library": library,

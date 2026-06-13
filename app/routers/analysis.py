@@ -2,8 +2,6 @@ from datetime import datetime, timezone
 from app.models.schemas import (
     AnalysisResponse,
     AnalysisTarget,
-    CompareAnalysesRequest,
-    CompareAnalysesResponse,
     SimulateUpgradeRequest,
     SimulateUpgradeResponse,
     SimulatedUpgradeResult,
@@ -246,90 +244,6 @@ async def latest_report_endpoint(
     except Exception as e:
         logger.error(f"Report lookup failed for {repo_id}: {e}")
         raise AnalysisError(message=str(e))
-
-
-@router.post("/compare/{repo_owner}/{repo_name}", response_model=CompareAnalysesResponse)
-@limiter.limit("5/minute")
-async def compare_analyses_endpoint(
-    request: Request,
-    repo_owner: str,
-    repo_name: str,
-    comparison: CompareAnalysesRequest,
-    user=Depends(verify_session_token)
-):
-    session_data = get_session_data(user)
-    installation = ensure_repoheal_installed(repo_owner, repo_name)
-    verify_repository_access(
-        github_token=session_data["github_token"],
-        repo_owner=repo_owner,
-        repo_name=repo_name
-    )
-
-    repo_id = f"{repo_owner}/{repo_name}"
-    try:
-        from app.github.client import RepoHealGitHubClient
-        from app.github.metadata_branch import MetadataBranchManager
-
-        github_client = RepoHealGitHubClient(installation["id"])
-        repo = github_client.get_repo(repo_id)
-        metadata_manager = MetadataBranchManager(github_client)
-        
-        manifest = metadata_manager._load_manifest(repo)
-        
-        def find_id(branch, commit):
-            matches = [a for a in manifest.get("analyses", []) if a.get("branch") == branch and a.get("commit", "").startswith(commit)]
-            return matches[0]["analysis_id"] if matches else None
-
-        left_id = find_id(comparison.branch_a, comparison.commit_a)
-        right_id = find_id(comparison.branch_b, comparison.commit_b)
-        
-        if left_id and right_id:
-            result = metadata_manager.compare_analyses_by_id(repo, left_id, right_id)
-            return {
-                "repository": repo_id,
-                "comparison_id": result.get("comparison_id", ""),
-                "delta": result
-            }
-        
-        comparison_path, payload = metadata_manager.compare_analyses_by_branch(
-            repo,
-            repo_id,
-            comparison.branch_a,
-            comparison.commit_a,
-            comparison.branch_b,
-            comparison.commit_b
-        )
-        return {
-            "repository": repo_id,
-            "comparison_path": comparison_path,
-            "comparison": payload
-        }
-    except ValueError as e:
-        msg = str(e)
-        logger.warning(f"Comparison failed for {repo_id}: {msg}")
-        from fastapi.responses import JSONResponse
-        return JSONResponse(
-            status_code=404,
-            content={
-                "error": "comparison_unavailable",
-                "detail": "Comparison unavailable.",
-                "reason": "One or more analysis records do not exist.",
-                "required_action": "Run analysis for both commits before comparison.",
-                "message": msg,
-            }
-        )
-    except Exception as e:
-        logger.error(f"Comparison failed for {repo_id}: {e}")
-        from fastapi.responses import JSONResponse
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": "comparison_failed",
-                "detail": "Comparison failed.",
-                "reason": str(e),
-                "required_action": "Check server logs for details.",
-            }
-        )
 
 
 @router.post("/analyze/simulate/{repo_owner}/{repo_name}")

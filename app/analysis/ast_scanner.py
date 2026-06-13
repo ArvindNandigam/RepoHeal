@@ -47,6 +47,10 @@ def _node_name(node):
     if isinstance(node, ast.Call):
         return _node_name(node.func)
 
+    # Treat subscript access like df[col].method() as transparent — use the root object
+    if isinstance(node, ast.Subscript):
+        return _node_name(node.value)
+
     return None
 
 
@@ -65,6 +69,10 @@ def _attribute_chain_parts(node):
 
     if isinstance(node, ast.Call):
         return _attribute_chain_parts(node.func)
+
+    # Treat subscript access as transparent
+    if isinstance(node, ast.Subscript):
+        return _attribute_chain_parts(node.value)
 
     return None
 
@@ -109,6 +117,7 @@ def extract_imports_from_python_source(source, module_index=None, import_aliases
         # Track variable origins: df -> pandas (from df = pd.DataFrame(...))
         variable_origins = {}
         for node in ast.walk(tree):
+            # Pattern A: df = pd.DataFrame(...) — dotted constructor
             if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Attribute):
                 call_chain = _attribute_chain_parts(node.value.func)
                 if call_chain and len(call_chain) >= 2:
@@ -116,7 +125,16 @@ def extract_imports_from_python_source(source, module_index=None, import_aliases
                     resolved = import_aliases.get(lhs_root, lhs_root)
                     for target in node.targets:
                         if isinstance(target, ast.Name):
-                            variable_origins[target.id] = normalize_package_name(resolved)
+                            # Skip self-reassignments: df = df.method()
+                            if target.id != lhs_root:
+                                variable_origins[target.id] = normalize_package_name(resolved)
+            # Pattern B: df = DataFrame(...) — from-import bare constructor
+            if isinstance(node, (ast.Assign, ast.AnnAssign)) and isinstance(getattr(node, 'value', None), ast.Call) and isinstance(node.value.func, ast.Name):
+                func_name = node.value.func.id
+                if func_name in import_aliases:
+                    for target in (node.targets if isinstance(node, ast.Assign) else [node.target]):
+                        if isinstance(target, ast.Name) and target.id not in variable_origins:
+                            variable_origins[target.id] = normalize_package_name(import_aliases[func_name])
 
         for node in ast.walk(tree):
 
@@ -389,6 +407,7 @@ def extract_python_semantics(source, module_name=None, module_index=None):
         # Track variable origins: df -> pandas (from df = pd.DataFrame(...))
         variable_origins = {}
         for node in ast.walk(tree):
+            # Pattern A: df = pd.DataFrame(...) — dotted constructor
             if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Attribute):
                 call_chain = _attribute_chain_parts(node.value.func)
                 if call_chain and len(call_chain) >= 2:
@@ -396,7 +415,16 @@ def extract_python_semantics(source, module_name=None, module_index=None):
                     resolved = import_aliases.get(lhs_root, lhs_root)
                     for target in node.targets:
                         if isinstance(target, ast.Name):
-                            variable_origins[target.id] = normalize_package_name(resolved)
+                            # Skip self-reassignments: df = df.method()
+                            if target.id != lhs_root:
+                                variable_origins[target.id] = normalize_package_name(resolved)
+            # Pattern B: df = DataFrame(...) — from-import bare constructor
+            if isinstance(node, (ast.Assign, ast.AnnAssign)) and isinstance(getattr(node, 'value', None), ast.Call) and isinstance(node.value.func, ast.Name):
+                func_name = node.value.func.id
+                if func_name in import_aliases:
+                    for target in (node.targets if isinstance(node, ast.Assign) else [node.target]):
+                        if isinstance(target, ast.Name) and target.id not in variable_origins:
+                            variable_origins[target.id] = normalize_package_name(import_aliases[func_name])
 
         function_stack = []
 
