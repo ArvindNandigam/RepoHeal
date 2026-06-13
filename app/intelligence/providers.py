@@ -162,9 +162,4 @@ class GroqProvider(IntelligenceProvider):
 
 
 def create_intelligence_provider() -> IntelligenceProvider:
-    provider = os.getenv("INTELLIGENCE_PROVIDER", "restricted_webtool").lower()
-    if provider in {"restricted_webtool", "webtool"}:
-        return RestrictedWebtoolProvider()
-    if provider == "groq":
-        return GroqProvider()
-    raise ValueError(f"Unsupported INTELLIGENCE_PROVIDER: {provider}")
+    return RestrictedWebtoolProvider()
