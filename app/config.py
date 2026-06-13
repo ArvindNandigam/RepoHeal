@@ -41,6 +41,10 @@ class Settings:
     max_search_results: int = 20
     serper_api_key: str | None = None
 
+    # Google Sheets Knowledge Base
+    google_service_account_json: str | None = None
+    google_sheet_title: str = "Restricted Webtool - Migration Intelligence"
+
     # Daily Report / Email
     smtp_host: str = ""
     smtp_port: int = 587
@@ -73,6 +77,9 @@ class Settings:
         groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
         max_search_results = int(os.getenv("MAX_SEARCH_RESULTS", "20"))
         serper_api_key = os.getenv("SERPER_API_KEY", "").strip() or None
+        google_service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip() or None
+        google_sheet_title = (os.getenv("GOOGLE_SHEET_TITLE", "").strip() or "Restricted Webtool - Migration Intelligence")
+
         smtp_host = os.getenv("SMTP_HOST", "").strip()
         smtp_port = int(os.getenv("SMTP_PORT", "587"))
         smtp_user = os.getenv("SMTP_USER", "").strip()
@@ -94,6 +101,8 @@ class Settings:
             groq_model=groq_model,
             max_search_results=max_search_results,
             serper_api_key=serper_api_key,
+            google_service_account_json=google_service_account_json,
+            google_sheet_title=google_sheet_title,
             smtp_host=smtp_host,
             smtp_port=smtp_port,
             smtp_user=smtp_user,

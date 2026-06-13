@@ -24,6 +24,24 @@ def _load_known_migrations() -> dict[str, dict[str, dict[str, Any]]]:
     except (FileNotFoundError, json.JSONDecodeError) as e:
         logger.warning("Could not load known_migrations.json: %s", e)
         _known_migrations = {}
+
+    # Merge knowledge base files (Level 3) into fallback
+    try:
+        from app.knowledge.knowledge_base import load_knowledge_base
+        kb = load_knowledge_base()
+        for lib, symbols in kb.items():
+            if lib not in _known_migrations:
+                _known_migrations[lib] = {}
+            for symbol, entry in symbols.items():
+                if "kb" not in _known_migrations[lib]:
+                    _known_migrations[lib]["kb"] = {}
+                _known_migrations[lib]["kb"][symbol] = {
+                    "to": entry.get("to", ""),
+                    "relation": entry.get("relation", "deprecated_in_favor_of"),
+                }
+    except Exception as e:
+        logger.warning("Could not load knowledge base files: %s", e)
+
     return _known_migrations
 
 

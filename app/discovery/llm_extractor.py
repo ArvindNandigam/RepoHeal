@@ -12,16 +12,55 @@ logger = logging.getLogger(__name__)
 _SEPARATOR = "\n\n---\n\n"
 _FALLBACK_MODEL = "llama-3.1-8b-instant"
 
-# Groq free tier on_demand: 6,000 TPM per model.
+# Groq free tier on_demand: 6,000 TPM, 100,000 TPD per model.
 # 1 token ~= 4 chars. Leave ~2K tokens for completion budget.
 # Max prompt tokens ~4,000 -> ~16,000 chars total.
 # System prompt ~700 chars, header variable. Safe snippet budget: 12,000 chars.
 _MAX_BATCH_CHARS = 12_000
 
-# Sleep between batches to let TPM counter reset.
-# At 6K TPM, sending X tokens means sleeping for (X/6000)*60 seconds.
 _TPM_LIMIT = 6_000
-_SAFE_WAIT_SECONDS = 3.0  # minimum sleep between batches
+_TPD_LIMIT = 100_000
+_SAFE_WAIT_SECONDS = 3.0
+
+_TOKEN_HISTORY: list[tuple[float, int]] = []
+
+
+def _prune_token_history() -> None:
+    now = time.time()
+    cutoff_24h = now - 86400
+    # Prune old entries and keep only last 24h
+    _TOKEN_HISTORY[:] = [(ts, t) for ts, t in _TOKEN_HISTORY if ts > cutoff_24h]
+
+
+def _check_tpm_budget(needed: int) -> float:
+    """Return seconds to wait before next call to stay under TPM limit."""
+    now = time.time()
+    cutoff_1m = now - 60
+    tpm_used = sum(t for ts, t in _TOKEN_HISTORY if ts > cutoff_1m)
+    if tpm_used + needed > _TPM_LIMIT:
+        # How long until enough budget frees up?
+        # Oldest entry within the 60s window that we need to age out
+        in_window = [(ts, t) for ts, t in _TOKEN_HISTORY if ts > cutoff_1m]
+        in_window.sort()
+        needed_freed = (tpm_used + needed) - _TPM_LIMIT
+        freed = 0
+        for ts, t in in_window:
+            freed += t
+            if freed >= needed_freed:
+                wait = ts + 60 - now + 0.5
+                return max(wait, 1.0)
+    return 0.0
+
+
+def _check_tpd_budget(needed: int) -> bool:
+    """Return True if we have enough TPD budget."""
+    _prune_token_history()
+    tpd_used = sum(t for _, t in _TOKEN_HISTORY)
+    return tpd_used + needed <= _TPD_LIMIT
+
+
+def _record_tokens(tokens: int) -> None:
+    _TOKEN_HISTORY.append((time.time(), tokens))
 
 SYSTEM_PROMPT = """
 You are an evidence extraction engine.
@@ -175,12 +214,15 @@ def _try_extraction(
     return []
 
 
-def extract_relationships_groq(symbol: str, library: str, snippets: list[str], source_context: list[dict]) -> list[dict]:
+def extract_relationships_groq(symbol: str, library: str, snippets: list[str], source_context: list[dict]) -> tuple[list[dict], bool]:
+    """Returns (relationships, quota_exhausted).
+    quota_exhausted is True if any batch was skipped due to TPD budget exhaustion.
+    """
     settings = get_settings()
     api_key = settings.groq_api_key
     if not api_key:
         logger.warning("GROQ_API_KEY not set. Cannot run LLM extraction.")
-        return []
+        return [], False
 
     client = Groq(api_key=api_key)
     primary_model = settings.groq_model
@@ -190,31 +232,42 @@ def extract_relationships_groq(symbol: str, library: str, snippets: list[str], s
                 len(snippets), len(batches), _MAX_BATCH_CHARS)
 
     all_rels: list[dict] = []
+    quota_exhausted = False
 
     for i, batch in enumerate(batches):
-        # Rate limiting: sleep between batches to stay under 12K TPM
-        if i > 0:
-            time.sleep(_SAFE_WAIT_SECONDS)
-
         user_prompt = _build_user_prompt(symbol, library, batch, source_context)
         prompt_tokens = len(user_prompt) // 4 + len(SYSTEM_PROMPT) // 4
-        logger.debug("Batch %d/%d: ~%d tokens (TPM limit: %d)", i + 1, len(batches), prompt_tokens, _TPM_LIMIT)
+        logger.debug("Batch %d/%d: ~%d tokens", i + 1, len(batches), prompt_tokens)
 
-        # Skip batch if it alone exceeds TPM limit
-        if prompt_tokens > _TPM_LIMIT:
-            logger.warning("Batch %d/%d too large (%d tokens > %d TPM), skipping", i + 1, len(batches), prompt_tokens, _TPM_LIMIT)
+        # Check TPD budget — skip if we'd exceed daily limit
+        if not _check_tpd_budget(prompt_tokens + 2048):
+            logger.warning("TPD budget exhausted, skipping batch %d/%d", i + 1, len(batches))
+            quota_exhausted = True
             continue
+
+        # Pace to stay under TPM limit
+        wait = _check_tpm_budget(prompt_tokens + 2048)
+        if wait > 0:
+            logger.debug("TPM pacing: sleeping %.1fs before batch %d/%d", wait, i + 1, len(batches))
+            time.sleep(wait)
+        elif i > 0:
+            time.sleep(_SAFE_WAIT_SECONDS)
 
         # Try primary model first
         rels = _try_extraction(client, primary_model, symbol, library, user_prompt)
-
-        # Fallback to secondary model if primary returned nothing
-        if not rels and primary_model != _FALLBACK_MODEL:
-            logger.info("Groq primary model %s returned nothing, trying fallback %s", primary_model, _FALLBACK_MODEL)
-            rels = _try_extraction(client, _FALLBACK_MODEL, symbol, library, user_prompt)
-
         if rels:
+            _record_tokens(prompt_tokens + 2048)
             logger.info("Groq batch %d/%d: extracted %d relationship(s)", i + 1, len(batches), len(rels))
             all_rels.extend(rels)
+            continue
 
-    return all_rels
+        # Fallback to secondary model if primary returned nothing
+        if primary_model != _FALLBACK_MODEL:
+            logger.info("Groq primary model %s returned nothing, trying fallback %s", primary_model, _FALLBACK_MODEL)
+            rels = _try_extraction(client, _FALLBACK_MODEL, symbol, library, user_prompt)
+            if rels:
+                _record_tokens(prompt_tokens + 2048)
+                logger.info("Groq batch %d/%d: extracted %d relationship(s)", i + 1, len(batches), len(rels))
+                all_rels.extend(rels)
+
+    return all_rels, quota_exhausted

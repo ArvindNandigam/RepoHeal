@@ -98,4 +98,4 @@ def rank_sources(results: list[dict[str, str]]) -> list[dict[str, str]]:
         ranked.append({**result, "score": score})
         
     ranked.sort(key=lambda x: x["score"], reverse=True)
-    return ranked[:5]
+    return ranked[:2]

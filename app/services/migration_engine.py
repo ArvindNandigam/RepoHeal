@@ -6,6 +6,7 @@ from typing import Any
 
 from app.config import get_settings
 from app.knowledge.repository import KnowledgeRepository
+from app.knowledge.knowledge_base import add_to_knowledge_base
 from app.discovery.web_search import generate_search_queries, serper_search, rank_sources
 from app.discovery.document_extractor import fetch_page, extract_relevant_sections
 from app.discovery.regex_extractor import extract_relationships_regex
@@ -84,6 +85,7 @@ class MigrationEngine:
         latest_version = lib_doc.get("latest_version") if lib_doc else None
         
         results = []
+        _overall_quota_exhausted = False
         
         for symbol in symbols:
             # Step 1: Mongo Lookup
@@ -231,19 +233,38 @@ class MigrationEngine:
                 all_rels.extend(fallback_rels)
             
             # PHASE 4: Groq — ONLY if fallback + regex found nothing useful
+            groq_quota_exhausted = False
             if not all_rels:
                 if debug: debug_trace["groq_used"] = True
                 all_snippets = [s for page in page_data_cache for s in page["snippets"]]
-                groq_rels = extract_relationships_groq(symbol, library, all_snippets, ranked_results)
+                groq_rels, groq_quota_exhausted = extract_relationships_groq(symbol, library, all_snippets, ranked_results)
+                if groq_quota_exhausted:
+                    _overall_quota_exhausted = True
                 if groq_rels:
                     if debug:
                         debug_trace["groq_relationships"].extend(groq_rels)
                         debug_trace["relationships_extracted"].extend(groq_rels)
                     all_rels.extend(groq_rels)
+                    # Write Groq-discovered relationships to knowledge base (Level 3)
+                    for rel in groq_rels:
+                        add_to_knowledge_base(
+                            library=library,
+                            symbol=rel.get("from", symbol),
+                            entry={
+                                "to": rel.get("to", ""),
+                                "relation": rel.get("relation", "deprecated_in_favor_of"),
+                                "confidence": rel.get("confidence", 0.9),
+                                "source": "groq",
+                                "first_seen": datetime.now(timezone.utc).date().isoformat(),
+                            }
+                        )
                 else:
                     if debug:
                         debug_trace["groq_failed"] = True
-                        debug_trace["groq_skip_reason"] = "no_relationships_returned"
+                        if groq_quota_exhausted:
+                            debug_trace["groq_skip_reason"] = "quota_exhausted"
+                        else:
+                            debug_trace["groq_skip_reason"] = "no_relationships_returned"
             else:
                 if debug:
                     debug_trace["groq_skip_reason"] = "fallback_or_regex_sufficient"
@@ -292,8 +313,13 @@ class MigrationEngine:
                 "_debug": debug_trace
             })
             
+        intelligence_status = "degraded" if _overall_quota_exhausted else "ok"
+        intelligence_reason = "quota_exhausted" if _overall_quota_exhausted else None
+
         return {
             "library": library,
             "latest_version": latest_version,
+            "intelligence_status": intelligence_status,
+            "intelligence_reason": intelligence_reason,
             "results": results
         }

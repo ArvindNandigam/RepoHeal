@@ -13,6 +13,8 @@ def format_symbol_response(payload: dict[str, Any], debug: bool = False) -> dict
     response = {
         "library": payload.get("library"),
         "latest_version": payload.get("latest_version"),
+        "intelligence_status": payload.get("intelligence_status", "ok"),
+        "intelligence_reason": payload.get("intelligence_reason"),
         "results": []
     }
     
@@ -43,6 +45,8 @@ def format_library_response(payload: dict[str, Any], debug: bool = False) -> dic
     response = {
         "library": payload.get("library"),
         "latest_version": payload.get("latest_version"),
+        "intelligence_status": payload.get("intelligence_status", "ok"),
+        "intelligence_reason": payload.get("intelligence_reason"),
         "official_docs": payload.get("official_docs"),
         "github_repo": payload.get("github_repo"),
     }
@@ -59,6 +63,8 @@ def format_bulk_response(result_items: list[dict[str, Any]]) -> dict[str, Any]:
                 {
                     "library": item["library"],
                     "latest_version": symbol_response.get("latest_version"),
+                    "intelligence_status": symbol_response.get("intelligence_status", "ok"),
+                    "intelligence_reason": symbol_response.get("intelligence_reason"),
                     "results": symbol_response.get("results", [])
                 }
             )
