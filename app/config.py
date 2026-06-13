@@ -63,7 +63,7 @@ class Settings:
 
     # LLM Provider
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq")
-    LLM_MODEL = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+    LLM_MODEL = os.getenv("LLM_MODEL") or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
     LLM_API_KEY = os.getenv("LLM_API_KEY", "")
     LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "2048"))
     LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.3"))

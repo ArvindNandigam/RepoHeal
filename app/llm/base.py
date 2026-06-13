@@ -16,7 +16,7 @@ class LLMConfig:
     def __init__(self, provider: str | None = None, model: str | None = None):
         import os
         self.provider = provider or os.getenv("LLM_PROVIDER", "groq")
-        self.model = model or os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+        self.model = model or os.getenv("LLM_MODEL") or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
         self.api_key = os.getenv("LLM_API_KEY", "")
         self.max_tokens = int(os.getenv("LLM_MAX_TOKENS", "2048"))
         self.temperature = float(os.getenv("LLM_TEMPERATURE", "0.3"))
