@@ -31,14 +31,14 @@ class Neo4jConnection:
 
             logger.info("Neo4j connection initialized")
 
-        self._ensure_schema()
+            self._ensure_schema()
 
         return self.driver
 
     def _ensure_schema(self):
         """Create indexes for all used labels to suppress AuraDB schema warnings."""
         try:
-            with self.get_session() as session:
+            with self.driver.session() as session:
                 constraints = [
                     "CREATE CONSTRAINT IF NOT EXISTS FOR (r:Repository) REQUIRE r.id IS UNIQUE",
                     "CREATE CONSTRAINT IF NOT EXISTS FOR (f:File) REQUIRE f.id IS UNIQUE",
