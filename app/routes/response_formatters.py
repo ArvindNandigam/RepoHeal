@@ -27,10 +27,9 @@ def format_symbol_response(payload: dict[str, Any], debug: bool = False) -> dict
             formatted_rel = {
                 "relation": rel.get("relation"),
                 "target": rel.get("to"),
-                "status": rel.get("status")
+                "status": rel.get("status"),
+                "confidence": rel.get("confidence"),
             }
-            if debug:
-                formatted_rel["confidence"] = rel.get("confidence")
             formatted_result["relationships"].append(formatted_rel)
             
         if debug and "_debug" in result:

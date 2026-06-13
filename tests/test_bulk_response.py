@@ -31,4 +31,5 @@ def test_bulk_response_matches_symbol_response_relationship_shape():
         "relation": "deprecated_in_favor_of",
         "target": "flask.before_app_request",
         "status": "verified",
+        "confidence": None,
     }
