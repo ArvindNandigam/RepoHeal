@@ -1,6 +1,7 @@
 import httpx
 from app.llm.base import BaseLLMProvider, LLMConfig
 from app.utils.logger import get_logger
+from app.utils.token_bucket import groq_bucket
 
 logger = get_logger(__name__)
 
@@ -11,7 +12,13 @@ class GroqProvider(BaseLLMProvider):
         self.base_url = "https://api.groq.com/openai/v1/chat/completions"
         self.client = httpx.AsyncClient(timeout=120.0)
 
+    def _estimate_input_tokens(self, prompt: str) -> int:
+        return len(prompt) // 4
+
     async def generate(self, prompt: str, max_tokens: int | None = None) -> str:
+        estimated = self._estimate_input_tokens(prompt) + (max_tokens or self.config.max_tokens)
+        await groq_bucket.acquire(estimated)
+
         headers = {
             "Authorization": f"Bearer {self.config.api_key}",
             "Content-Type": "application/json",
@@ -29,6 +36,10 @@ class GroqProvider(BaseLLMProvider):
                 logger.error(f"Groq API {resp.status_code} for model {self.config.model}: {body}")
             resp.raise_for_status()
             data = resp.json()
+            usage = data.get("usage", {})
+            total_tokens = usage.get("total_tokens", 0)
+            if total_tokens:
+                await groq_bucket.record_actual(total_tokens)
             return data["choices"][0]["message"]["content"]
         except httpx.HTTPStatusError as e:
             detail = ""

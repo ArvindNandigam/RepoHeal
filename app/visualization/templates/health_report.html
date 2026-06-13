@@ -71,10 +71,11 @@
 
       <div id="intelStatusPanel" class="panel hidden" style="border-color: rgba(249,112,102,0.3); background: rgba(249,112,102,0.06);">
         <div style="display: flex; gap: 12px; align-items: flex-start;">
-          <span style="font-size:18px;line-height:1;">⚠️</span>
+          <span id="intelStatusIcon" style="font-size:18px;line-height:1;">⚠️</span>
           <div>
             <div style="font-weight:700;margin-bottom:4px;">Migration Intelligence Status: <span id="intelStatus">FAILED</span></div>
             <div id="intelRootCause" style="font-size:13px;color:var(--muted);margin-bottom:4px;"></div>
+            <div id="intelSource" style="font-size:12px;color:var(--text-muted);margin-bottom:2px;"></div>
             <div id="intelFix" style="font-size:12px;color:var(--warning);"></div>
           </div>
         </div>
@@ -200,12 +201,29 @@
         const breakingDisplay = summary.breaking_count != null ? summary.breaking_count : 0;
 
         // Intelligence status panel
-        if (intelStatus === "failed") {
+        if (intelStatus === "failed" || intelStatus === "degraded") {
           const panel = document.getElementById("intelStatusPanel");
           panel.classList.remove("hidden");
-          document.getElementById("intelStatus").textContent = "FAILED";
-          document.getElementById("intelRootCause").textContent = data.intelligence_error || "Intelligence provider returned no data";
-          document.getElementById("intelFix").textContent = "Recommended fix: Check LLM_API_KEY and LLM_MODEL environment variables.";
+          const isDegraded = intelStatus === "degraded";
+          document.getElementById("intelStatus").textContent = isDegraded ? "DEGRADED" : "FAILED";
+          document.getElementById("intelStatusIcon").className = isDegraded ? "status-warning" : "status-error";
+          document.getElementById("intelStatusIcon").textContent = isDegraded ? "\u26a0\ufe0f" : "\u274c";
+          const rootCause = document.getElementById("intelRootCause");
+          if (isDegraded) {
+            rootCause.textContent = data.intelligence_error
+              ? "Webtool: " + data.intelligence_error
+              : "Primary intelligence provider had errors, but local fallback provided partial data.";
+          } else {
+            rootCause.textContent = data.intelligence_error || "Intelligence provider returned no data. Analysis continues with local knowledge base.";
+          }
+          document.getElementById("intelFix").textContent = isDegraded
+            ? "Check Restricted Webtool deployment logs for root cause."
+            : "Analysis continues without external intelligence. Check Restricted Webtool deployment.";
+        }
+        // Intelligence source (optional debug info)
+        const sourceEl = document.getElementById("intelSource");
+        if (sourceEl && data.intelligence_source && data.intelligence_source !== "unknown") {
+          sourceEl.textContent = "Source: " + data.intelligence_source;
         }
 
         const summaryEl = document.getElementById("execSummary");

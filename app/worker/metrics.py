@@ -17,6 +17,15 @@ def count_repository(repo_id: str) -> None:
     )
 
 
+def count_installation(installation_id: str) -> None:
+    db = get_mongo_db()
+    db.platform_metrics.update_one(
+        {"metric": "installations"},
+        {"$addToSet": {"values": installation_id}},
+        upsert=True
+    )
+
+
 def count_analysis(repo_id: str) -> None:
     db = get_mongo_db()
     db.platform_metrics.update_one(
@@ -210,9 +219,8 @@ def record_monitoring_metrics(alerts: int = 0, degradations: int = 0, watchlist_
 
 # --- Performance ---
 
-def record_analysis_duration(seconds: float, success: bool) -> None:
+def record_analysis_duration(seconds: float, success: bool, error_reason: str = "") -> None:
     db = get_mongo_db()
-    from bson import DBRef
     db.platform_metrics.update_one(
         {"metric": "performance"},
         {
@@ -226,6 +234,18 @@ def record_analysis_duration(seconds: float, success: bool) -> None:
             "$min": {"min_analysis_time": seconds},
             "$max": {"max_analysis_time": seconds},
         },
+        upsert=True
+    )
+    if not success and error_reason:
+        _record_failure_reason(error_reason)
+
+
+def _record_failure_reason(reason: str) -> None:
+    db = get_mongo_db()
+    short = reason.strip()[:200]
+    db.platform_metrics.update_one(
+        {"metric": "failure_reasons"},
+        {"$inc": {f"reasons.{short}": 1}},
         upsert=True
     )
 
@@ -289,6 +309,10 @@ def get_all_metrics() -> Dict[str, Any]:
         "max_analysis_time": 0,
     }
 
+    result["unique_installations"] = []
+    result["failure_reasons"] = {}
+    result["average_migration_findings_per_analysis"] = 0
+
     for doc in docs:
         metric = doc.get("metric")
         if metric == "repositories_analyzed":
@@ -301,6 +325,9 @@ def get_all_metrics() -> Dict[str, Any]:
             result["commits_analyzed"] = doc.get("count", 0)
         elif metric == "branches_analyzed":
             result["branches_analyzed"] = sorted(doc.get("values", []))
+        elif metric == "installations":
+            vals = doc.get("values", [])
+            result["unique_installations"] = sorted(vals)
         elif metric == "code_scale":
             for k in ("python_files_scanned", "notebooks_scanned", "functions_indexed",
                        "classes_indexed", "apis_fingerprinted", "lines_of_code_scanned"):
@@ -335,6 +362,10 @@ def get_all_metrics() -> Dict[str, Any]:
             result["failure_count"] = doc.get("failure_count", 0)
             result["min_analysis_time"] = doc.get("min_analysis_time", 0)
             result["max_analysis_time"] = doc.get("max_analysis_time", 0)
+        elif metric == "failure_reasons":
+            reasons = doc.get("reasons", {})
+            sorted_reasons = sorted(reasons.items(), key=lambda x: -x[1])
+            result["failure_reasons"] = dict(sorted_reasons)
 
     if result["min_analysis_time"] == float("inf"):
         result["min_analysis_time"] = 0
@@ -350,6 +381,10 @@ def get_all_metrics() -> Dict[str, Any]:
     )
     result["success_rate"] = (
         round(result["success_count"] / max(result["analysis_count"], 1) * 100, 1)
+    )
+    total_findings = result["deprecated_apis_found"] + result["breaking_apis_found"]
+    result["average_migration_findings_per_analysis"] = (
+        round(total_findings / max(result["analysis_count"], 1), 1)
     )
 
     return result

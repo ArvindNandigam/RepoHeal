@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 from typing import Dict, Any
 
 from app.intelligence.providers import IntelligenceProvider
@@ -10,7 +11,7 @@ from app.migrations.document_generator import MigrationDocumentGenerator
 from app.github.client import RepoHealGitHubClient
 from app.github.metadata_branch import MetadataBranchManager
 from app.github.changes_branch import ChangesBranchManager
-from app.models.migration_models import HealthReport
+from app.models.migration_models import HealthReport, CorrelationResult
 
 from app.utils.logger import get_logger
 
@@ -64,23 +65,49 @@ class MigrationPipeline:
         
         # 1. Correlate
         _report_progress(1, total_steps, "Querying Restricted Webtool for API intelligence")
-        correlation = await self.correlator.correlate(analysis, repo_id)
+        try:
+            correlation = await self.correlator.correlate(analysis, repo_id)
+        except Exception as e:
+            logger.error(f"Intelligence correlation crashed: {e}", exc_info=True)
+            correlation = CorrelationResult(
+                repository=repo_id,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                total_symbols=0,
+                assessments=[],
+                libraries_checked=0,
+                webtool_errors=[str(e)],
+                intelligence_source="none",
+            )
         self._check_cancelled()
 
         intelligence_status = "success"
         intelligence_error = ""
+        intelligence_source = correlation.intelligence_source or "unknown"
         webtool_errors = correlation.webtool_errors or []
+        has_actionable = any(
+            a.status in ("deprecated", "at_risk", "breaking")
+            for a in correlation.assessments
+        )
         if webtool_errors:
-            intelligence_status = "failed"
             intelligence_error = webtool_errors[0] if webtool_errors else "Unknown intelligence error"
-            logger.warning(
-                f"[DIAG] Intelligence FAILED — errors: {len(webtool_errors)} | "
-                f"first: {intelligence_error}"
-            )
+            if has_actionable:
+                intelligence_status = "degraded"
+                intelligence_source = "local_kb"
+                logger.warning(
+                    f"[DIAG] Intelligence DEGRADED — webtool errors ({len(webtool_errors)}) "
+                    f"but local fallback provided data. First error: {intelligence_error}"
+                )
+            else:
+                intelligence_status = "failed"
+                intelligence_source = "none"
+                logger.warning(
+                    f"[DIAG] Intelligence FAILED — errors: {len(webtool_errors)} | "
+                    f"first: {intelligence_error}"
+                )
         has_deprecated = any(a.status == "deprecated" for a in correlation.assessments)
         if not has_deprecated and not webtool_errors:
             logger.info("[DIAG] Intelligence returned 0 deprecated symbols (all healthy)")
-        elif not has_deprecated and webtool_errors:
+        elif not has_deprecated and webtool_errors and not has_actionable:
             logger.warning("[DIAG] Intelligence failed — deprecated count forced to UNKNOWN")
         
         logger.info(
@@ -92,16 +119,24 @@ class MigrationPipeline:
         
         # 2. Impact
         _report_progress(2, total_steps, "Analyzing impact on files and functions")
-        impacts = self.impact_analyzer.analyze(
-            analysis.get("semantic_graph", {}),
-            correlation.assessments
-        )
+        try:
+            impacts = self.impact_analyzer.analyze(
+                analysis.get("semantic_graph", {}),
+                correlation.assessments
+            )
+        except Exception as e:
+            logger.error(f"Impact analysis failed (continuing): {e}")
+            impacts = {"affected_files": [], "affected_functions": [], "call_chain_details": []}
         self._check_cancelled()
         
         # 3. Risk
         _report_progress(3, total_steps, "Classifying migration risk")
-        total_files = len(analysis.get("semantic_graph", {}).get("files", {}))
-        risks = self.risk_classifier.classify(correlation.assessments, impacts, total_files)
+        try:
+            total_files = len(analysis.get("semantic_graph", {}).get("files", {}))
+            risks = self.risk_classifier.classify(correlation.assessments, impacts, total_files)
+        except Exception as e:
+            logger.error(f"Risk classification failed (continuing): {e}")
+            risks = []
         self._check_cancelled()
         
         # 4. Report
@@ -109,6 +144,7 @@ class MigrationPipeline:
         report = self.report_generator.generate(correlation, impacts, risks, analysis)
         report.migration_intelligence_status = intelligence_status
         report.intelligence_error = intelligence_error
+        report.intelligence_source = intelligence_source
         self._check_cancelled()
 
         # 4b. Persist health report immediately (before migration docs),
@@ -129,7 +165,11 @@ class MigrationPipeline:
 
         # 5. Document
         _report_progress(5, total_steps, "Generating migration document and compatibility shims")
-        document = self.document_generator.generate(report)
+        try:
+            document = self.document_generator.generate(report)
+        except Exception as e:
+            logger.error(f"Migration document generation failed (continuing): {e}")
+            document = {"migration_document": "", "summary": {}}
         self._check_cancelled()
         
         # 5b. Compatibility shims for deprecated APIs with known replacements
@@ -145,16 +185,18 @@ class MigrationPipeline:
         # 6. Metadata Branch
         _report_progress(6, total_steps, "Saving artifacts to repoheal.meta branch")
         final_analysis_id = analysis_id or analysis.get("analysis_id") or uuid.uuid4().hex[:10]
-        
-        self.metadata_manager.save_migration_artifacts(
-            repo,
-            document,
-            report,
-            final_analysis_id,
-            analysis,
-            source_branch=source_branch,
-            commit_sha=commit_sha
-        )
+        try:
+            self.metadata_manager.save_migration_artifacts(
+                repo,
+                document,
+                report,
+                final_analysis_id,
+                analysis,
+                source_branch=source_branch,
+                commit_sha=commit_sha
+            )
+        except Exception as e:
+            logger.error(f"Metadata branch save failed (non-fatal): {e}")
 
         # Record migration and remediation metrics
         from app.worker.metrics import record_migration_metrics, record_dependency_intelligence, record_impact_analysis

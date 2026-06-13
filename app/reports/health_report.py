@@ -222,9 +222,17 @@ class HealthReportGenerator:
                 "",
                 "**Migration Intelligence Status**: FAILED",
                 f"**Root cause**: {report.intelligence_error or 'Intelligence provider returned no data'}",
-                "**Failing stage**: Symbol Correlation → Intelligence Provider Request",
-                "**Recommended fix**: Check `LLM_API_KEY` and `LLM_MODEL` environment variables.",
+                "**Note**: Analysis continues without external intelligence. AST, dependency analysis, risk scoring, and graph generation all complete.",
             ])
+        elif report.migration_intelligence_status == "degraded":
+            intel_lines.extend([
+                "",
+                "**Migration Intelligence Status**: DEGRADED",
+                f"**Note**: Primary intelligence provider had errors, but local fallback provided data.",
+                f"**Error**: {report.intelligence_error or 'Unknown webtool error'}",
+            ])
+        if report.intelligence_source and report.intelligence_source not in ("unknown", "none"):
+            intel_lines.append(f"**Intelligence Source**: {report.intelligence_source}")
         return "\n".join([
             "# Migration Assessment",
             "",

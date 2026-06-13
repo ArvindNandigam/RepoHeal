@@ -34,6 +34,7 @@ class SymbolAssessment(BaseModel):
     files_using: List[str] = Field(default_factory=list)
     functions_using: List[str] = Field(default_factory=list)
     confidence: Optional[float] = None
+    intelligence_source: str = "unknown"  # "webtool" | "local_kb" | "version_gap"
 
     def compute_confidence(self) -> Optional[float]:
         confs = [r.confidence for r in self.relationships if r.confidence is not None]
@@ -48,6 +49,7 @@ class CorrelationResult(BaseModel):
     assessments: List[SymbolAssessment] = Field(default_factory=list)
     libraries_checked: int
     webtool_errors: List[str] = Field(default_factory=list)
+    intelligence_source: str = "unknown"  # "webtool" | "local_kb" | "version_gap" | "none"
 
 class AffectedFile(BaseModel):
     path: str
@@ -117,8 +119,9 @@ class HealthReport(BaseModel):
     migration_risk_score: int = 0
     migration_risk_level: str = "unknown"
     intelligence_warnings: List[str] = Field(default_factory=list)
-    migration_intelligence_status: str = "unknown"  # "success" | "failed" | "unknown"
+    migration_intelligence_status: str = "unknown"  # "success" | "degraded" | "failed" | "unknown"
     intelligence_error: str = ""
+    intelligence_source: str = "unknown"  # "webtool" | "local_kb" | "version_gap" | "none"
     executive_summary: ExecutiveSummary
     dependency_inventory: List[DependencyEntry] = Field(default_factory=list)
     deprecated_apis: List[SymbolAssessment] = Field(default_factory=list)

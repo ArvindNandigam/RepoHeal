@@ -110,6 +110,7 @@ def check_local_deprecation(
                 "installed_version": installed_version,
                 "latest_version": latest_version,
                 "status": status,
+                "intelligence_source": "local_kb",
                 "relationships": [
                     {
                         "relation": "deprecated_in_favor_of" if entry.get("replacement") else "deprecated_in",

@@ -556,7 +556,7 @@ def run_analysis_in_background(
     from app.intelligence.providers import create_intelligence_provider
     from app.intelligence.pipeline import MigrationPipeline
     from app.worker.metrics import (
-        count_repository, count_analysis, count_commit, count_branch,
+        count_repository, count_analysis, count_installation, count_commit, count_branch,
         record_code_scale, record_graph_scale, record_dependency_intelligence,
         record_impact_analysis, record_migration_metrics, record_analysis_duration,
     )
@@ -706,6 +706,7 @@ def run_analysis_in_background(
         # Record Tier 1 metrics
         count_repository(repo_id)
         count_analysis(repo_id)
+        count_installation(str(installation["id"]))
         count_commit()
         if selected_branch:
             count_branch(selected_branch)
@@ -935,8 +936,9 @@ def run_analysis_in_background(
 
     except Exception as e:
         _elapsed = (dt_mod.now(tz_mod.utc) - _start).total_seconds()
-        record_analysis_duration(_elapsed, success=False)
         error_msg = traceback.format_exc()
+        error_short = str(e)[:200] if str(e) else "Unknown error"
+        record_analysis_duration(_elapsed, success=False, error_reason=error_short)
         set_analysis_progress(
             job_id, repo_owner, repo_name, JobStatus.FAILED, 0,
             "Analysis failed", error=str(e), job_type=job_type,
