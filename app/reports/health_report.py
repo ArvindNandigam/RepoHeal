@@ -8,16 +8,29 @@ from app.models.migration_models import (
 
 
 def compute_overall_risk_score(report: HealthReport) -> int:
-    """Return 0–100 migration risk (higher = riskier). Never reuse health score."""
+    """Return 0–100 migration risk (higher = riskier). Aggregates across all risks."""
     if getattr(report, "overall_risk_score", None) is not None:
         return int(report.overall_risk_score)
     if report.risk_assessment:
-        return max(r.risk_score for r in report.risk_assessment)
+        return _aggregate_risk_scores(report.risk_assessment)
     if report.overall_risk_level == "high":
         return 75
     if report.overall_risk_level == "medium":
         return 50
     return 0
+
+
+def _aggregate_risk_scores(risks: List[RiskAssessment]) -> int:
+    """Combine multiple risk scores into a single 0-100 score.
+    Uses max + density bonus so that more risks increase the score.
+    """
+    if not risks:
+        return 0
+    max_score = max(r.risk_score for r in risks)
+    high_count = sum(1 for r in risks if r.risk_level == "high")
+    med_count = sum(1 for r in risks if r.risk_level == "medium")
+    density_bonus = min(30, high_count * 5 + med_count * 3)
+    return min(100, max_score + density_bonus)
 
 
 def compute_overall_risk_score_from_inputs(
@@ -26,7 +39,7 @@ def compute_overall_risk_score_from_inputs(
     breaking_count: int,
 ) -> int:
     if risks:
-        return max(r.risk_score for r in risks)
+        return _aggregate_risk_scores(risks)
     if breaking_count:
         return min(100, 60 + breaking_count * 10)
     if deprecated_count:
