@@ -131,7 +131,7 @@
             const row = tbody.insertRow();
             const ts = new Date(m.timestamp).toLocaleString();
             const scoreColor = (m.risk_score || 0) > 70 ? "score-low" : (m.risk_score || 0) > 30 ? "score-med" : "score-high";
-            row.innerHTML = `<td><a href="/reports/${repoOwner}/${repoName}/migration-page?analysis_id=${m.analysis_id}" style="color: var(--accent);">${m.migration_id || m.analysis_id}</a></td><td>${ts}</td><td>--</td><td>--</td><td class="${scoreColor}">${m.risk_score || "N/A"}</td><td>${m.status || "completed"}</td>`;
+            row.innerHTML = `<td><a href="/reports/${repoOwner}/${repoName}/health-page?analysis_id=${m.analysis_id}" style="color: var(--accent);">${m.migration_id || m.analysis_id}</a></td><td>${ts}</td><td>--</td><td>--</td><td class="${scoreColor}">${m.risk_score || "N/A"}</td><td>${m.status || "completed"}</td>`;
           });
         }
 

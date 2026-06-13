@@ -1113,7 +1113,7 @@ async function refreshRepositoryStatus(repo) {
             item.innerHTML = `<span><strong>${repo.name}</strong> · <span style="color: var(--muted);">${ts}</span></span>
               <span style="display: flex; gap: 8px; align-items: center;">
                 <span style="color: ${migScore != null && migScore > 70 ? 'var(--danger)' : migScore != null && migScore > 30 ? 'var(--warning)' : 'var(--accent)'};">Migration Risk: ${riskText}</span>
-                <a class="pill" href="/reports/${repo.owner}/${repo.repo}/migration-page?analysis_id=${m.analysis_id}">View</a>
+                <a class="pill" href="/reports/${repo.owner}/${repo.repo}/health-page?analysis_id=${m.analysis_id}">View</a>
                 <a class="pill" href="/reports/${repo.owner}/${repo.repo}/migration-review?migration_id=${m.migration_id || m.analysis_id}&repo_owner=${repo.owner}&repo_name=${repo.repo}">Review</a>
               </span>`;
             list.appendChild(item);

@@ -101,6 +101,17 @@
         <div id="actionsEmpty" class="empty-state hidden">No recommended actions at this time.</div>
       </div>
 
+      <div class="panel" id="approveSection">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="section-title" style="margin-bottom: 0;">Approve Upgrades</div>
+          <button id="approveAllBtn" class="btn" style="padding: 6px 14px; background: var(--accent); color: #0f1113; border: none; border-radius: 6px; font-weight: 700; cursor: pointer; display: none;">Approve All</button>
+        </div>
+        <div id="approveBody">
+          <div class="empty-state">Loading upgrade paths...</div>
+        </div>
+        <div id="approveResult" class="hidden" style="margin-top: 12px; padding: 12px; border-radius: 8px; background: rgba(66,214,164,0.1); border: 1px solid rgba(66,214,164,0.2);"></div>
+      </div>
+
       <div class="panel">
         <div class="section-title">Dependency Inventory</div>
         <table id="depsTable">
@@ -232,6 +243,87 @@
           });
         }
 
+        // Build approve-upgrades section — 3 tiers
+        const deps2 = data.dependency_inventory || [];
+        const actions2 = data.recommended_actions || [];
+        const upgradePaths = [];
+        for (const dep of deps2) {
+          if (dep.installed_version && dep.latest_version && dep.installed_version !== dep.latest_version) {
+            upgradePaths.push({
+              library: dep.name,
+              from_version: dep.installed_version,
+              to_version: dep.latest_version,
+            });
+          }
+        }
+        const approveBody = document.getElementById("approveBody");
+        const approveBtn = document.getElementById("approveAllBtn");
+        if (upgradePaths.length === 0) {
+          approveBody.innerHTML = '<div class="empty-state">No upgrades available.</div>';
+        } else {
+          approveBtn.style.display = "inline-flex";
+          // Group by library for mid-tier approve
+          const byLib = {};
+          upgradePaths.forEach((u, i) => {
+            if (!byLib[u.library]) byLib[u.library] = [];
+            byLib[u.library].push(i);
+          });
+          let html = '';
+          for (const [lib, indices] of Object.entries(byLib)) {
+            const first = upgradePaths[indices[0]];
+            html += `<div style="padding: 10px 0; border-bottom: 1px solid var(--border);">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div><strong>${lib}</strong></div>
+                <button class="approve-lib-btn" data-lib="${lib}" style="padding: 4px 12px; background: var(--accent); color: #0f1113; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 12px;">Approve Library</button>
+              </div>`;
+            for (const i of indices) {
+              const u = upgradePaths[i];
+              html += `<div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0 6px 20px;">
+                <span style="color: var(--muted); font-size: 13px;">${u.from_version} → ${u.to_version}</span>
+                <button class="approve-single-btn" data-idx="${i}" style="padding: 2px 10px; background: var(--accent); color: #0f1113; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 11px;">Approve</button>
+              </div>`;
+            }
+            html += '</div>';
+          }
+          approveBody.innerHTML = html;
+        }
+
+        async function runApprovals(upgrades) {
+          const resultEl = document.getElementById("approveResult");
+          resultEl.classList.remove("hidden");
+          resultEl.innerHTML = "Processing upgrades...";
+          try {
+            const res = await fetch(`/migrations/${repoOwner}/${repoName}/approve-upgrades`, {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ upgrades, auto_merge: true })
+            });
+            const result = await res.json();
+            const lines = (result.results || []).map(r =>
+              `${r.library}: ${r.status}${r.pr_number ? ` (PR #${r.pr_number})` : ""}${r.error ? ` — ${r.error}` : ""}`
+            );
+            resultEl.innerHTML = `<strong>Results:</strong><br>${lines.join("<br>")}`;
+          } catch (err) {
+            resultEl.innerHTML = `<span style="color: var(--danger);">Error: ${err.message}</span>`;
+          }
+        }
+
+        approveBtn.addEventListener("click", () => runApprovals(upgradePaths));
+        document.querySelectorAll(".approve-lib-btn").forEach(btn => {
+          btn.addEventListener("click", () => {
+            const lib = btn.dataset.lib;
+            const libUpgrades = upgradePaths.filter(u => u.library === lib);
+            runApprovals(libUpgrades);
+          });
+        });
+        document.querySelectorAll(".approve-single-btn").forEach(btn => {
+          btn.addEventListener("click", () => {
+            const idx = parseInt(btn.dataset.idx);
+            runApprovals([upgradePaths[idx]]);
+          });
+        });
+
         // Load migration docs
         try {
           const migRes = await fetch(`/migrations/${repoOwner}/${repoName}`);
@@ -245,7 +337,7 @@
                   <span><strong>${m.migration_id || m.analysis_id}</strong> <span style="color: var(--muted);">${m.timestamp ? new Date(m.timestamp).toLocaleString() : ""}</span></span>
                   <span style="display: flex; gap: 8px;">
                     <span style="color: ${(m.risk_score || 0) > 70 ? 'var(--danger)' : (m.risk_score || 0) > 30 ? 'var(--warning)' : 'var(--accent)'};">Migration Risk: ${m.risk_score || "N/A"}</span>
-                    <a class="pill" href="/reports/${repoOwner}/${repoName}/migration-page?analysis_id=${m.analysis_id}">View</a>
+                    <a class="pill" href="/reports/${repoOwner}/${repoName}/health-page?analysis_id=${m.analysis_id}">View</a>
                   </span>
                 </div>
               `).join("");

@@ -155,6 +155,10 @@ class RebuildGraphRequest(BaseModel):
     branch: Optional[str] = None
     commit: Optional[str] = None
 
+class ApproveUpgradesRequest(BaseModel):
+    upgrades: List[UpgradeSpec]
+    auto_merge: bool = True
+
 class RebuildGraphResponse(BaseModel):
     repository: str
     status: str

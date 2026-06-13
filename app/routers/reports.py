@@ -19,10 +19,6 @@ def get_template(name: str) -> str:
 async def health_report_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
     return HTMLResponse(get_template("health_report.html"))
 
-@router.get("/{repo_owner}/{repo_name}/migration-page", response_class=HTMLResponse)
-async def migration_center_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
-    return HTMLResponse(get_template("migration_center.html"))
-
 @router.get("/{repo_owner}/{repo_name}/health")
 async def get_health_report_data(
     repo_owner: str, 
@@ -100,53 +96,6 @@ async def get_migration_doc_data(
         if hasattr(e, "status") and e.status == 404:
             raise HTTPException(status_code=404, detail="Migration document not found on GitHub")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/{repo_owner}/{repo_name}/comparisons")
-async def list_comparisons(
-    repo_owner: str,
-    repo_name: str,
-    user=Depends(verify_session_token)
-):  
-    installation = ensure_repoheal_installed(repo_owner, repo_name)
-    client = RepoHealGitHubClient(installation["id"])
-    repo = client.get_repo(f"{repo_owner}/{repo_name}")
-    metadata_manager = MetadataBranchManager(client)
-    manifest = metadata_manager._load_manifest(repo)
-
-    comparisons = manifest.get("comparisons", [])
-    if isinstance(comparisons, list):
-        return {"comparisons": comparisons, "repository": f"{repo_owner}/{repo_name}"}
-    return {"comparisons": [], "repository": f"{repo_owner}/{repo_name}"}
-
-
-@router.get("/{repo_owner}/{repo_name}/comparisons/{comparison_id}")
-async def get_comparison(
-    repo_owner: str,
-    repo_name: str,
-    comparison_id: str,
-    user=Depends(verify_session_token)
-):
-    installation = ensure_repoheal_installed(repo_owner, repo_name)
-    client = RepoHealGitHubClient(installation["id"])
-    repo = client.get_repo(f"{repo_owner}/{repo_name}")
-    metadata_manager = MetadataBranchManager(client)
-    manifest = metadata_manager._load_manifest(repo)
-
-    comparisons = manifest.get("comparisons", [])
-    if isinstance(comparisons, list):
-        for c in comparisons:
-            if c.get("comparison_id") == comparison_id or c.get("path", "").endswith(f"{comparison_id}.json"):
-                try:
-                    content = repo.get_contents(c["path"], ref=metadata_manager.branch_name)
-                    import json
-                    return json.loads(content.decoded_content.decode("utf-8"))
-                except Exception as e:
-                    if hasattr(e, "status") and e.status == 404:
-                        raise HTTPException(status_code=404, detail="Comparison file not found on GitHub")
-                    raise HTTPException(status_code=500, detail=str(e))
-
-    raise HTTPException(status_code=404, detail="Comparison not found")
 
 
 @router.get("/{repo_owner}/{repo_name}/history")

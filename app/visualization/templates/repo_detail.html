@@ -145,7 +145,7 @@
       <h3>Reports &amp; Tools</h3>
       <div class="grid-2">
         <a class="button tertiary" href="/reports/{{ owner }}/{{ repo }}/health-page">Health Report</a>
-        <a class="button tertiary" href="/reports/{{ owner }}/{{ repo }}/migration-page">Migration Center</a>
+        <a class="button tertiary" href="/reports/{{ owner }}/{{ repo }}/health-page">Health Report</a>
         <a class="button tertiary" href="/reports/{{ owner }}/{{ repo }}/hub">Reports Hub</a>
         <a class="button tertiary" href="/reports/{{ owner }}/{{ repo }}/history-page">Analysis History</a>
         <a class="button tertiary" href="/visualize/{{ owner }}/{{ repo }}">Graph</a>
@@ -154,28 +154,7 @@
       </div>
     </div>
 
-    <div class="card">
-      <h3>Compare</h3>
-      <div class="flex-row">
-        <label class="field">
-          <span style="font-size:11px;color:var(--muted);">Branch A</span>
-          <select id="branchA" class="field-select" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;min-width:120px;"><option value="">(default)</option></select>
-        </label>
-        <label class="field">
-          <span style="font-size:11px;color:var(--muted);">Commit A</span>
-          <select id="commitA" class="field-select" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;min-width:180px;" disabled><option value="">Select branch first</option></select>
-        </label>
-        <label class="field">
-          <span style="font-size:11px;color:var(--muted);">Branch B</span>
-          <select id="branchB" class="field-select" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;min-width:120px;"><option value="">(default)</option></select>
-        </label>
-        <label class="field">
-          <span style="font-size:11px;color:var(--muted);">Commit B</span>
-          <select id="commitB" class="field-select" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:#1c1f22;color:var(--text);font-size:12px;outline:none;min-width:180px;" disabled><option value="">Select branch first</option></select>
-        </label>
-        
-      </div>
-    </div>
+
   </div>
 
   <script>
@@ -186,15 +165,9 @@
     const reanalyzeUrl = `/reanalyze/${OWNER}/${REPO}`;
     const healthRefreshUrl = `/health-refresh/${OWNER}/${REPO}`;
     const statusUrl = `/status/${OWNER}/${REPO}`;
-    const compareUrl = `/compare/${OWNER}/${REPO}`;
-
     let eventSource = null;
     let branchSelect = document.querySelector("[data-target-branch]");
     let commitSelect = document.querySelector("[data-target-commit]");
-    let branchASelect = document.getElementById("branchA");
-    let commitASelect = document.getElementById("commitA");
-    let branchBSelect = document.getElementById("branchB");
-    let commitBSelect = document.getElementById("commitB");
 
     function showToast(msg, type) {
       const t = document.createElement("div");
@@ -397,12 +370,7 @@
     }
 
     populateBranches(branchSelect);
-    populateBranches(branchASelect);
-    populateBranches(branchBSelect);
-
     branchSelect.addEventListener("change", () => populateCommits(branchSelect.value, commitSelect));
-    branchASelect.addEventListener("change", () => populateCommits(branchASelect.value, commitASelect));
-    branchBSelect.addEventListener("change", () => populateCommits(branchBSelect.value, commitBSelect));
 
     // Wire buttons
     async function queueAnalyze(payload) {
