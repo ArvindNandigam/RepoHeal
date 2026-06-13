@@ -353,6 +353,14 @@
       width: var(--progress-width, 0%);
       border-radius: inherit;
       background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      transition: width 0.6s ease;
+    }
+    .repo-progress span.progress-active {
+      animation: pulse-bar 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse-bar {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
     }
 
     .repo-card-bottom {
@@ -817,10 +825,16 @@ function updateCardFromStatus(card, status) {
   const statusMessage = card.querySelector("[data-status-message]");
   const progressBar = card.querySelector("[data-progress-bar]");
   const etaDisplay = card.querySelector("[data-eta-display]");
+  const lastUpdated = card.querySelector("[data-last-updated]");
 
+  const running = isRunningStatus(status.status);
   setStatusBadge(statusBadge, status);
   if (statusMessage) statusMessage.textContent = `${status.message || "Analysis status available"} (${Number(status.progress || 0)}%)`;
-  if (progressBar) progressBar.style.setProperty("--progress-width", `${Math.max(0, Math.min(100, Number(status.progress || 0)))}%`);
+
+  if (progressBar) {
+    progressBar.style.setProperty("--progress-width", `${Math.max(0, Math.min(100, Number(status.progress || 0)))}%`);
+    progressBar.classList.toggle("progress-active", running);
+  }
 
   if (etaDisplay) {
     const eta = status.eta_seconds;
@@ -830,6 +844,11 @@ function updateCardFromStatus(card, status) {
     } else {
       etaDisplay.style.display = "none";
     }
+  }
+
+  if (lastUpdated) {
+    lastUpdated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+    lastUpdated.style.display = running ? "block" : "none";
   }
 
   if (status.last_analysis) {
@@ -935,7 +954,8 @@ async function refreshRepositoryStatus(repo) {
             <span data-eta-display style="display:none;"></span>
             <span data-status-message></span>
           </div>
-          <div class="repo-progress" style="margin:2px 0 4px;"><span data-progress-bar></span></div>
+          <div class="repo-progress" style="margin:2px 0 4px;"><span data-progress-bar class="progress-active"></span></div>
+          <div data-last-updated style="font-size: 11px; color: var(--muted); display: none;"></div>
           <div class="repo-card-bottom">
             <span class="pill health" data-health-badge style="display:none">Health: --</span>
             <span class="pill migration-risk" data-migration-risk-badge style="display:none">Migration Risk: --</span>
