@@ -161,6 +161,10 @@ async def reports_hub_page(repo_owner: str, repo_name: str, user=Depends(verify_
 async def analysis_history_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
     return HTMLResponse(get_template("analysis_history.html"))
 
+@router.get("/{repo_owner}/{repo_name}/migration-reports", response_class=HTMLResponse)
+async def migration_reports_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
+    return HTMLResponse(get_template("migration_reports.html"))
+
 @router.get("/{repo_owner}/{repo_name}/migration-review", response_class=HTMLResponse)
 async def migration_review_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
     return HTMLResponse(get_template("migration_review.html"))

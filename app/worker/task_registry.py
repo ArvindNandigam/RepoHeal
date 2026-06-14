@@ -895,16 +895,23 @@ def run_analysis_in_background(
             repository_snapshot_id=snapshot_id,
         )
         logger.info(f"Background analysis completed for {repo_id} (job={job_id})")
-        # Update last_run timestamp in monitoring config
+        # Update last_run and next_run in monitoring config
         try:
             from app.db.database import get_mongo_db
+            from app.worker.scheduler import compute_next_run
             _mdb = get_mongo_db()
+            _cfg = _mdb.monitoring_config.find_one({"repository": repo_id})
+            _freq = _cfg.get("frequency", "weekly") if _cfg else "weekly"
+            _last_run_dt = dt_mod.now(tz_mod.utc)
             _mdb.monitoring_config.update_one(
                 {"repository": repo_id},
-                {"$set": {"last_run": dt_mod.now(tz_mod.utc).isoformat()}},
+                {"$set": {
+                    "last_run": _last_run_dt.isoformat(),
+                    "next_run": compute_next_run(_freq, last_run=_last_run_dt),
+                }},
             )
         except Exception:
-            logger.warning("Failed to update last_run for %s", repo_id)
+            logger.warning("Failed to update last_run/next_run for %s", repo_id)
 
         _elapsed = (dt_mod.now(tz_mod.utc) - _start).total_seconds()
         record_analysis_duration(_elapsed, success=True)
@@ -1070,16 +1077,23 @@ def run_health_refresh_in_background(
             selected_branch=selected_branch, target_commit_sha=commit_sha,
             current_head=current_head,
         )
-        # Update last_run timestamp in monitoring config
+        # Update last_run and next_run in monitoring config
         try:
             from app.db.database import get_mongo_db
+            from app.worker.scheduler import compute_next_run
             mdb = get_mongo_db()
+            _cfg = mdb.monitoring_config.find_one({"repository": repo_id})
+            _freq = _cfg.get("frequency", "weekly") if _cfg else "weekly"
+            _last_run_dt = datetime.now(timezone.utc)
             mdb.monitoring_config.update_one(
                 {"repository": repo_id},
-                {"$set": {"last_run": datetime.now(timezone.utc).isoformat()}},
+                {"$set": {
+                    "last_run": _last_run_dt.isoformat(),
+                    "next_run": compute_next_run(_freq, last_run=_last_run_dt),
+                }},
             )
         except Exception:
-            logger.warning("Failed to update last_run for %s", repo_id)
+            logger.warning("Failed to update last_run/next_run for %s", repo_id)
     except Exception as e:
         error_msg = traceback.format_exc()
         set_analysis_progress(

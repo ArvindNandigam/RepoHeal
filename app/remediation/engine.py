@@ -32,27 +32,47 @@ class RemediationEngine:
         return rewriter.modified
 
     def rename_symbol(self, old_name: str, new_name: str):
-        """Rename all occurrences of a symbol."""
+        """Rename all occurrences of a symbol.
+
+        Handles dotted new_names (e.g. 'pd.concat') by building
+        nested Attribute nodes instead of a flat attribute string.
+        """
+        new_parts = new_name.split(".") if "." in new_name else [new_name]
+
+        def _build_attr_expr(parts):
+            if len(parts) == 1:
+                return ast.Name(id=parts[0])
+            return ast.Attribute(value=_build_attr_expr(parts[:-1]), attr=parts[-1])
+
         class SymbolRenamer(ast.NodeTransformer):
-            def __init__(self, old, new):
+            def __init__(self, old, new_parts):
                 self.old = old
-                self.new = new
+                self.new_parts = new_parts
+                self.new_expr = _build_attr_expr(new_parts) if len(new_parts) > 1 else None
+                self.new_name = ".".join(new_parts)
                 self.modified = False
 
             def visit_Name(self, node):
                 if node.id == self.old:
-                    node.id = self.new
-                    self.modified = True
-                return node
-            
-            def visit_Attribute(self, node):
-                self.generic_visit(node)
-                if node.attr == self.old:
-                    node.attr = self.new
+                    if self.new_expr:
+                        node.id = self.new_parts[-1]
+                    else:
+                        node.id = self.new_name
                     self.modified = True
                 return node
 
-        renamer = SymbolRenamer(old_name, new_name)
+            def visit_Attribute(self, node):
+                self.generic_visit(node)
+                if node.attr == self.old:
+                    if self.new_expr:
+                        node.attr = self.new_parts[-1]
+                        node.value = _build_attr_expr(self.new_parts[:-1])
+                    else:
+                        node.attr = self.new_name
+                    self.modified = True
+                return node
+
+        renamer = SymbolRenamer(old_name, new_parts)
         self.tree = renamer.visit(self.tree)
         if renamer.modified:
             self.modified = True

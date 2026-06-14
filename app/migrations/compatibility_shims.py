@@ -148,6 +148,41 @@ def check_files_compilation(file_map: Dict[str, str]) -> Dict[str, Tuple[bool, O
 
 # ── Tiered patch-retry with Groq ───────────────────────────────────────────
 
+def _resolve_import_aliases(source_code: str) -> Dict[str, str]:
+    """Extract import aliases from source.
+    Returns eg {"pandas": "pd", "numpy": "np"} for 'import pandas as pd'.
+    """
+    aliases: Dict[str, str] = {}
+    try:
+        tree = ast.parse(source_code)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.asname:
+                        aliases[alias.name] = alias.asname
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    for alias in node.names:
+                        if alias.asname:
+                            aliases[f"{node.module}.{alias.name}"] = alias.asname
+    except SyntaxError:
+        pass
+    return aliases
+
+
+def _replace_module_with_alias(replacement: str, aliases: Dict[str, str]) -> str:
+    """Replace the top-level module portion of a dotted replacement with its alias.
+    Eg 'pandas.concat({args})' -> 'pd.concat({args})' when aliases={'pandas':'pd'}.
+    """
+    if not aliases:
+        return replacement
+    parts = replacement.split(".")
+    if parts and parts[0] in aliases:
+        parts[0] = aliases[parts[0]]
+        return ".".join(parts)
+    return replacement
+
+
 async def tiered_patch_with_retry(
     original_code: str,
     symbol: str,
@@ -167,18 +202,22 @@ async def tiered_patch_with_retry(
       "draft_pr"     — compiles after Groq patch (human should review)
       "human_review" — all attempts failed
     """
+    # ── Resolve import aliases so replacements use local names ────────
+    aliases = _resolve_import_aliases(original_code)
+    replacement_alias = _replace_module_with_alias(replacement or "", aliases) or replacement
+
     # ── Tier 1: AST transform ──────────────────────────────────────────
     from app.remediation.engine import RemediationEngine
 
     engine = RemediationEngine(original_code)
     modified = False
 
-    if replacement:
+    if replacement_alias:
         parts = symbol.split(".")
         if len(parts) >= 2:
             engine.rewrite_import(parts[0], parts[0])
-        engine.rename_symbol(symbol, replacement) if "." in replacement else None
-        engine.rename_symbol(symbol.split(".")[-1], replacement)
+        engine.rename_symbol(symbol, replacement_alias) if "." in replacement_alias else None
+        engine.rename_symbol(symbol.split(".")[-1], replacement_alias)
         if engine.validate():
             modified_code = engine.get_modified_source()
             if modified_code != original_code:

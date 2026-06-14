@@ -33,10 +33,11 @@ def compute_next_run(frequency: str, last_run: Optional[datetime] = None) -> str
 def check_due_repositories() -> list[dict]:
     """Find all repositories whose next_run <= now and queue analysis."""
     db = get_mongo_db()
-    now = datetime.now(timezone.utc).isoformat()
+    now_dt = datetime.now(timezone.utc)
+    now_str = now_dt.isoformat()
     due = list(db.monitoring_config.find({
         "frequency": {"$ne": "manual"},
-        "next_run": {"$lte": now}
+        "next_run": {"$lte": now_str}
     }))
 
     queued = []
@@ -59,11 +60,16 @@ def check_due_repositories() -> list[dict]:
                 logger.info(f"Scheduled analysis queued for {repo_id} @ {branch}")
 
         # Update next_run based on last_run (not now) to prevent drift
+        last_run_str = config.get("last_run")
+        try:
+            last_run_dt = datetime.fromisoformat(last_run_str) if last_run_str else now_dt
+        except (TypeError, ValueError):
+            last_run_dt = now_dt
         db.monitoring_config.update_one(
             {"repository": repo_id},
             {"$set": {
-                "last_run": now,
-                "next_run": compute_next_run(config.get("frequency", "weekly"), last_run=now)
+                "last_run": now_str,
+                "next_run": compute_next_run(config.get("frequency", "weekly"), last_run=last_run_dt)
             }}
         )
 
@@ -74,8 +80,22 @@ def update_all_next_runs() -> int:
     """Set initial next_run for any schedule that lacks one."""
     db = get_mongo_db()
     now = datetime.now(timezone.utc)
-    result = db.monitoring_config.update_many(
-        {"next_run": {"$exists": False}, "frequency": {"$ne": "manual"}},
-        {"$set": {"next_run": (now + timedelta(hours=1)).isoformat()}}
-    )
-    return getattr(result, "modified_count", 0)
+    configs = list(db.monitoring_config.find(
+        {"next_run": {"$exists": False}, "frequency": {"$ne": "manual"}}
+    ))
+    for config in configs:
+        freq = config.get("frequency", "weekly")
+        last_run = config.get("last_run")
+        try:
+            base = datetime.fromisoformat(last_run) if last_run else now
+        except (TypeError, ValueError):
+            base = now
+        delta = FREQUENCY_DELTAS.get(freq, timedelta(weeks=1))
+        if freq.isdigit():
+            delta = timedelta(days=int(freq))
+        next_run = (base + delta).isoformat()
+        db.monitoring_config.update_one(
+            {"_id": config["_id"]},
+            {"$set": {"next_run": next_run}}
+        )
+    return len(configs)
