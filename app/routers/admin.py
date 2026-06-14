@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from app.config import settings
 from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import HTMLResponse
 from app.auth.jwt_manager import verify_session_token
@@ -103,4 +104,6 @@ async def admin_dashboard_page(user=Depends(require_admin)):
         html_path = __file__.replace("routers\\admin.py", "visualization\\templates\\admin_metrics.html")
     with open(html_path, encoding="utf-8") as f:
         html = f.read()
-    return html.replace("{{ github_user }}", user.get("github_login", ""))
+    html = html.replace("{{ github_user }}", user.get("github_login", ""))
+    html = html.replace("{{ feedback_link }}", settings.FEEDBACK_LINK)
+    return html

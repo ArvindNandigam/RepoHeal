@@ -49,6 +49,7 @@
         <p id="repoMeta" style="color: var(--muted); margin-top: 6px;"></p>
       </div>
       <a href="/dashboard" class="btn">Back to Dashboard</a>
+      <a id="feedbackBtn" class="btn" href="{{ feedback_link }}" target="_blank" rel="noopener" style="display:none;">Feedback</a>
     </div>
 
     <div class="panel" style="display: flex; gap: 20px; flex-wrap: wrap;">
@@ -139,6 +140,16 @@
       }
     }
     loadHistory();
+  </script>
+  <script>
+    (function() {
+      const fb = document.getElementById("feedbackBtn");
+      if (fb && (!fb.getAttribute("href") || fb.getAttribute("href") === "")) {
+        fb.style.display = "none";
+      } else if (fb) {
+        fb.style.display = "inline-flex";
+      }
+    })();
   </script>
 </body>
 </html>

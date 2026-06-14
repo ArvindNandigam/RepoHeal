@@ -30,6 +30,8 @@
     .btn { display: inline-flex; align-items: center; justify-content: center; padding: 8px 18px; border-radius: 999px; text-decoration: none; font-weight: 600; border: 0; cursor: pointer; color: #021019; background: linear-gradient(135deg, var(--accent), var(--warning)); font-size: 13px; }
     .btn.ghost { color: var(--text); background: rgba(255,255,255,0.08); border: 1px solid var(--border); }
     .btn.approve { background: var(--accent); color: #021019; }
+    .btn.small { padding: 4px 12px; font-size: 11px; }
+    .section-title { font-size: 14px; text-transform: uppercase; letter-spacing: 0.2em; color: var(--accent); }
     .meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
     .loading-state { padding: 32px; text-align: center; color: var(--muted); }
     .error-state { padding: 32px; text-align: center; color: #f97066; border: 1px dashed rgba(249,112,102,0.3); border-radius: 12px; }
@@ -45,7 +47,7 @@
       </div>
       <div style="display:flex;gap:8px;">
         <a id="backLink" class="btn ghost" href="#">Back to Reports</a>
-        <button id="approveBtn" class="btn approve" style="display:none;">Approve</button>
+        <a id="feedbackBtn" class="btn ghost" href="{{ feedback_link }}" target="_blank" rel="noopener" style="display:none;">Feedback</a>
       </div>
     </div>
     <div id="loadingState" class="loading-state">Loading migration document...</div>
@@ -53,7 +55,14 @@
     <div id="contentPanel" class="panel hidden">
       <div id="docContent"></div>
     </div>
-    <div id="approveMsg" class="panel hidden" style="text-align:center;font-size:14px;"></div>
+    <div id="approveSection" class="panel hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div class="section-title" style="font-size:14px;text-transform:uppercase;letter-spacing:0.2em;color:var(--accent);">Approve Migrations</div>
+        <button id="approveAllBtn" class="btn approve" style="display:none;">Approve All</button>
+      </div>
+      <div id="approveBody"></div>
+      <div id="approveMsg" class="hidden" style="margin-top:12px;padding:16px;border-radius:8px;background:rgba(66,214,164,0.1);border:1px solid rgba(66,214,164,0.2);font-size:13px;"></div>
+    </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
   <script>
@@ -82,42 +91,102 @@
         document.getElementById("loadingState").classList.add("hidden");
         document.getElementById("contentPanel").classList.remove("hidden");
         document.getElementById("docContent").innerHTML = marked.parse(data.content || "*No content*");
-        document.getElementById("approveBtn").style.display = "inline-flex";
+        buildApproveSection(data.content);
       } catch (err) {
         document.getElementById("loadingState").classList.add("hidden");
         document.getElementById("errorState").classList.remove("hidden");
         document.getElementById("errorState").textContent = `Error: ${err.message}`;
       }
     })();
-    document.getElementById("approveBtn").addEventListener("click", async () => {
-      const params = new URLSearchParams(window.location.search);
-      const repoOwner = params.get("repo_owner");
-      const repoName = params.get("repo_name");
-      const analysisId = params.get("analysis_id");
-      const btn = document.getElementById("approveBtn");
-      const msg = document.getElementById("approveMsg");
-      btn.disabled = true;
-      btn.textContent = "Approving...";
-      try {
-        const res = await fetch(`/migrations/${analysisId}/approve?repo_owner=${repoOwner}&repo_name=${repoName}`, {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" }
-        });
-        const result = await res.json();
-        msg.classList.remove("hidden");
-        msg.innerHTML = result.pr_created
-          ? `Migration approved — PR created: <a href="${result.pr_url || "#"}" target="_blank" style="color:var(--accent);">#${result.pr_number || ""}</a>`
-          : `Migration approved${result.error ? " with error: " + result.error : ""}.`;
-        if (!result.pr_created) msg.innerHTML += " No PR was created.";
-        btn.style.display = "none";
-      } catch (err) {
-        msg.classList.remove("hidden");
-        msg.innerHTML = `<span style="color:var(--danger);">Error: ${err.message}</span>`;
-        btn.disabled = false;
-        btn.textContent = "Approve";
+
+    function buildApproveSection(content) {
+      if (!content) return;
+      const symbols = [];
+      const lines = content.split("\n");
+      let inPaths = false;
+      for (const line of lines) {
+        if (/^##\s+Migration Paths/i.test(line)) { inPaths = true; continue; }
+        if (inPaths && /^##\s/.test(line)) { inPaths = false; continue; }
+        if (!inPaths) continue;
+        const m = line.match(/^[*-]\s+`([^`]+)`\s*->\s*`([^`]+)`/);
+        if (m) {
+          const sym = m[1].trim();
+          const lib = sym.includes(".") ? sym.split(".")[0] : "unknown";
+          symbols.push({ symbol: sym, replacement: m[2].trim(), library: lib });
+        }
       }
-    });
+      if (symbols.length === 0) return;
+      document.getElementById("approveSection").classList.remove("hidden");
+      const approveAllBtn = document.getElementById("approveAllBtn");
+      const approveBody = document.getElementById("approveBody");
+      approveAllBtn.style.display = "inline-flex";
+      const byLib = {};
+      symbols.forEach((s, i) => {
+        if (!byLib[s.library]) byLib[s.library] = [];
+        byLib[s.library].push(i);
+      });
+      let html = "";
+      for (const [lib, indices] of Object.entries(byLib)) {
+        html += `<div style="padding:10px 0;border-bottom:1px solid var(--border);">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong>${lib}</strong>
+            <button class="approve-lib-btn btn small approve" data-lib="${lib}" style="padding:4px 12px;font-size:11px;">Approve Library</button>
+          </div>`;
+        for (const i of indices) {
+          const s = symbols[i];
+          html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0 6px 20px;">
+            <span style="color:var(--muted);font-size:13px;"><code>${s.symbol}</code> → <code>${s.replacement}</code></span>
+            <button class="approve-sym-btn btn small approve" data-symbol="${s.symbol}" style="padding:2px 10px;font-size:11px;">Approve</button>
+          </div>`;
+        }
+        html += "</div>";
+      }
+      approveBody.innerHTML = html;
+      async function runApproval(symbolsFilter) {
+        const params = new URLSearchParams(window.location.search);
+        const repoOwner = params.get("repo_owner");
+        const repoName = params.get("repo_name");
+        const analysisId = params.get("analysis_id");
+        const msg = document.getElementById("approveMsg");
+        msg.classList.remove("hidden");
+        msg.innerHTML = "Processing...";
+        try {
+          let url = `/migrations/${analysisId}/approve?repo_owner=${repoOwner}&repo_name=${repoName}`;
+          if (symbolsFilter) url += `&symbols=${encodeURIComponent(symbolsFilter)}`;
+          const res = await fetch(url, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"} });
+          const result = await res.json();
+          const prs = result.prs || (result.pr_url ? [{pr_number: result.pr_number, pr_url: result.pr_url}] : []);
+          if (prs.length > 0) {
+            msg.innerHTML = prs.map(p => `PR created: <a href="${p.pr_url}" target="_blank" style="color:var(--accent);">#${p.pr_number}</a>`).join("<br>");
+          } else {
+            msg.innerHTML = `Approved${result.error ? " with error: " + result.error : ""}. No PRs created.`;
+          }
+        } catch (err) {
+          msg.innerHTML = `<span style="color:var(--danger);">Error: ${err.message}</span>`;
+        }
+      }
+      approveAllBtn.addEventListener("click", () => runApproval(null));
+      document.querySelectorAll(".approve-lib-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const lib = btn.dataset.lib;
+          const filt = symbols.filter(s => s.library === lib).map(s => s.symbol).join(",");
+          runApproval(filt);
+        });
+      });
+      document.querySelectorAll(".approve-sym-btn").forEach(btn => {
+        btn.addEventListener("click", () => runApproval(btn.dataset.symbol));
+      });
+    }
+  </script>
+  <script>
+    (function() {
+      const fb = document.getElementById("feedbackBtn");
+      if (fb && (!fb.getAttribute("href") || fb.getAttribute("href") === "")) {
+        fb.style.display = "none";
+      } else if (fb) {
+        fb.style.display = "inline-flex";
+      }
+    })();
   </script>
 </body>
 </html>

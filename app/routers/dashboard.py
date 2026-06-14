@@ -1,5 +1,6 @@
 from pathlib import Path
 from app.models.schemas import DashboardResponse
+from app.config import settings
 from fastapi import APIRouter, Depends
 from fastapi.responses import HTMLResponse
 from app.auth.jwt_manager import verify_session_token
@@ -28,4 +29,5 @@ async def dashboard(user=Depends(verify_session_token)):
         / "dashboard.html"
     ).read_text(encoding="utf-8")
     html = html.replace("{{ github_user }}", user["github_login"])
+    html = html.replace("{{ feedback_link }}", settings.FEEDBACK_LINK)
     return HTMLResponse(html)

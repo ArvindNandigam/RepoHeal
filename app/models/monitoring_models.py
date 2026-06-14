@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional, Literal, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class HealthScoreSnapshot(BaseModel):
@@ -76,7 +76,7 @@ class AlertRule(BaseModel):
 
 class MonitorSchedule(BaseModel):
     repository: str
-    frequency: Literal["manual", "daily", "weekly", "monthly"] = "weekly"
+    frequency: str = "weekly"
     branches: List[str] = Field(default_factory=lambda: ["main"])
     watch_dependencies: bool = True
     auto_remediate: bool = False
@@ -85,6 +85,14 @@ class MonitorSchedule(BaseModel):
     last_run: Optional[str] = None
     next_run: Optional[str] = None
     updated_at: Optional[str] = None
+
+    @field_validator("frequency")
+    @classmethod
+    def validate_frequency(cls, v: str) -> str:
+        allowed = {"manual", "daily", "weekly", "biweekly", "monthly"}
+        if v in allowed or v.isdigit():
+            return v
+        raise ValueError(f"Must be one of {allowed} or a positive integer (custom days)")
 
 
 class RepositoryRiskIndex(BaseModel):

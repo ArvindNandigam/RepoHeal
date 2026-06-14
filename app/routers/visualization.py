@@ -1,4 +1,5 @@
 from typing import Optional
+from app.config import settings
 from fastapi import APIRouter, Depends, Query, Request, Response
 from app.errors.exceptions import GraphError, RepositoryNotFoundError
 from fastapi.responses import HTMLResponse
@@ -87,6 +88,7 @@ async def visualize_repository_page(
             repo_owner=repo_owner,
             repo_name=repo_name,
             github_user=user["github_login"],
-            analysis_id=analysis_id
+            analysis_id=analysis_id,
+            feedback_link=settings.FEEDBACK_LINK
         )
     )

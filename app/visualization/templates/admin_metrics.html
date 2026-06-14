@@ -35,7 +35,7 @@ h2 small { font-size: 13px; font-weight: 400; color: #8b949e; }
 </head>
 <body>
 <h1>📊 RepoHeal Admin</h1>
-<p class="subtitle">Signed in as {{ github_user }} · Platform-wide metrics</p>
+<p class="subtitle">Signed in as {{ github_user }} · Platform-wide metrics · <a id="feedbackBtn" href="{{ feedback_link }}" target="_blank" rel="noopener" style="display:none;">Feedback</a></p>
 
 <div id="app">
   <div class="loading">Loading metrics&hellip;</div>
@@ -172,6 +172,16 @@ function render(d, o) {
 }
 
 load();
+</script>
+<script>
+  (function() {
+    const fb = document.getElementById("feedbackBtn");
+    if (fb && (!fb.getAttribute("href") || fb.getAttribute("href") === "")) {
+      fb.style.display = "none";
+    } else if (fb) {
+      fb.style.display = "inline";
+    }
+  })();
 </script>
 </body>
 </html>

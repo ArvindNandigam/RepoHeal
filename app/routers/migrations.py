@@ -349,6 +349,7 @@ async def approve_migration(
     migration_id: str,
     repo_owner: str = Query(...),
     repo_name: str = Query(...),
+    symbols: str = Query(None, description="Comma-separated list of symbols to patch (omit for all)"),
     user=Depends(verify_session_token)
 ):
     session_data = get_session_data(user)
@@ -394,6 +395,7 @@ async def approve_migration(
 
         # Parse migration document for library references
         libs_found = set()
+        symbols_filter = {s.strip() for s in symbols.split(",")} if symbols else None
         for line in doc_content.splitlines():
             m = re.match(r"^[*-]\s+`(\w+(?:[-\w]*\w)?)`", line)
             if m:
@@ -438,6 +440,10 @@ async def approve_migration(
                     re.IGNORECASE
                 )
                 if not matched_syms and not import_regex.search(source):
+                    continue
+                if symbols_filter:
+                    matched_syms = {s for s in matched_syms if s in symbols_filter}
+                if not matched_syms:
                     continue
                 for sym in sorted(matched_syms):
                     replacement = lookup_replacement(lib, sym)

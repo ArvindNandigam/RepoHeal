@@ -35,6 +35,7 @@
         <p id="repoMeta" style="color: var(--muted); margin-top: 4px;"></p>
       </div>
       <a href="/dashboard" class="btn ghost">Back to Dashboard</a>
+      <a id="feedbackBtn" class="btn ghost" href="{{ feedback_link }}" target="_blank" rel="noopener" style="display:none;">Feedback</a>
     </div>
 
     <div id="loadingState" class="loading-state">Loading migration reports...</div>
@@ -93,6 +94,16 @@
         });
       } catch (err) {
         document.getElementById("loadingState").textContent = `Error: ${err.message}`;
+      }
+    })();
+  </script>
+  <script>
+    (function() {
+      const fb = document.getElementById("feedbackBtn");
+      if (fb && (!fb.getAttribute("href") || fb.getAttribute("href") === "")) {
+        fb.style.display = "none";
+      } else if (fb) {
+        fb.style.display = "inline-flex";
       }
     })();
   </script>

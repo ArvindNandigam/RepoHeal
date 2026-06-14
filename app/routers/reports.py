@@ -13,7 +13,8 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 
 def get_template(name: str) -> str:
     template_path = Path(__file__).parent.parent / "visualization" / "templates" / name
-    return template_path.read_text(encoding="utf-8")
+    html = template_path.read_text(encoding="utf-8")
+    return html.replace("{{ feedback_link }}", settings.FEEDBACK_LINK)
 
 @router.get("/{repo_owner}/{repo_name}/health-page", response_class=HTMLResponse)
 async def health_report_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):

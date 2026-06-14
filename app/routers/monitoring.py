@@ -1,6 +1,7 @@
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from pathlib import Path
+from app.config import settings
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import HTMLResponse
 from app.auth.jwt_manager import verify_session_token
@@ -336,6 +337,7 @@ async def monitoring_dashboard_view(
         Path(__file__).resolve().parent.parent
         / "visualization" / "templates" / "monitoring_dashboard.html"
     ).read_text(encoding="utf-8")
+    html = html.replace("{{ feedback_link }}", settings.FEEDBACK_LINK)
     return HTMLResponse(html)
 
 

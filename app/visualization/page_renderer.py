@@ -3,7 +3,7 @@
 from textwrap import dedent
 
 
-def build_graph_page(repo_owner: str, repo_name: str, github_user: str, analysis_id: str = "") -> str:
+def build_graph_page(repo_owner: str, repo_name: str, github_user: str, analysis_id: str = "", feedback_link: str = "") -> str:
     page = dedent(
         """<!doctype html>
 <html lang="en">
@@ -309,7 +309,7 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str, analysis
       <div class="stat">
         <strong>Analysis Snapshot</strong>
         <select id="analysisSelector" style="width:100%;margin-top:4px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;">
-          <option value="">Latest Analysis</option>
+          <option value="">Select an analysis...</option>
         </select>
       </div>
 
@@ -321,6 +321,7 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str, analysis
       <div class="actions">
         <a class="button" href="/dashboard">Back to dashboard</a>
         <a class="button secondary" href="/logout">Logout</a>
+        <a id="feedbackBtn" class="button secondary" href="__FEEDBACK_LINK__" target="_blank" rel="noopener" style="display:none;">Feedback</a>
         <a class="button secondary" href="/graph/__REPO_OWNER__/__REPO_NAME__" target="_blank" rel="noreferrer">Open JSON</a>
       </div>
     </aside>
@@ -890,6 +891,7 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str, analysis
 
           analysisSelector.addEventListener("change", async () => {
             currentAnalysisId = analysisSelector.value;
+            if (!currentAnalysisId) return;
             try {
               const payload = await loadGraph(currentAnalysisId);
               renderGraph(payload);
@@ -900,11 +902,25 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str, analysis
           });
         }
 
-        const payload = await loadGraph(currentAnalysisId);
-        renderGraph(payload);
+        if (currentAnalysisId) {
+          const payload = await loadGraph(currentAnalysisId);
+          renderGraph(payload);
+        } else {
+          statusLabel.textContent = "Select an analysis from the sidebar to view the graph.";
+        }
       } catch (error) {
         statusLabel.innerHTML = `<span class="error">Failed to load graph</span>`;
         overlay.innerHTML = `<span class="error">${error.message}</span>`;
+      }
+    })();
+  </script>
+  <script>
+    (function() {
+      const fb = document.getElementById("feedbackBtn");
+      if (fb && (!fb.getAttribute("href") || fb.getAttribute("href") === "")) {
+        fb.style.display = "none";
+      } else if (fb) {
+        fb.style.display = "inline-flex";
       }
     })();
   </script>
@@ -916,4 +932,5 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str, analysis
         page.replace("__REPO_OWNER__", repo_owner)
         .replace("__REPO_NAME__", repo_name)
         .replace("__GITHUB_USER__", github_user)
+        .replace("__FEEDBACK_LINK__", feedback_link)
     )
