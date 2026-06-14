@@ -51,7 +51,7 @@ def extract_relevant_sections(text: str, symbol: str) -> list[str]:
     if len(parts) >= 1:
         search_terms.append(parts[-1])                   # tail: parse_obj
     
-    window = 100
+    window = 50
     
     for term in search_terms:
         snippets = _extract_windows(text, term, window)
