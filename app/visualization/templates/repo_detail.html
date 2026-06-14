@@ -168,7 +168,6 @@
     const REPO = "{{ repo }}";
     const FULL_NAME = `${OWNER}/${REPO}`;
     const analyzeUrl = `/analyze/${OWNER}/${REPO}`;
-    const reanalyzeUrl = `/reanalyze/${OWNER}/${REPO}`;
     const healthRefreshUrl = `/health-refresh/${OWNER}/${REPO}`;
     const statusUrl = `/status/${OWNER}/${REPO}`;
     let eventSource = null;
@@ -439,13 +438,6 @@
         return { payload, response };
       }, "Analysis")
     );
-    document.querySelector('[data-action="analyze-branch"]').addEventListener("click", (e) =>
-      clickAndQueue(e.currentTarget, async () => {
-        const payload = targetPayload("branch");
-        const response = await queueAnalyze(payload);
-        return { payload, response };
-      }, "Analysis")
-    );
     const analyzeCommitBtn = document.querySelector('[data-action="analyze-commit"]');
     function updateAnalyzeCommitBtn() {
       if (!analyzeCommitBtn) return;
@@ -460,13 +452,6 @@
         const response = await queueAnalyze(payload);
         return { payload, response };
       }, "Commit analysis")
-    );
-    document.querySelector('[data-action="reanalyze"]').addEventListener("click", (e) =>
-      clickAndQueue(e.currentTarget, async () => {
-        const payload = targetPayload();
-        const response = await (await fetch(reanalyzeUrl, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) })).json();
-        return { payload, response };
-      }, "Reanalysis")
     );
     document.querySelector('[data-action="health"]').addEventListener("click", (e) =>
       clickAndQueue(e.currentTarget, async () => {
