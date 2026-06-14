@@ -1,1129 +1,1818 @@
 {
   "pandas": {
     "2.2.0": {
-      "pandas.DataFrame.groupby": {"relation": "deprecated_in", "to": "2.2.0"},
-      "pandas.Series.groupby": {"relation": "deprecated_in", "to": "2.2.0"},
-      "pandas.DataFrame.xs": {"relation": "deprecated_in", "to": "2.2.0"},
-      "pandas.Index.astype": {"to": "pandas.Index.view", "relation": "deprecated_in_favor_of"}
+      "pandas.Index.astype": {
+        "to": "pandas.Index.view",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "2.1.0": {
-      "pandas.DataFrame.set_value": {"to": "pandas.DataFrame.at", "relation": "deprecated_in_favor_of"},
-      "pandas.Index.is_type_compatible": {"relation": "removed_in", "to": "2.1.0"},
-      "pandas.Int64Index": {"to": "pandas.Index", "relation": "deprecated_in_favor_of"},
-      "pandas.UInt64Index": {"to": "pandas.Index", "relation": "deprecated_in_favor_of"},
-      "pandas.Float64Index": {"to": "pandas.Index", "relation": "deprecated_in_favor_of"}
+      "pandas.Index.is_type_compatible": {
+        "relation": "removed_in",
+        "to": "2.1.0"
+      },
+      "pandas.Int64Index": {
+        "to": "pandas.Index",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.UInt64Index": {
+        "to": "pandas.Index",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.Float64Index": {
+        "to": "pandas.Index",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "2.0.0": {
-      "pandas.DataFrame.append": {"to": "pandas.concat", "relation": "removed_in"},
-      "pandas.Series.append": {"to": "pandas.concat", "relation": "removed_in"},
-      "pandas.DataFrame.assign": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pandas.DataFrame.set_value": {"to": "pandas.DataFrame.at", "relation": "deprecated_in_favor_of"},
-      "pandas.Series.set_value": {"to": "pandas.Series.at", "relation": "deprecated_in_favor_of"},
-      "pandas.Panel": {"relation": "removed_in", "to": "2.0.0"},
-      "pandas.Panel4D": {"relation": "removed_in", "to": "2.0.0"},
-      "pandas.SparseDataFrame": {"relation": "removed_in", "to": "2.0.0"},
-      "pandas.SparseArray": {"relation": "removed_in", "to": "2.0.0"},
-      "pandas.SparseSeries": {"relation": "removed_in", "to": "2.0.0"},
-      "pandas.SparsePanel": {"relation": "removed_in", "to": "2.0.0"},
-      "pandas.Categorical": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pandas.CategoricalIndex": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pandas.IntervalIndex": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pandas.MultiIndex": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pandas.RangeIndex": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pandas.TimedeltaIndex": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pandas.DatetimeIndex": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pandas.PeriodIndex": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pandas.DataFrame.astype": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pandas.Series.astype": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pandas.read_excel": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pandas.ExcelFile": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pandas.ExcelWriter": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pandas.read_stata": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pandas.DataFrame.to_stata": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pandas.Series.to_stata": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pandas.read_sas": {"relation": "deprecated_in", "to": "2.0.0"}
-    },
-    "1.5.0": {
-      "pandas.DataFrame.corrwith": {"relation": "deprecated_in", "to": "1.5.0"}
+      "pandas.DataFrame.append": {
+        "to": "pandas.concat",
+        "relation": "removed_in"
+      },
+      "pandas.Series.append": {
+        "to": "pandas.concat",
+        "relation": "removed_in"
+      },
+      "pandas.DataFrame.set_value": {
+        "to": "pandas.DataFrame.at",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.Series.set_value": {
+        "to": "pandas.Series.at",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.Panel": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "pandas.Panel4D": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "pandas.SparseDataFrame": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "pandas.SparseArray": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "pandas.SparseSeries": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "pandas.SparsePanel": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      }
     },
     "1.4.0": {
-      "pandas.DataFrame.append": {"to": "pandas.concat", "relation": "deprecated_in_favor_of"},
-      "pandas.Series.append": {"to": "pandas.concat", "relation": "deprecated_in_favor_of"},
-      "pandas.DataFrame.iteritems": {"to": "pandas.DataFrame.items", "relation": "deprecated_in_favor_of"},
-      "pandas.Series.iteritems": {"to": "pandas.Series.items", "relation": "deprecated_in_favor_of"},
-      "pandas.DataFrame.lookup": {"relation": "deprecated_in", "to": "1.4.0"},
-      "pandas.DataFrame.pivot_table": {"relation": "deprecated_in", "to": "1.4.0"},
-      "pandas.Series.pivot_table": {"relation": "deprecated_in", "to": "1.4.0"}
-    },
-    "1.3.0": {
-      "pandas.DataFrame.merge": {"relation": "deprecated_in", "to": "1.3.0"},
-      "pandas.DataFrame.join": {"relation": "deprecated_in", "to": "1.3.0"},
-      "pandas.concat": {"relation": "deprecated_in", "to": "1.3.0"}
-    },
-    "1.2.0": {
-      "pandas.DataFrame.rename_axis": {"relation": "deprecated_in", "to": "1.2.0"},
-      "pandas.DataFrame.set_axis": {"relation": "deprecated_in", "to": "1.2.0"},
-      "pandas.Series.rename_axis": {"relation": "deprecated_in", "to": "1.2.0"}
-    },
-    "1.1.0": {
-      "pandas.DataFrame.crosstab": {"relation": "deprecated_in", "to": "1.1.0"},
-      "pandas.crosstab": {"relation": "deprecated_in", "to": "1.1.0"}
+      "pandas.DataFrame.append": {
+        "to": "pandas.concat",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.Series.append": {
+        "to": "pandas.concat",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.DataFrame.iteritems": {
+        "to": "pandas.DataFrame.items",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.Series.iteritems": {
+        "to": "pandas.Series.items",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "1.0.0": {
-      "pandas.DataFrame.reindex_axis": {"to": "pandas.DataFrame.reindex", "relation": "deprecated_in_favor_of"},
-      "pandas.DataFrame.take": {"relation": "deprecated_in", "to": "1.0.0"},
-      "pandas.Series.take": {"relation": "deprecated_in", "to": "1.0.0"},
-      "pandas.DataFrame.to_sparse": {"relation": "removed_in", "to": "1.0.0"},
-      "pandas.SparseDataFrame": {"relation": "deprecated_in", "to": "1.0.0"},
-      "pandas.SparseArray": {"relation": "deprecated_in", "to": "1.0.0"},
-      "pandas.SparseSeries": {"relation": "deprecated_in", "to": "1.0.0"},
-      "pandas.SparsePanel": {"relation": "deprecated_in", "to": "1.0.0"},
-      "pandas.MultiIndex.labels": {"to": "pandas.MultiIndex.codes", "relation": "deprecated_in_favor_of"},
-      "pandas.Index.reindex": {"relation": "deprecated_in", "to": "1.0.0"}
+      "pandas.DataFrame.reindex_axis": {
+        "to": "pandas.DataFrame.reindex",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.DataFrame.to_sparse": {
+        "relation": "removed_in",
+        "to": "1.0.0"
+      },
+      "pandas.SparseDataFrame": {
+        "relation": "deprecated_in",
+        "to": "1.0.0"
+      },
+      "pandas.SparseArray": {
+        "relation": "deprecated_in",
+        "to": "1.0.0"
+      },
+      "pandas.SparseSeries": {
+        "relation": "deprecated_in",
+        "to": "1.0.0"
+      },
+      "pandas.SparsePanel": {
+        "relation": "deprecated_in",
+        "to": "1.0.0"
+      },
+      "pandas.MultiIndex.labels": {
+        "to": "pandas.MultiIndex.codes",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.25.0": {
-      "pandas.DataFrame.as_matrix": {"to": "pandas.DataFrame.values", "relation": "deprecated_in_favor_of"},
-      "pandas.Series.as_matrix": {"to": "pandas.Series.values", "relation": "deprecated_in_favor_of"},
-      "pandas.Categorical.from_codes": {"relation": "deprecated_in", "to": "0.25.0"},
-      "pandas.Series.append": {"to": "pandas.concat", "relation": "deprecated_in_favor_of"}
-    },
-    "0.24.0": {
-      "pandas.DataFrame.to_records": {"relation": "deprecated_in", "to": "0.24.0"},
-      "pandas.Series.to_records": {"relation": "deprecated_in", "to": "0.24.0"},
-      "pandas.Categorical.to_records": {"relation": "deprecated_in", "to": "0.24.0"}
-    },
-    "0.23.0": {
-      "pandas.DataFrame.to_excel": {"relation": "deprecated_in", "to": "0.23.0"},
-      "pandas.ExcelWriter": {"relation": "deprecated_in", "to": "0.23.0"}
+      "pandas.DataFrame.as_matrix": {
+        "to": "pandas.DataFrame.values",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.Series.as_matrix": {
+        "to": "pandas.Series.values",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.Series.append": {
+        "to": "pandas.concat",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.22.0": {
-      "pandas.Float64Index": {"relation": "deprecated_in", "to": "0.22.0"},
-      "pandas.Int64Index": {"relation": "deprecated_in", "to": "0.22.0"},
-      "pandas.UInt64Index": {"relation": "deprecated_in", "to": "0.22.0"}
+      "pandas.Float64Index": {
+        "relation": "deprecated_in",
+        "to": "0.22.0"
+      },
+      "pandas.Int64Index": {
+        "relation": "deprecated_in",
+        "to": "0.22.0"
+      },
+      "pandas.UInt64Index": {
+        "relation": "deprecated_in",
+        "to": "0.22.0"
+      }
     },
     "0.21.0": {
-      "pandas.DataFrame.consolidate": {"relation": "deprecated_in", "to": "0.21.0"},
-      "pandas.Panel": {"to": "pandas.MultiIndex", "relation": "deprecated_in_favor_of"},
-      "pandas.Panel4D": {"to": "xarray.DataArray", "relation": "deprecated_in_favor_of"},
-      "pandas.WidePanel": {"to": "pandas.DataFrame", "relation": "deprecated_in_favor_of"},
-      "pandas.TimeGrouper": {"to": "pandas.Grouper", "relation": "deprecated_in_favor_of"},
-      "pandas.DataFrame.ffill": {"relation": "deprecated_in", "to": "0.21.0"},
-      "pandas.DataFrame.bfill": {"relation": "deprecated_in", "to": "0.21.0"}
+      "pandas.Panel": {
+        "to": "pandas.MultiIndex",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.Panel4D": {
+        "to": "xarray.DataArray",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.WidePanel": {
+        "to": "pandas.DataFrame",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.TimeGrouper": {
+        "to": "pandas.Grouper",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.20.0": {
-      "pandas.DataFrame.from_csv": {"to": "pandas.read_csv", "relation": "deprecated_in_favor_of"},
-      "pandas.Series.from_csv": {"to": "pandas.read_csv", "relation": "deprecated_in_favor_of"},
-      "pandas.DataFrame.ix": {"to": "pandas.DataFrame.loc", "relation": "deprecated_in_favor_of"},
-      "pandas.DataFrame.ix": {"to": "pandas.DataFrame.iloc", "relation": "deprecated_in_favor_of"},
-      "pandas.Series.ix": {"to": "pandas.Series.loc", "relation": "deprecated_in_favor_of"},
-      "pandas.Series.ix": {"to": "pandas.Series.iloc", "relation": "deprecated_in_favor_of"},
-      "pandas.Panel.ix": {"to": "pandas.Panel.loc", "relation": "deprecated_in_favor_of"},
-      "pandas.Panel.ix": {"to": "pandas.Panel.iloc", "relation": "deprecated_in_favor_of"},
-      "pandas.TimeGrouper": {"to": "pandas.Grouper", "relation": "deprecated_in_favor_of"},
-      "pandas.WidePanel": {"to": "pandas.DataFrame", "relation": "deprecated_in_favor_of"}
+      "pandas.DataFrame.from_csv": {
+        "to": "pandas.read_csv",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.Series.from_csv": {
+        "to": "pandas.read_csv",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.DataFrame.ix": {
+        "to": "pandas.DataFrame.iloc",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.Series.ix": {
+        "to": "pandas.Series.iloc",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.Panel.ix": {
+        "to": "pandas.Panel.iloc",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.TimeGrouper": {
+        "to": "pandas.Grouper",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.WidePanel": {
+        "to": "pandas.DataFrame",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.19.0": {
-      "pandas.Series.combine_first": {"relation": "deprecated_in", "to": "0.19.0"},
-      "pandas.Series.valid": {"to": "pandas.Series.dropna", "relation": "deprecated_in_favor_of"},
-      "pandas.ExcelFile.parse": {"relation": "deprecated_in", "to": "0.19.0"}
-    },
-    "0.18.0": {
-      "pandas.SparseSeries": {"relation": "deprecated_in", "to": "0.18.0"},
-      "pandas.SparseDataFrame": {"relation": "deprecated_in", "to": "0.18.0"}
+      "pandas.Series.valid": {
+        "to": "pandas.Series.dropna",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.17.0": {
-      "pandas.Series.sort": {"to": "pandas.Series.sort_values", "relation": "deprecated_in_favor_of"},
-      "pandas.DataFrame.sort": {"to": "pandas.DataFrame.sort_values", "relation": "deprecated_in_favor_of"},
-      "pandas.Series.order": {"to": "pandas.Series.sort_values", "relation": "deprecated_in_favor_of"},
-      "pandas.DataFrame.to_excel": {"relation": "deprecated_in", "to": "0.17.0"},
-      "pandas.ExcelWriter": {"relation": "deprecated_in", "to": "0.17.0"},
-      "pandas.Series.valid": {"to": "pandas.Series.dropna", "relation": "deprecated_in_favor_of"},
-      "pandas.DataFrame.combine_first": {"relation": "deprecated_in", "to": "0.17.0"},
-      "pandas.pnow": {"to": "pandas.Timestamp.now", "relation": "deprecated_in_favor_of"}
+      "pandas.Series.sort": {
+        "to": "pandas.Series.sort_values",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.DataFrame.sort": {
+        "to": "pandas.DataFrame.sort_values",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.Series.order": {
+        "to": "pandas.Series.sort_values",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.pnow": {
+        "to": "pandas.Timestamp.now",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.16.0": {
-      "pandas.DataFrame.convert_objects": {"to": "pandas.DataFrame.infer_objects", "relation": "deprecated_in_favor_of"},
-      "pandas.Broadcast": {"relation": "removed_in", "to": "0.16.0"}
+      "pandas.DataFrame.convert_objects": {
+        "to": "pandas.DataFrame.infer_objects",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.Broadcast": {
+        "relation": "removed_in",
+        "to": "0.16.0"
+      }
     },
     "0.15.0": {
-      "pandas.Series.valid": {"relation": "deprecated_in", "to": "0.15.0"},
-      "pandas.Index.sort": {"to": "pandas.Index.sort_values", "relation": "deprecated_in_favor_of"}
+      "pandas.Index.sort": {
+        "to": "pandas.Index.sort_values",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.14.0": {
-      "pandas.get_data_google": {"relation": "removed_in", "to": "0.14.0"},
-      "pandas.get_data_yahoo": {"relation": "removed_in", "to": "0.14.0"},
-      "pandas.DataFrame.to_csv": {"relation": "deprecated_in", "to": "0.14.0"}
+      "pandas.get_data_google": {
+        "relation": "removed_in",
+        "to": "0.14.0"
+      },
+      "pandas.get_data_yahoo": {
+        "relation": "removed_in",
+        "to": "0.14.0"
+      }
     },
     "0.13.0": {
-      "pandas.ols": {"to": "statsmodels.OLS", "relation": "deprecated_in_favor_of"},
-      "pandas.panel_ols": {"relation": "removed_in", "to": "0.13.0"}
+      "pandas.ols": {
+        "to": "statsmodels.OLS",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pandas.panel_ols": {
+        "relation": "removed_in",
+        "to": "0.13.0"
+      }
+    },
+    "1.2.0": {
+      "pandas.DataFrame.lookup": {
+        "relation": "deprecated_in",
+        "to": "1.4.0"
+      }
     }
   },
   "numpy": {
     "2.0.0": {
-      "numpy.product": {"to": "numpy.prod", "relation": "removed_in"},
-      "numpy.cumproduct": {"to": "numpy.cumprod", "relation": "removed_in"},
-      "numpy.ndarray.item": {"relation": "deprecated_in", "to": "2.0.0"},
-      "numpy.ndarray.setfield": {"relation": "deprecated_in", "to": "2.0.0"},
-      "numpy.dtype.base": {"relation": "deprecated_in", "to": "2.0.0"},
-      "numpy.sctype2char": {"relation": "removed_in", "to": "2.0.0"},
-      "numpy.cast": {"relation": "removed_in", "to": "2.0.0"},
-      "numpy.source": {"relation": "removed_in", "to": "2.0.0"},
-      "numpy.lookfor": {"relation": "removed_in", "to": "2.0.0"},
-      "numpy.nbytes": {"relation": "deprecated_in", "to": "2.0.0"},
-      "numpy.shares_memory": {"relation": "deprecated_in", "to": "2.0.0"},
-      "numpy.may_share_memory": {"relation": "deprecated_in", "to": "2.0.0"}
+      "numpy.product": {
+        "to": "numpy.prod",
+        "relation": "removed_in"
+      },
+      "numpy.cumproduct": {
+        "to": "numpy.cumprod",
+        "relation": "removed_in"
+      },
+      "numpy.dtype.base": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "numpy.sctype2char": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "numpy.cast": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "numpy.source": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "numpy.lookfor": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      }
     },
     "1.25.0": {
-      "numpy.issubclass_": {"to": "builtins.issubclass", "relation": "deprecated_in_favor_of"},
-      "numpy.product": {"to": "numpy.prod", "relation": "deprecated_in_favor_of"},
-      "numpy.cumproduct": {"to": "numpy.cumprod", "relation": "deprecated_in_favor_of"},
-      "numpy.alltrue": {"to": "numpy.all", "relation": "deprecated_in_favor_of"},
-      "numpy.sometrue": {"to": "numpy.any", "relation": "deprecated_in_favor_of"}
+      "numpy.issubclass_": {
+        "to": "builtins.issubclass",
+        "relation": "deprecated_in_favor_of"
+      },
+      "numpy.product": {
+        "to": "numpy.prod",
+        "relation": "deprecated_in_favor_of"
+      },
+      "numpy.cumproduct": {
+        "to": "numpy.cumprod",
+        "relation": "deprecated_in_favor_of"
+      },
+      "numpy.alltrue": {
+        "to": "numpy.all",
+        "relation": "deprecated_in_favor_of"
+      },
+      "numpy.sometrue": {
+        "to": "numpy.any",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "1.24.0": {
-      "numpy.bool8": {"to": "numpy.bool_", "relation": "deprecated_in_favor_of"},
-      "numpy.object0": {"to": "numpy.object_", "relation": "deprecated_in_favor_of"},
-      "numpy.str0": {"to": "numpy.str_", "relation": "deprecated_in_favor_of"},
-      "numpy.float_": {"relation": "deprecated_in", "to": "1.24.0"},
-      "numpy.complex_": {"relation": "deprecated_in", "to": "1.24.0"},
-      "numpy.int_": {"relation": "deprecated_in", "to": "1.24.0"},
-      "numpy.bytes_": {"to": "numpy.bytes_", "relation": "deprecated_in_favor_of"},
-      "numpy.unicode_": {"to": "numpy.str_", "relation": "deprecated_in_favor_of"}
-    },
-    "1.23.0": {
-      "numpy.histogram": {"relation": "deprecated_in", "to": "1.23.0"},
-      "numpy.digitize": {"relation": "deprecated_in", "to": "1.23.0"}
+      "numpy.bool8": {
+        "to": "numpy.bool_",
+        "relation": "deprecated_in_favor_of"
+      },
+      "numpy.object0": {
+        "to": "numpy.object_",
+        "relation": "deprecated_in_favor_of"
+      },
+      "numpy.str0": {
+        "to": "numpy.str_",
+        "relation": "deprecated_in_favor_of"
+      },
+      "numpy.bytes_": {
+        "to": "numpy.bytes_",
+        "relation": "deprecated_in_favor_of"
+      },
+      "numpy.unicode_": {
+        "to": "numpy.str_",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "1.22.0": {
-      "numpy.matrix": {"relation": "deprecated_in", "to": "1.22.0"},
-      "numpy.bmat": {"relation": "deprecated_in", "to": "1.22.0"},
-      "numpy.asmatrix": {"relation": "deprecated_in", "to": "1.22.0"}
-    },
-    "1.21.0": {
-      "numpy.ndarray.tolist": {"relation": "deprecated_in", "to": "1.21.0"}
+      "numpy.matrix": {
+        "relation": "deprecated_in",
+        "to": "1.22.0"
+      },
+      "numpy.bmat": {
+        "relation": "deprecated_in",
+        "to": "1.22.0"
+      },
+      "numpy.asmatrix": {
+        "relation": "deprecated_in",
+        "to": "1.22.0"
+      }
     },
     "1.20.0": {
-      "numpy.typeDict": {"to": "numpy.sctypeDict", "relation": "deprecated_in_favor_of"},
-      "numpy.safe_eval": {"relation": "removed_in", "to": "1.20.0"},
-      "numpy.select": {"relation": "deprecated_in", "to": "1.20.0"},
-      "numpy.choose": {"relation": "deprecated_in", "to": "1.20.0"}
+      "numpy.typeDict": {
+        "to": "numpy.sctypeDict",
+        "relation": "deprecated_in_favor_of"
+      },
+      "numpy.safe_eval": {
+        "relation": "removed_in",
+        "to": "1.20.0"
+      }
     },
     "1.19.0": {
-      "numpy.numeric": {"relation": "deprecated_in", "to": "1.19.0"},
-      "numpy.dual": {"relation": "deprecated_in", "to": "1.19.0"}
+      "numpy.numeric": {
+        "relation": "deprecated_in",
+        "to": "1.19.0"
+      },
+      "numpy.dual": {
+        "relation": "deprecated_in",
+        "to": "1.19.0"
+      }
     },
     "1.18.0": {
-      "numpy.DataSource": {"relation": "deprecated_in", "to": "1.18.0"}
+      "numpy.DataSource": {
+        "relation": "deprecated_in",
+        "to": "1.18.0"
+      }
     },
     "1.17.0": {
-      "numpy.asscalar": {"to": "numpy.ndarray.item", "relation": "deprecated_in_favor_of"},
-      "numpy.array_equal": {"relation": "deprecated_in", "to": "1.17.0"},
-      "numpy.array_equiv": {"relation": "deprecated_in", "to": "1.17.0"},
-      "numpy.allclose": {"relation": "deprecated_in", "to": "1.17.0"}
-    },
-    "1.16.0": {
-      "numpy.isfortran": {"relation": "deprecated_in", "to": "1.16.0"}
-    },
-    "1.15.0": {
-      "numpy.DataSource": {"relation": "deprecated_in", "to": "1.15.0"}
+      "numpy.asscalar": {
+        "to": "numpy.ndarray.item",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "1.14.0": {
-      "numpy.getmask": {"to": "numpy.ma.getmask", "relation": "deprecated_in_favor_of"},
-      "numpy.masked_array": {"relation": "deprecated_in", "to": "1.14.0"},
-      "numpy.rank": {"to": "numpy.ndarray.ndim", "relation": "deprecated_in_favor_of"}
+      "numpy.getmask": {
+        "to": "numpy.ma.getmask",
+        "relation": "deprecated_in_favor_of"
+      },
+      "numpy.masked_array": {
+        "relation": "deprecated_in",
+        "to": "1.14.0"
+      },
+      "numpy.rank": {
+        "to": "numpy.ndarray.ndim",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "1.13.0": {
-      "numpy.poly1d": {"relation": "deprecated_in", "to": "1.13.0"},
-      "numpy.polyfit": {"relation": "deprecated_in", "to": "1.13.0"},
-      "numpy.polyval": {"relation": "deprecated_in", "to": "1.13.0"},
-      "numpy.polyder": {"relation": "deprecated_in", "to": "1.13.0"},
-      "numpy.polyint": {"relation": "deprecated_in", "to": "1.13.0"},
-      "numpy.polyadd": {"relation": "deprecated_in", "to": "1.13.0"},
-      "numpy.polysub": {"relation": "deprecated_in", "to": "1.13.0"},
-      "numpy.polymul": {"relation": "deprecated_in", "to": "1.13.0"},
-      "numpy.polydiv": {"relation": "deprecated_in", "to": "1.13.0"}
+      "numpy.poly1d": {
+        "relation": "deprecated_in",
+        "to": "1.13.0"
+      },
+      "numpy.polyfit": {
+        "relation": "deprecated_in",
+        "to": "1.13.0"
+      },
+      "numpy.polyval": {
+        "relation": "deprecated_in",
+        "to": "1.13.0"
+      },
+      "numpy.polyder": {
+        "relation": "deprecated_in",
+        "to": "1.13.0"
+      },
+      "numpy.polyint": {
+        "relation": "deprecated_in",
+        "to": "1.13.0"
+      },
+      "numpy.polyadd": {
+        "relation": "deprecated_in",
+        "to": "1.13.0"
+      },
+      "numpy.polysub": {
+        "relation": "deprecated_in",
+        "to": "1.13.0"
+      },
+      "numpy.polymul": {
+        "relation": "deprecated_in",
+        "to": "1.13.0"
+      },
+      "numpy.polydiv": {
+        "relation": "deprecated_in",
+        "to": "1.13.0"
+      }
     },
     "1.12.0": {
-      "numpy.distutils": {"relation": "deprecated_in", "to": "1.12.0"}
+      "numpy.distutils": {
+        "relation": "deprecated_in",
+        "to": "1.12.0"
+      }
     },
     "1.11.0": {
-      "numpy.distutils": {"relation": "deprecated_in", "to": "1.11.0"},
-      "numpy.numeric": {"relation": "deprecated_in", "to": "1.11.0"}
-    },
-    "1.10.0": {
-      "numpy.rank": {"to": "numpy.ndarray.ndim", "relation": "deprecated_in_favor_of"}
-    },
-    "1.8.0": {
-      "numpy.chararray": {"relation": "deprecated_in", "to": "1.8.0"}
-    },
-    "1.7.0": {
-      "numpy.cast": {"relation": "deprecated_in", "to": "1.7.0"},
-      "numpy.source": {"relation": "deprecated_in", "to": "1.7.0"}
+      "numpy.distutils": {
+        "relation": "deprecated_in",
+        "to": "1.11.0"
+      },
+      "numpy.numeric": {
+        "relation": "deprecated_in",
+        "to": "1.11.0"
+      }
     }
   },
   "requests": {
     "3.0.0": {
-      "requests.Response.json": {"relation": "deprecated_in", "to": "3.0.0"},
-      "requests.packages": {"relation": "removed_in", "to": "3.0.0"},
-      "requests.async": {"relation": "removed_in", "to": "3.0.0"},
-      "requests.api.request": {"relation": "deprecated_in", "to": "3.0.0"}
+      "requests.packages": {
+        "relation": "removed_in",
+        "to": "3.0.0"
+      },
+      "requests.async": {
+        "relation": "removed_in",
+        "to": "3.0.0"
+      }
     },
     "2.31.0": {
-      "requests.packages.urllib3": {"to": "urllib3", "relation": "deprecated_in_favor_of"}
-    },
-    "2.28.0": {
-      "requests.auth.HTTPDigestAuth": {"relation": "deprecated_in", "to": "2.28.0"}
-    },
-    "2.26.0": {
-      "requests.cookies": {"relation": "deprecated_in", "to": "2.26.0"}
-    },
-    "2.25.0": {
-      "requests.api.request": {"relation": "deprecated_in", "to": "2.25.0"}
-    },
-    "2.20.0": {
-      "requests.models.PreparedRequest": {"relation": "deprecated_in", "to": "2.20.0"}
-    },
-    "2.10.0": {
-      "requests.Response.json": {"relation": "deprecated_in", "to": "2.10.0"}
-    },
-    "2.5.0": {
-      "requests.HTTPError": {"relation": "deprecated_in", "to": "2.5.0"}
+      "requests.packages.urllib3": {
+        "to": "urllib3",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "2.4.0": {
-      "requests.async": {"relation": "removed_in", "to": "2.4.0"}
-    },
-    "2.3.0": {
-      "requests.ConnectionError": {"relation": "deprecated_in", "to": "2.3.0"}
-    },
-    "2.0.0": {
-      "requests.HTTPError": {"relation": "deprecated_in", "to": "2.0.0"},
-      "requests.api": {"relation": "deprecated_in", "to": "2.0.0"},
-      "requests.models": {"relation": "deprecated_in", "to": "2.0.0"}
+      "requests.async": {
+        "relation": "removed_in",
+        "to": "2.4.0"
+      }
     }
   },
   "urllib3": {
     "2.0.0": {
-      "urllib3.PoolManager.request": {"relation": "deprecated_in", "to": "2.0.0"},
-      "urllib3.connection_from_url": {"to": "urllib3.PoolManager", "relation": "deprecated_in_favor_of"},
-      "urllib3.make_headers": {"relation": "deprecated_in", "to": "2.0.0"},
-      "urllib3.util.url": {"relation": "deprecated_in", "to": "2.0.0"},
-      "urllib3.util.timeout": {"relation": "deprecated_in", "to": "2.0.0"},
-      "urllib3.util.retry": {"relation": "deprecated_in", "to": "2.0.0"}
+      "urllib3.PoolManager.request": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "urllib3.connection_from_url": {
+        "to": "urllib3.PoolManager",
+        "relation": "deprecated_in_favor_of"
+      },
+      "urllib3.make_headers": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "urllib3.util.url": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "urllib3.util.timeout": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "urllib3.util.retry": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      }
     },
     "1.26.0": {
-      "urllib3.contrib.socks": {"relation": "deprecated_in", "to": "1.26.0"},
-      "urllib3.contrib.pyopenssl": {"relation": "deprecated_in", "to": "1.26.0"}
+      "urllib3.contrib.socks": {
+        "relation": "deprecated_in",
+        "to": "1.26.0"
+      },
+      "urllib3.contrib.pyopenssl": {
+        "relation": "deprecated_in",
+        "to": "1.26.0"
+      }
     }
   },
   "httpx": {
-    "0.28.0": {
-      "httpx.Client.request": {"relation": "deprecated_in", "to": "0.28.0"}
-    },
-    "0.27.0": {
-      "httpx.AsyncClient.request": {"relation": "deprecated_in", "to": "0.27.0"},
-      "httpx.Response.json": {"relation": "deprecated_in", "to": "0.27.0"}
-    },
-    "0.24.0": {
-      "httpx.Timeout": {"relation": "deprecated_in", "to": "0.24.0"},
-      "httpx.Limits": {"relation": "deprecated_in", "to": "0.24.0"}
-    },
-    "0.23.0": {
-      "httpx.Client": {"relation": "deprecated_in", "to": "0.23.0"},
-      "httpx.AsyncClient": {"relation": "deprecated_in", "to": "0.23.0"}
-    },
     "0.14.0": {
-      "httpx.dispatch": {"relation": "removed_in", "to": "0.14.0"}
+      "httpx.dispatch": {
+        "relation": "removed_in",
+        "to": "0.14.0"
+      }
     }
   },
   "aiohttp": {
-    "4.0.0": {
-      "aiohttp.ClientSession.request": {"relation": "deprecated_in", "to": "4.0.0"},
-      "aiohttp.web.Application": {"relation": "deprecated_in", "to": "4.0.0"}
-    },
-    "3.10.0": {
-      "aiohttp.ClientSession.get": {"relation": "deprecated_in", "to": "3.10.0"},
-      "aiohttp.ClientSession.post": {"relation": "deprecated_in", "to": "3.10.0"},
-      "aiohttp.ClientSession.put": {"relation": "deprecated_in", "to": "3.10.0"},
-      "aiohttp.ClientSession.delete": {"relation": "deprecated_in", "to": "3.10.0"},
-      "aiohttp.ClientSession.head": {"relation": "deprecated_in", "to": "3.10.0"},
-      "aiohttp.ClientSession.options": {"relation": "deprecated_in", "to": "3.10.0"},
-      "aiohttp.ClientSession.patch": {"relation": "deprecated_in", "to": "3.10.0"},
-      "aiohttp.ClientSession.ws_connect": {"relation": "deprecated_in", "to": "3.10.0"}
-    },
-    "3.0.0": {
-      "aiohttp.web.Application.router": {"relation": "deprecated_in", "to": "3.0.0"},
-      "aiohttp.web.Request": {"relation": "deprecated_in", "to": "3.0.0"},
-      "aiohttp.web.Response": {"relation": "deprecated_in", "to": "3.0.0"}
-    },
     "2.0.0": {
-      "aiohttp.client": {"to": "aiohttp.ClientSession", "relation": "deprecated_in_favor_of"}
+      "aiohttp.client": {
+        "to": "aiohttp.ClientSession",
+        "relation": "deprecated_in_favor_of"
+      }
     }
   },
   "scikit-learn": {
     "1.6.0": {
-      "sklearn.mixture.GMM": {"relation": "removed_in", "to": "1.6.0"},
-      "sklearn.linear_model.LinearRegression": {"relation": "deprecated_in", "to": "1.6.0"}
+      "sklearn.mixture.GMM": {
+        "relation": "removed_in",
+        "to": "1.6.0"
+      }
     },
     "1.5.0": {
-      "sklearn.preprocessing.Imputer": {"relation": "removed_in", "to": "1.5.0"},
-      "sklearn.covariance.EllipticEnvelope": {"relation": "deprecated_in", "to": "1.5.0"}
+      "sklearn.preprocessing.Imputer": {
+        "relation": "removed_in",
+        "to": "1.5.0"
+      }
     },
     "1.4.0": {
-      "sklearn.decomposition.ProbabilisticPCA": {"relation": "removed_in", "to": "1.4.0"},
-      "sklearn.mixture.GMM": {"to": "sklearn.mixture.GaussianMixture", "relation": "deprecated_in_favor_of"}
+      "sklearn.decomposition.ProbabilisticPCA": {
+        "relation": "removed_in",
+        "to": "1.4.0"
+      },
+      "sklearn.mixture.GMM": {
+        "to": "sklearn.mixture.GaussianMixture",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "1.3.0": {
-      "sklearn.utils.linear_assignment_": {"relation": "removed_in", "to": "1.3.0"},
-      "sklearn.datasets.fetch_mldata": {"relation": "removed_in", "to": "1.3.0"},
-      "sklearn.linear_model.LinearRegression": {"relation": "deprecated_in", "to": "1.3.0"}
+      "sklearn.utils.linear_assignment_": {
+        "relation": "removed_in",
+        "to": "1.3.0"
+      },
+      "sklearn.datasets.fetch_mldata": {
+        "relation": "removed_in",
+        "to": "1.3.0"
+      }
     },
     "1.2.0": {
-      "sklearn.cross_validation": {"to": "sklearn.model_selection", "relation": "deprecated_in_favor_of"},
-      "sklearn.grid_search": {"to": "sklearn.model_selection", "relation": "deprecated_in_favor_of"},
-      "sklearn.learning_curve": {"to": "sklearn.model_selection", "relation": "deprecated_in_favor_of"},
-      "sklearn.datasets.fetch_mldata": {"to": "sklearn.datasets.fetch_openml", "relation": "deprecated_in_favor_of"}
+      "sklearn.cross_validation": {
+        "to": "sklearn.model_selection",
+        "relation": "deprecated_in_favor_of"
+      },
+      "sklearn.grid_search": {
+        "to": "sklearn.model_selection",
+        "relation": "deprecated_in_favor_of"
+      },
+      "sklearn.learning_curve": {
+        "to": "sklearn.model_selection",
+        "relation": "deprecated_in_favor_of"
+      },
+      "sklearn.datasets.fetch_mldata": {
+        "to": "sklearn.datasets.fetch_openml",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "1.1.0": {
-      "sklearn.utils.linear_assignment_": {"to": "scipy.optimize.linear_sum_assignment", "relation": "deprecated_in_favor_of"}
+      "sklearn.utils.linear_assignment_": {
+        "to": "scipy.optimize.linear_sum_assignment",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "1.0.0": {
-      "sklearn.preprocessing.Imputer": {"to": "sklearn.impute.SimpleImputer", "relation": "deprecated_in_favor_of"},
-      "sklearn.preprocessing.OneHotEncoder": {"relation": "deprecated_in", "to": "1.0.0"},
-      "sklearn.preprocessing.LabelEncoder": {"relation": "deprecated_in", "to": "1.0.0"}
+      "sklearn.preprocessing.Imputer": {
+        "to": "sklearn.impute.SimpleImputer",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.24.0": {
-      "sklearn.utils.linear_assignment_": {"to": "scipy.optimize.linear_sum_assignment", "relation": "deprecated_in_favor_of"}
+      "sklearn.utils.linear_assignment_": {
+        "to": "scipy.optimize.linear_sum_assignment",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.22.0": {
-      "sklearn.preprocessing.Imputer": {"to": "sklearn.impute.SimpleImputer", "relation": "deprecated_in_favor_of"},
-      "sklearn.preprocessing.OneHotEncoder": {"relation": "deprecated_in", "to": "0.22.0"}
-    },
-    "0.21.0": {
-      "sklearn.model_selection.GridSearchCV": {"relation": "deprecated_in", "to": "0.21.0"},
-      "sklearn.model_selection.RandomizedSearchCV": {"relation": "deprecated_in", "to": "0.21.0"}
+      "sklearn.preprocessing.Imputer": {
+        "to": "sklearn.impute.SimpleImputer",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.20.0": {
-      "sklearn.linear_model.stochastic_gradient": {"to": "sklearn.linear_model.SGDClassifier", "relation": "deprecated_in_favor_of"},
-      "sklearn.preprocessing.LabelEncoder": {"relation": "deprecated_in", "to": "0.20.0"},
-      "sklearn.preprocessing.LabelBinarizer": {"relation": "deprecated_in", "to": "0.20.0"}
+      "sklearn.linear_model.stochastic_gradient": {
+        "to": "sklearn.linear_model.SGDClassifier",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.19.0": {
-      "sklearn.lda": {"to": "sklearn.discriminant_analysis.LinearDiscriminantAnalysis", "relation": "deprecated_in_favor_of"},
-      "sklearn.qda": {"to": "sklearn.discriminant_analysis.QuadraticDiscriminantAnalysis", "relation": "deprecated_in_favor_of"}
+      "sklearn.lda": {
+        "to": "sklearn.discriminant_analysis.LinearDiscriminantAnalysis",
+        "relation": "deprecated_in_favor_of"
+      },
+      "sklearn.qda": {
+        "to": "sklearn.discriminant_analysis.QuadraticDiscriminantAnalysis",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.18.0": {
-      "sklearn.lda": {"to": "sklearn.discriminant_analysis.LinearDiscriminantAnalysis", "relation": "deprecated_in_favor_of"},
-      "sklearn.qda": {"to": "sklearn.discriminant_analysis.QuadraticDiscriminantAnalysis", "relation": "deprecated_in_favor_of"}
+      "sklearn.lda": {
+        "to": "sklearn.discriminant_analysis.LinearDiscriminantAnalysis",
+        "relation": "deprecated_in_favor_of"
+      },
+      "sklearn.qda": {
+        "to": "sklearn.discriminant_analysis.QuadraticDiscriminantAnalysis",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.17.0": {
-      "sklearn.cross_validation": {"to": "sklearn.model_selection", "relation": "deprecated_in_favor_of"},
-      "sklearn.grid_search": {"to": "sklearn.model_selection", "relation": "deprecated_in_favor_of"}
+      "sklearn.cross_validation": {
+        "to": "sklearn.model_selection",
+        "relation": "deprecated_in_favor_of"
+      },
+      "sklearn.grid_search": {
+        "to": "sklearn.model_selection",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.16.0": {
-      "sklearn.linear_model.stochastic_gradient": {"to": "sklearn.linear_model.SGDClassifier", "relation": "deprecated_in_favor_of"}
+      "sklearn.linear_model.stochastic_gradient": {
+        "to": "sklearn.linear_model.SGDClassifier",
+        "relation": "deprecated_in_favor_of"
+      }
     }
   },
   "scipy": {
-    "1.14.0": {
-      "scipy.linalg.pascal": {"relation": "deprecated_in", "to": "1.14.0"},
-      "scipy.linalg.invpascal": {"relation": "deprecated_in", "to": "1.14.0"}
-    },
-    "1.13.0": {
-      "scipy.cluster": {"relation": "deprecated_in", "to": "1.13.0"},
-      "scipy.constants": {"relation": "deprecated_in", "to": "1.13.0"}
-    },
-    "1.12.0": {
-      "scipy.signal.cmplx_sort": {"relation": "deprecated_in", "to": "1.12.0"},
-      "scipy.io.loadmat": {"relation": "deprecated_in", "to": "1.12.0"},
-      "scipy.io.savemat": {"relation": "deprecated_in", "to": "1.12.0"},
-      "scipy.io.whosmat": {"relation": "deprecated_in", "to": "1.12.0"}
-    },
-    "1.11.0": {
-      "scipy.misc.bytescale": {"relation": "deprecated_in", "to": "1.11.0"},
-      "scipy.misc.fromimage": {"relation": "deprecated_in", "to": "1.11.0"},
-      "scipy.misc.toimage": {"relation": "deprecated_in", "to": "1.11.0"}
-    },
-    "1.10.0": {
-      "scipy.spatial.distance": {"relation": "deprecated_in", "to": "1.10.0"},
-      "scipy.cluster.hierarchy": {"relation": "deprecated_in", "to": "1.10.0"}
-    },
     "1.9.0": {
-      "scipy.misc.lena": {"relation": "removed_in", "to": "1.9.0"},
-      "scipy.stats": {"relation": "deprecated_in", "to": "1.9.0"}
+      "scipy.misc.lena": {
+        "relation": "removed_in",
+        "to": "1.9.0"
+      }
     },
     "1.8.0": {
-      "scipy.misc.lena": {"to": "scipy.datasets.face", "relation": "deprecated_in_favor_of"},
-      "scipy.misc.ascent": {"to": "scipy.datasets.ascent", "relation": "deprecated_in_favor_of"},
-      "scipy.misc.electrocardiogram": {"to": "scipy.datasets.electrocardiogram", "relation": "deprecated_in_favor_of"}
-    },
-    "1.6.0": {
-      "scipy.io.loadmat": {"relation": "deprecated_in", "to": "1.6.0"}
-    },
-    "1.5.0": {
-      "scipy.interpolate": {"relation": "deprecated_in", "to": "1.5.0"}
-    },
-    "1.4.0": {
-      "scipy.optimize": {"relation": "deprecated_in", "to": "1.4.0"},
-      "scipy.sparse.linalg": {"relation": "deprecated_in", "to": "1.4.0"}
-    },
-    "1.3.0": {
-      "scipy.spatial": {"relation": "deprecated_in", "to": "1.3.0"}
-    },
-    "1.2.0": {
-      "scipy.misc": {"relation": "deprecated_in", "to": "1.2.0"},
-      "scipy.stats": {"relation": "deprecated_in", "to": "1.2.0"},
-      "scipy.linalg": {"relation": "deprecated_in", "to": "1.2.0"}
-    },
-    "1.1.0": {
-      "scipy.special": {"relation": "deprecated_in", "to": "1.1.0"}
+      "scipy.misc.lena": {
+        "to": "scipy.datasets.face",
+        "relation": "deprecated_in_favor_of"
+      },
+      "scipy.misc.ascent": {
+        "to": "scipy.datasets.ascent",
+        "relation": "deprecated_in_favor_of"
+      },
+      "scipy.misc.electrocardiogram": {
+        "to": "scipy.datasets.electrocardiogram",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.19.0": {
-      "scipy.misc.lena": {"relation": "deprecated_in", "to": "0.19.0"}
-    },
-    "0.17.0": {
-      "scipy.linalg": {"relation": "deprecated_in", "to": "0.17.0"},
-      "scipy.sparse": {"relation": "deprecated_in", "to": "0.17.0"}
-    },
-    "0.16.0": {
-      "scipy.ndimage": {"relation": "deprecated_in", "to": "0.16.0"}
+      "scipy.misc.lena": {
+        "relation": "deprecated_in",
+        "to": "0.19.0"
+      }
     },
     "0.15.0": {
-      "scipy.max_len": {"to": "scipy.cluster.maxlen", "relation": "deprecated_in_favor_of"}
+      "scipy.max_len": {
+        "to": "scipy.cluster.maxlen",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.14.0": {
-      "scipy.weave": {"relation": "removed_in", "to": "0.14.0"},
-      "scipy.io.recaster": {"relation": "removed_in", "to": "0.14.0"}
+      "scipy.weave": {
+        "relation": "removed_in",
+        "to": "0.14.0"
+      },
+      "scipy.io.recaster": {
+        "relation": "removed_in",
+        "to": "0.14.0"
+      }
     },
     "0.13.0": {
-      "scipy.io.numpyio": {"relation": "removed_in", "to": "0.13.0"}
+      "scipy.io.numpyio": {
+        "relation": "removed_in",
+        "to": "0.13.0"
+      }
     },
     "0.12.0": {
-      "scipy.cluster": {"to": "scipy.cluster.vq", "relation": "deprecated_in_favor_of"}
+      "scipy.cluster": {
+        "to": "scipy.cluster.vq",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.11.0": {
-      "scipy.linsolve": {"to": "scipy.sparse.linalg", "relation": "deprecated_in_favor_of"}
+      "scipy.linsolve": {
+        "to": "scipy.sparse.linalg",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "0.10.0": {
-      "scipy.io.recarray": {"relation": "removed_in", "to": "0.10.0"}
+      "scipy.io.recarray": {
+        "relation": "removed_in",
+        "to": "0.10.0"
+      }
     },
     "0.9.0": {
-      "scipy.io.npfile": {"relation": "removed_in", "to": "0.9.0"}
+      "scipy.io.npfile": {
+        "relation": "removed_in",
+        "to": "0.9.0"
+      }
     },
     "0.8.0": {
-      "scipy.io.fopen": {"relation": "removed_in", "to": "0.8.0"}
+      "scipy.io.fopen": {
+        "relation": "removed_in",
+        "to": "0.8.0"
+      }
     },
     "0.7.0": {
-      "scipy.linsolve": {"to": "scipy.sparse.linalg", "relation": "moved_to"}
+      "scipy.linsolve": {
+        "to": "scipy.sparse.linalg",
+        "relation": "moved_to"
+      }
     }
   },
   "matplotlib": {
     "3.9.0": {
-      "matplotlib.pyplot.hold": {"relation": "removed_in", "to": "3.9.0"},
-      "matplotlib.pyplot.ishold": {"relation": "removed_in", "to": "3.9.0"}
+      "matplotlib.pyplot.hold": {
+        "relation": "removed_in",
+        "to": "3.9.0"
+      },
+      "matplotlib.pyplot.ishold": {
+        "relation": "removed_in",
+        "to": "3.9.0"
+      }
     },
     "3.8.0": {
-      "matplotlib.pyplot.gci": {"relation": "removed_in", "to": "3.8.0"}
-    },
-    "3.7.0": {
-      "matplotlib.axes.Axes.pcolor": {"relation": "deprecated_in", "to": "3.7.0"},
-      "matplotlib.axes.Axes.pcolorfast": {"relation": "deprecated_in", "to": "3.7.0"},
-      "matplotlib.axes.Axes.hexbin": {"relation": "deprecated_in", "to": "3.7.0"}
-    },
-    "3.6.0": {
-      "matplotlib.axes.Axes.get_position": {"relation": "deprecated_in", "to": "3.6.0"},
-      "matplotlib.axes.Axes.set_position": {"relation": "deprecated_in", "to": "3.6.0"}
-    },
-    "3.5.0": {
-      "matplotlib.axes.Axes.mouseover": {"relation": "deprecated_in", "to": "3.5.0"},
-      "matplotlib.artist.Artist.set_mouseover": {"relation": "deprecated_in", "to": "3.5.0"}
-    },
-    "3.4.0": {
-      "matplotlib.axes.Axes.is_first_col": {"relation": "deprecated_in", "to": "3.4.0"},
-      "matplotlib.axes.Axes.is_first_row": {"relation": "deprecated_in", "to": "3.4.0"},
-      "matplotlib.axes.Axes.is_last_row": {"relation": "deprecated_in", "to": "3.4.0"},
-      "matplotlib.axes.Axes.is_last_col": {"relation": "deprecated_in", "to": "3.4.0"}
-    },
-    "3.3.0": {
-      "matplotlib.axes.Axes.magnitude_spectrum": {"relation": "deprecated_in", "to": "3.3.0"},
-      "matplotlib.axes.Axes.phase_spectrum": {"relation": "deprecated_in", "to": "3.3.0"}
+      "matplotlib.pyplot.gci": {
+        "relation": "removed_in",
+        "to": "3.8.0"
+      }
     },
     "3.2.0": {
-      "matplotlib.axes.Axes.set_color_cycle": {"to": "matplotlib.axes.Axes.set_prop_cycle", "relation": "deprecated_in_favor_of"},
-      "matplotlib.pyplot.rcParams": {"relation": "deprecated_in", "to": "3.2.0"}
-    },
-    "3.1.0": {
-      "matplotlib.axes.Axes.get_children": {"relation": "deprecated_in", "to": "3.1.0"},
-      "matplotlib.pyplot": {"relation": "deprecated_in", "to": "3.1.0"}
+      "matplotlib.axes.Axes.set_color_cycle": {
+        "to": "matplotlib.axes.Axes.set_prop_cycle",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "3.0.0": {
-      "matplotlib.pyplot.hold": {"to": "matplotlib.pyplot.ioff", "relation": "deprecated_in_favor_of"},
-      "matplotlib.artist.setp": {"relation": "deprecated_in", "to": "3.0.0"},
-      "matplotlib.artist.getp": {"relation": "deprecated_in", "to": "3.0.0"}
-    },
-    "2.2.0": {
-      "matplotlib.axes.Axes.set_clip_path": {"relation": "deprecated_in", "to": "2.2.0"},
-      "matplotlib.axes.Axes.get_default_bbox_extra_artists": {"relation": "deprecated_in", "to": "2.2.0"}
-    },
-    "2.1.0": {
-      "matplotlib.artist.Artist.set_clip_box": {"relation": "deprecated_in", "to": "2.1.0"},
-      "matplotlib.artist.Artist.set_clip_path": {"relation": "deprecated_in", "to": "2.1.0"}
+      "matplotlib.pyplot.hold": {
+        "to": "matplotlib.pyplot.ioff",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "2.0.0": {
-      "matplotlib.pyplot.hold": {"relation": "deprecated_in", "to": "2.0.0"},
-      "matplotlib.artist.Artist.set_alpha": {"relation": "deprecated_in", "to": "2.0.0"},
-      "matplotlib.artist.Artist.set_visible": {"relation": "deprecated_in", "to": "2.0.0"},
-      "matplotlib.axes.Axes.hold": {"relation": "deprecated_in", "to": "2.0.0"},
-      "matplotlib.axes.Axes.ishold": {"relation": "deprecated_in", "to": "2.0.0"},
-      "matplotlib.figure.Figure.hold": {"relation": "deprecated_in", "to": "2.0.0"},
-      "matplotlib.figure.Figure.ishold": {"relation": "deprecated_in", "to": "2.0.0"}
+      "matplotlib.pyplot.hold": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "matplotlib.axes.Axes.hold": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "matplotlib.axes.Axes.ishold": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "matplotlib.figure.Figure.hold": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "matplotlib.figure.Figure.ishold": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      }
     }
   },
   "seaborn": {
     "0.14.0": {
-      "seaborn.color_palette": {"relation": "deprecated_in", "to": "0.14.0"},
-      "seaborn.set_palette": {"relation": "deprecated_in", "to": "0.14.0"}
+      "seaborn.color_palette": {
+        "relation": "deprecated_in",
+        "to": "0.14.0"
+      },
+      "seaborn.set_palette": {
+        "relation": "deprecated_in",
+        "to": "0.14.0"
+      }
     },
     "0.13.0": {
-      "seaborn.relplot": {"relation": "deprecated_in", "to": "0.13.0"},
-      "seaborn.catplot": {"relation": "deprecated_in", "to": "0.13.0"},
-      "seaborn.displot": {"relation": "deprecated_in", "to": "0.13.0"},
-      "seaborn.lmplot": {"relation": "deprecated_in", "to": "0.13.0"}
+      "seaborn.relplot": {
+        "relation": "deprecated_in",
+        "to": "0.13.0"
+      },
+      "seaborn.catplot": {
+        "relation": "deprecated_in",
+        "to": "0.13.0"
+      },
+      "seaborn.displot": {
+        "relation": "deprecated_in",
+        "to": "0.13.0"
+      },
+      "seaborn.lmplot": {
+        "relation": "deprecated_in",
+        "to": "0.13.0"
+      }
     },
     "0.12.0": {
-      "seaborn.FacetGrid": {"relation": "deprecated_in", "to": "0.12.0"},
-      "seaborn.PairGrid": {"relation": "deprecated_in", "to": "0.12.0"},
-      "seaborn.JointGrid": {"relation": "deprecated_in", "to": "0.12.0"}
+      "seaborn.FacetGrid": {
+        "relation": "deprecated_in",
+        "to": "0.12.0"
+      },
+      "seaborn.PairGrid": {
+        "relation": "deprecated_in",
+        "to": "0.12.0"
+      },
+      "seaborn.JointGrid": {
+        "relation": "deprecated_in",
+        "to": "0.12.0"
+      }
     },
     "0.11.0": {
-      "seaborn.distplot": {"to": "seaborn.histplot", "relation": "deprecated_in_favor_of"},
-      "seaborn.kdeplot": {"relation": "deprecated_in", "to": "0.11.0"},
-      "seaborn.rugplot": {"relation": "deprecated_in", "to": "0.11.0"}
+      "seaborn.distplot": {
+        "to": "seaborn.histplot",
+        "relation": "deprecated_in_favor_of"
+      },
+      "seaborn.kdeplot": {
+        "relation": "deprecated_in",
+        "to": "0.11.0"
+      },
+      "seaborn.rugplot": {
+        "relation": "deprecated_in",
+        "to": "0.11.0"
+      }
     },
     "0.10.0": {
-      "seaborn.jointplot": {"relation": "deprecated_in", "to": "0.10.0"},
-      "seaborn.pairplot": {"relation": "deprecated_in", "to": "0.10.0"}
+      "seaborn.jointplot": {
+        "relation": "deprecated_in",
+        "to": "0.10.0"
+      },
+      "seaborn.pairplot": {
+        "relation": "deprecated_in",
+        "to": "0.10.0"
+      }
     },
     "0.9.0": {
-      "seaborn.lmplot": {"relation": "deprecated_in", "to": "0.9.0"},
-      "seaborn.regplot": {"relation": "deprecated_in", "to": "0.9.0"},
-      "seaborn.residplot": {"relation": "deprecated_in", "to": "0.9.0"}
+      "seaborn.lmplot": {
+        "relation": "deprecated_in",
+        "to": "0.9.0"
+      },
+      "seaborn.regplot": {
+        "relation": "deprecated_in",
+        "to": "0.9.0"
+      },
+      "seaborn.residplot": {
+        "relation": "deprecated_in",
+        "to": "0.9.0"
+      }
     },
     "0.8.0": {
-      "seaborn.tsplot": {"to": "seaborn.lineplot", "relation": "deprecated_in_favor_of"},
-      "seaborn.plt": {"relation": "deprecated_in", "to": "0.8.0"},
-      "seaborn.violinplot": {"relation": "deprecated_in", "to": "0.8.0"}
+      "seaborn.tsplot": {
+        "to": "seaborn.lineplot",
+        "relation": "deprecated_in_favor_of"
+      },
+      "seaborn.plt": {
+        "relation": "deprecated_in",
+        "to": "0.8.0"
+      },
+      "seaborn.violinplot": {
+        "relation": "deprecated_in",
+        "to": "0.8.0"
+      }
     },
     "0.7.0": {
-      "seaborn.axlabel": {"relation": "deprecated_in", "to": "0.7.0"}
+      "seaborn.axlabel": {
+        "relation": "deprecated_in",
+        "to": "0.7.0"
+      }
     }
   },
   "plotly": {
     "5.0.0": {
-      "plotly.plotly": {"to": "plotly.io", "relation": "deprecated_in_favor_of"},
-      "plotly.graph_objs": {"to": "plotly.graph_objects", "relation": "deprecated_in_favor_of"},
-      "plotly.offline.plot": {"to": "plotly.io.show", "relation": "deprecated_in_favor_of"},
-      "plotly.offline.iplot": {"to": "plotly.io.show", "relation": "deprecated_in_favor_of"},
-      "plotly.tools": {"relation": "deprecated_in", "to": "5.0.0"}
+      "plotly.plotly": {
+        "to": "plotly.io",
+        "relation": "deprecated_in_favor_of"
+      },
+      "plotly.graph_objs": {
+        "to": "plotly.graph_objects",
+        "relation": "deprecated_in_favor_of"
+      },
+      "plotly.offline.plot": {
+        "to": "plotly.io.show",
+        "relation": "deprecated_in_favor_of"
+      },
+      "plotly.offline.iplot": {
+        "to": "plotly.io.show",
+        "relation": "deprecated_in_favor_of"
+      },
+      "plotly.tools": {
+        "relation": "deprecated_in",
+        "to": "5.0.0"
+      }
     },
     "4.0.0": {
-      "plotly.plotly": {"relation": "deprecated_in", "to": "4.0.0"},
-      "plotly.graph_objs": {"relation": "deprecated_in", "to": "4.0.0"}
+      "plotly.plotly": {
+        "relation": "deprecated_in",
+        "to": "4.0.0"
+      },
+      "plotly.graph_objs": {
+        "relation": "deprecated_in",
+        "to": "4.0.0"
+      }
     },
     "3.0.0": {
-      "plotly.plotly.plot": {"to": "plotly.offline.plot", "relation": "deprecated_in_favor_of"},
-      "plotly.plotly.iplot": {"to": "plotly.offline.iplot", "relation": "deprecated_in_favor_of"}
+      "plotly.plotly.plot": {
+        "to": "plotly.offline.plot",
+        "relation": "deprecated_in_favor_of"
+      },
+      "plotly.plotly.iplot": {
+        "to": "plotly.offline.iplot",
+        "relation": "deprecated_in_favor_of"
+      }
     }
   },
   "tensorflow": {
     "2.18.0": {
-      "tf.compat.v1": {"relation": "removed_in", "to": "2.18.0"}
+      "tf.compat.v1": {
+        "relation": "removed_in",
+        "to": "2.18.0"
+      }
     },
     "2.16.0": {
-      "tf.estimator": {"to": "tf.keras", "relation": "deprecated_in_favor_of"},
-      "tf.compat.v1": {"relation": "deprecated_in", "to": "2.16.0"}
+      "tf.estimator": {
+        "to": "tf.keras",
+        "relation": "deprecated_in_favor_of"
+      },
+      "tf.compat.v1": {
+        "relation": "deprecated_in",
+        "to": "2.16.0"
+      }
     },
     "2.15.0": {
-      "tf.lite": {"relation": "deprecated_in", "to": "2.15.0"},
-      "tf.saved_model": {"relation": "deprecated_in", "to": "2.15.0"}
+      "tf.lite": {
+        "relation": "deprecated_in",
+        "to": "2.15.0"
+      },
+      "tf.saved_model": {
+        "relation": "deprecated_in",
+        "to": "2.15.0"
+      }
     },
     "2.13.0": {
-      "tf.contrib": {"relation": "removed_in", "to": "2.13.0"}
+      "tf.contrib": {
+        "relation": "removed_in",
+        "to": "2.13.0"
+      }
     },
     "2.12.0": {
-      "tf.compat.v1": {"relation": "deprecated_in", "to": "2.12.0"}
+      "tf.compat.v1": {
+        "relation": "deprecated_in",
+        "to": "2.12.0"
+      }
     },
     "2.11.0": {
-      "tf.contrib": {"relation": "removed_in", "to": "2.11.0"},
-      "tf.flags": {"to": "absl.flags", "relation": "deprecated_in_favor_of"},
-      "tf.app": {"to": "absl.app", "relation": "deprecated_in_favor_of"},
-      "tf.logging": {"to": "absl.logging", "relation": "deprecated_in_favor_of"}
-    },
-    "2.10.0": {
-      "tf.keras.utils": {"relation": "deprecated_in", "to": "2.10.0"}
+      "tf.contrib": {
+        "relation": "removed_in",
+        "to": "2.11.0"
+      },
+      "tf.flags": {
+        "to": "absl.flags",
+        "relation": "deprecated_in_favor_of"
+      },
+      "tf.app": {
+        "to": "absl.app",
+        "relation": "deprecated_in_favor_of"
+      },
+      "tf.logging": {
+        "to": "absl.logging",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "2.9.0": {
-      "tf.compat.v1": {"relation": "deprecated_in", "to": "2.9.0"}
+      "tf.compat.v1": {
+        "relation": "deprecated_in",
+        "to": "2.9.0"
+      }
     },
     "2.8.0": {
-      "tf.keras.wrappers": {"relation": "removed_in", "to": "2.8.0"},
-      "tf.keras.optimizers": {"relation": "deprecated_in", "to": "2.8.0"}
-    },
-    "2.7.0": {
-      "tf.keras.backend": {"relation": "deprecated_in", "to": "2.7.0"}
-    },
-    "2.5.0": {
-      "tf.keras.models": {"relation": "deprecated_in", "to": "2.5.0"}
-    },
-    "2.4.0": {
-      "tf.keras.layers": {"relation": "deprecated_in", "to": "2.4.0"}
-    },
-    "2.3.0": {
-      "tf.keras.losses": {"relation": "deprecated_in", "to": "2.3.0"},
-      "tf.keras.metrics": {"relation": "deprecated_in", "to": "2.3.0"}
-    },
-    "2.2.0": {
-      "tf.keras.optimizers": {"relation": "deprecated_in", "to": "2.2.0"}
-    },
-    "2.1.0": {
-      "tf.keras": {"relation": "deprecated_in", "to": "2.1.0"}
+      "tf.keras.wrappers": {
+        "relation": "removed_in",
+        "to": "2.8.0"
+      }
     },
     "2.0.0": {
-      "tf.Session": {"to": "tf.function", "relation": "deprecated_in_favor_of"},
-      "tf.placeholder": {"to": "tf.keras.Input", "relation": "deprecated_in_favor_of"},
-      "tf.get_variable": {"to": "tf.Variable", "relation": "deprecated_in_favor_of"},
-      "tf.variable_scope": {"to": "tf.name_scope", "relation": "deprecated_in_favor_of"},
-      "tf.layers": {"to": "tf.keras.layers", "relation": "deprecated_in_favor_of"},
-      "tf.losses": {"to": "tf.keras.losses", "relation": "deprecated_in_favor_of"},
-      "tf.metrics": {"to": "tf.keras.metrics", "relation": "deprecated_in_favor_of"},
-      "tf.initializers": {"to": "tf.keras.initializers", "relation": "deprecated_in_favor_of"},
-      "tf.python_io": {"to": "tf.io", "relation": "deprecated_in_favor_of"},
-      "tf.summary.FileWriter": {"to": "tf.summary.create_file_writer", "relation": "deprecated_in_favor_of"},
-      "tf.Session": {"relation": "removed_in", "to": "2.0.0"},
-      "tf.placeholder": {"relation": "removed_in", "to": "2.0.0"},
-      "tf.get_variable": {"relation": "removed_in", "to": "2.0.0"},
-      "tf.variable_scope": {"relation": "removed_in", "to": "2.0.0"},
-      "tf.layers": {"relation": "removed_in", "to": "2.0.0"},
-      "tf.losses": {"relation": "removed_in", "to": "2.0.0"},
-      "tf.metrics": {"relation": "removed_in", "to": "2.0.0"},
-      "tf.initializers": {"relation": "removed_in", "to": "2.0.0"},
-      "tf.python_io": {"relation": "removed_in", "to": "2.0.0"},
-      "tf.summary.FileWriter": {"relation": "removed_in", "to": "2.0.0"},
-      "tf.keras.backend.get_session": {"relation": "removed_in", "to": "2.0.0"},
-      "tf.contrib": {"relation": "deprecated_in", "to": "2.0.0"},
-      "tf.app": {"relation": "deprecated_in", "to": "2.0.0"},
-      "tf.flags": {"relation": "deprecated_in", "to": "2.0.0"},
-      "tf.logging": {"relation": "deprecated_in", "to": "2.0.0"},
-      "tf.estimator": {"relation": "deprecated_in", "to": "2.0.0"},
-      "tf.keras.wrappers": {"relation": "deprecated_in", "to": "2.0.0"},
-      "tf.keras.utils": {"relation": "deprecated_in", "to": "2.0.0"}
+      "tf.Session": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "tf.placeholder": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "tf.get_variable": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "tf.variable_scope": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "tf.layers": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "tf.losses": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "tf.metrics": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "tf.initializers": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "tf.python_io": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "tf.summary.FileWriter": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "tf.keras.backend.get_session": {
+        "relation": "removed_in",
+        "to": "2.0.0"
+      },
+      "tf.contrib": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "tf.app": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "tf.flags": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "tf.logging": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "tf.estimator": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "tf.keras.wrappers": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "tf.keras.utils": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      }
     }
   },
   "pytorch": {
-    "2.5.0": {
-      "torch.Tensor.set_": {"relation": "deprecated_in", "to": "2.5.0"},
-      "torch.Tensor.fill_": {"relation": "deprecated_in", "to": "2.5.0"}
-    },
-    "2.4.0": {
-      "torch.nn.utils.rnn": {"relation": "deprecated_in", "to": "2.4.0"},
-      "torch.onnx": {"relation": "deprecated_in", "to": "2.4.0"}
-    },
-    "2.3.0": {
-      "torch.cuda.Event": {"relation": "deprecated_in", "to": "2.3.0"},
-      "torch.cuda.Stream": {"relation": "deprecated_in", "to": "2.3.0"}
-    },
-    "2.2.0": {
-      "torch.jit": {"relation": "deprecated_in", "to": "2.2.0"},
-      "torch.nn.DataParallel": {"relation": "deprecated_in", "to": "2.2.0"}
-    },
-    "2.1.0": {
-      "torch.autograd.Variable": {"relation": "deprecated_in", "to": "2.1.0"},
-      "torch.Tensor.repeat": {"relation": "deprecated_in", "to": "2.1.0"}
-    },
-    "2.0.0": {
-      "torch.nn.functional": {"relation": "deprecated_in", "to": "2.0.0"},
-      "torch.Tensor.resize_": {"relation": "deprecated_in", "to": "2.0.0"},
-      "torch.Tensor.resize_as_": {"relation": "deprecated_in", "to": "2.0.0"}
-    },
-    "1.13.0": {
-      "torch.jit.script": {"relation": "deprecated_in", "to": "1.13.0"},
-      "torch.jit.trace": {"relation": "deprecated_in", "to": "1.13.0"}
-    },
-    "1.12.0": {
-      "torch.nn.utils.rnn": {"relation": "deprecated_in", "to": "1.12.0"}
-    },
-    "1.11.0": {
-      "torch.Tensor.new": {"relation": "deprecated_in", "to": "1.11.0"},
-      "torch.Tensor.new_full": {"relation": "deprecated_in", "to": "1.11.0"}
-    },
-    "1.10.0": {
-      "torch.nn.Module": {"relation": "deprecated_in", "to": "1.10.0"},
-      "torch.optim.Optimizer": {"relation": "deprecated_in", "to": "1.10.0"}
-    },
-    "1.9.0": {
-      "torch.nn.parallel.DistributedDataParallel": {"relation": "deprecated_in", "to": "1.9.0"}
-    },
-    "1.8.0": {
-      "torch.utils.data.DataLoader": {"relation": "deprecated_in", "to": "1.8.0"}
-    },
-    "1.7.0": {
-      "torch.nn.utils": {"relation": "deprecated_in", "to": "1.7.0"}
-    },
-    "1.6.0": {
-      "torch.cuda": {"relation": "deprecated_in", "to": "1.6.0"}
-    },
     "1.5.0": {
-      "torch.legacy": {"relation": "deprecated_in", "to": "1.5.0"},
-      "torch.legacy.nn": {"to": "torch.nn", "relation": "deprecated_in_favor_of"},
-      "torch.legacy.optim": {"to": "torch.optim", "relation": "deprecated_in_favor_of"}
-    },
-    "1.4.0": {
-      "torch.nn.utils.rnn.PackedSequence": {"relation": "deprecated_in", "to": "1.4.0"}
+      "torch.legacy.nn": {
+        "to": "torch.nn",
+        "relation": "deprecated_in_favor_of"
+      },
+      "torch.legacy.optim": {
+        "to": "torch.optim",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "1.3.0": {
-      "torch.utils.model_zoo": {"to": "torch.hub", "relation": "deprecated_in_favor_of"},
-      "torch.legacy": {"relation": "deprecated_in", "to": "1.3.0"}
-    },
-    "1.2.0": {
-      "torch.nn.Module": {"relation": "deprecated_in", "to": "1.2.0"}
-    },
-    "1.1.0": {
-      "torch.autograd.Variable": {"relation": "deprecated_in", "to": "1.1.0"},
-      "torch.Tensor": {"relation": "deprecated_in", "to": "1.1.0"}
-    },
-    "1.0.0": {
-      "torch.autograd.Variable": {"relation": "deprecated_in", "to": "1.0.0"},
-      "torch.nn.functional": {"relation": "deprecated_in", "to": "1.0.0"},
-      "torch.legacy": {"relation": "deprecated_in", "to": "1.0.0"},
-      "torch.utils.model_zoo": {"relation": "deprecated_in", "to": "1.0.0"},
-      "torch.cuda.Event": {"relation": "deprecated_in", "to": "1.0.0"},
-      "torch.cuda.Stream": {"relation": "deprecated_in", "to": "1.0.0"}
-    },
-    "0.4.0": {
-      "torch.autograd.Variable": {"relation": "deprecated_in", "to": "0.4.0"},
-      "torch.Tensor": {"relation": "deprecated_in", "to": "0.4.0"}
-    },
-    "0.3.0": {
-      "torch.legacy": {"relation": "deprecated_in", "to": "0.3.0"}
-    },
-    "0.2.0": {
-      "torch.utils.model_zoo": {"relation": "deprecated_in", "to": "0.2.0"}
-    },
-    "0.1.0": {
-      "torch.legacy": {"relation": "deprecated_in", "to": "0.1.0"}
+      "torch.utils.model_zoo": {
+        "to": "torch.hub",
+        "relation": "deprecated_in_favor_of"
+      }
     }
   },
   "keras": {
     "3.0.0": {
-      "keras.models.Sequential": {"relation": "deprecated_in", "to": "3.0.0"},
-      "keras.layers.Dense": {"relation": "deprecated_in", "to": "3.0.0"},
-      "keras.optimizers.Adam": {"to": "keras.optimizers.adam", "relation": "deprecated_in_favor_of"},
-      "keras.optimizers.SGD": {"to": "keras.optimizers.sgd", "relation": "deprecated_in_favor_of"},
-      "keras.losses": {"relation": "deprecated_in", "to": "3.0.0"},
-      "keras.metrics": {"relation": "deprecated_in", "to": "3.0.0"}
+      "keras.models.Sequential": {
+        "relation": "deprecated_in",
+        "to": "3.0.0"
+      },
+      "keras.layers.Dense": {
+        "relation": "deprecated_in",
+        "to": "3.0.0"
+      },
+      "keras.optimizers.Adam": {
+        "to": "keras.optimizers.adam",
+        "relation": "deprecated_in_favor_of"
+      },
+      "keras.optimizers.SGD": {
+        "to": "keras.optimizers.sgd",
+        "relation": "deprecated_in_favor_of"
+      },
+      "keras.losses": {
+        "relation": "deprecated_in",
+        "to": "3.0.0"
+      },
+      "keras.metrics": {
+        "relation": "deprecated_in",
+        "to": "3.0.0"
+      }
     },
     "2.13.0": {
-      "keras.wrappers": {"relation": "deprecated_in", "to": "2.13.0"}
+      "keras.wrappers": {
+        "relation": "deprecated_in",
+        "to": "2.13.0"
+      }
     },
     "2.12.0": {
-      "keras.models.model_from_config": {"relation": "deprecated_in", "to": "2.12.0"},
-      "keras.models.model_from_yaml": {"relation": "deprecated_in", "to": "2.12.0"}
+      "keras.models.model_from_config": {
+        "relation": "deprecated_in",
+        "to": "2.12.0"
+      },
+      "keras.models.model_from_yaml": {
+        "relation": "deprecated_in",
+        "to": "2.12.0"
+      }
     },
     "2.10.0": {
-      "keras.layers": {"relation": "deprecated_in", "to": "2.10.0"}
+      "keras.layers": {
+        "relation": "deprecated_in",
+        "to": "2.10.0"
+      }
     },
     "2.9.0": {
-      "keras.utils": {"relation": "deprecated_in", "to": "2.9.0"}
+      "keras.utils": {
+        "relation": "deprecated_in",
+        "to": "2.9.0"
+      }
     },
     "2.8.0": {
-      "keras.wrappers": {"relation": "deprecated_in", "to": "2.8.0"},
-      "keras.optimizers": {"relation": "deprecated_in", "to": "2.8.0"}
+      "keras.wrappers": {
+        "relation": "deprecated_in",
+        "to": "2.8.0"
+      },
+      "keras.optimizers": {
+        "relation": "deprecated_in",
+        "to": "2.8.0"
+      }
     },
     "2.7.0": {
-      "keras.backend": {"relation": "deprecated_in", "to": "2.7.0"}
+      "keras.backend": {
+        "relation": "deprecated_in",
+        "to": "2.7.0"
+      }
     },
     "2.5.0": {
-      "keras.models": {"relation": "deprecated_in", "to": "2.5.0"}
+      "keras.models": {
+        "relation": "deprecated_in",
+        "to": "2.5.0"
+      }
     },
     "2.4.0": {
-      "keras.layers": {"relation": "deprecated_in", "to": "2.4.0"}
+      "keras.layers": {
+        "relation": "deprecated_in",
+        "to": "2.4.0"
+      }
     },
     "2.3.0": {
-      "keras.losses": {"relation": "deprecated_in", "to": "2.3.0"},
-      "keras.metrics": {"relation": "deprecated_in", "to": "2.3.0"}
+      "keras.losses": {
+        "relation": "deprecated_in",
+        "to": "2.3.0"
+      },
+      "keras.metrics": {
+        "relation": "deprecated_in",
+        "to": "2.3.0"
+      }
     },
     "2.2.0": {
-      "keras.optimizers": {"relation": "deprecated_in", "to": "2.2.0"}
+      "keras.optimizers": {
+        "relation": "deprecated_in",
+        "to": "2.2.0"
+      }
     },
     "2.1.0": {
-      "keras": {"relation": "deprecated_in", "to": "2.1.0"}
+      "keras": {
+        "relation": "deprecated_in",
+        "to": "2.1.0"
+      }
     },
     "2.0.0": {
-      "keras.layers": {"relation": "deprecated_in", "to": "2.0.0"},
-      "keras.models": {"relation": "deprecated_in", "to": "2.0.0"},
-      "keras.optimizers": {"relation": "deprecated_in", "to": "2.0.0"},
-      "keras.losses": {"relation": "deprecated_in", "to": "2.0.0"},
-      "keras.metrics": {"relation": "deprecated_in", "to": "2.0.0"},
-      "keras.backend": {"relation": "deprecated_in", "to": "2.0.0"},
-      "keras.utils": {"relation": "deprecated_in", "to": "2.0.0"},
-      "keras.wrappers": {"relation": "deprecated_in", "to": "2.0.0"}
+      "keras.layers": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "keras.models": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "keras.optimizers": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "keras.losses": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "keras.metrics": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "keras.backend": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "keras.utils": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      },
+      "keras.wrappers": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      }
     }
   },
   "pydantic": {
-    "2.10.0": {
-      "pydantic.Field": {"relation": "deprecated_in", "to": "2.10.0"}
-    },
-    "2.7.0": {
-      "pydantic.ConfigDict": {"relation": "deprecated_in", "to": "2.7.0"}
-    },
-    "2.5.0": {
-      "pydantic.TypeAdapter": {"relation": "deprecated_in", "to": "2.5.0"}
-    },
-    "2.1.0": {
-      "pydantic.BaseModel": {"relation": "deprecated_in", "to": "2.1.0"}
-    },
     "2.0.0": {
-      "pydantic.BaseModel.parse_obj": {"to": "pydantic.TypeAdapter.validate_python", "relation": "deprecated_in_favor_of"},
-      "pydantic.BaseModel.parse_raw": {"to": "pydantic.TypeAdapter.validate_json", "relation": "deprecated_in_favor_of"},
-      "pydantic.BaseModel.parse_file": {"to": "pydantic.TypeAdapter.validate_file", "relation": "deprecated_in_favor_of"},
-      "pydantic.BaseModel.from_orm": {"to": "pydantic.TypeAdapter.validate_python", "relation": "deprecated_in_favor_of"},
-      "pydantic.BaseModel.schema": {"to": "pydantic.BaseModel.model_json_schema", "relation": "deprecated_in_favor_of"},
-      "pydantic.BaseModel.schema_json": {"to": "pydantic.BaseModel.model_json_schema", "relation": "deprecated_in_favor_of"},
-      "pydantic.BaseModel.validate": {"to": "pydantic.BaseModel.model_validate", "relation": "deprecated_in_favor_of"},
-      "pydantic.BaseModel.dict": {"to": "pydantic.BaseModel.model_dump", "relation": "deprecated_in_favor_of"},
-      "pydantic.BaseModel.json": {"to": "pydantic.BaseModel.model_dump_json", "relation": "deprecated_in_favor_of"},
-      "pydantic.BaseModel.update_forward_refs": {"to": "pydantic.BaseModel.model_rebuild", "relation": "deprecated_in_favor_of"},
-      "pydantic.BaseModel.construct": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pydantic.BaseModel.__fields__": {"to": "pydantic.BaseModel.model_fields", "relation": "deprecated_in_favor_of"},
-      "pydantic.BaseModel.__validators__": {"to": "pydantic.BaseModel.model_post_init", "relation": "deprecated_in_favor_of"},
-      "pydantic.Required": {"to": "typing.Required", "relation": "deprecated_in_favor_of"},
-      "pydantic.validator": {"to": "pydantic.field_validator", "relation": "deprecated_in_favor_of"},
-      "pydantic.root_validator": {"to": "pydantic.model_validator", "relation": "deprecated_in_favor_of"},
-      "pydantic.parse_obj_as": {"to": "pydantic.TypeAdapter", "relation": "deprecated_in_favor_of"},
-      "pydantic.parse_raw_as": {"to": "pydantic.TypeAdapter", "relation": "deprecated_in_favor_of"},
-      "pydantic.BaseSettings": {"to": "pydantic_settings.BaseSettings", "relation": "moved_to"},
-      "pydantic.dataclasses": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pydantic.types": {"relation": "deprecated_in", "to": "2.0.0"},
-      "pydantic.NetworkTypes": {"relation": "deprecated_in", "to": "2.0.0"}
-    },
-    "1.10.0": {
-      "pydantic.BaseModel": {"relation": "deprecated_in", "to": "1.10.0"}
+      "pydantic.BaseModel.parse_obj": {
+        "to": "pydantic.TypeAdapter.validate_python",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pydantic.BaseModel.parse_raw": {
+        "to": "pydantic.TypeAdapter.validate_json",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pydantic.BaseModel.parse_file": {
+        "to": "pydantic.TypeAdapter.validate_file",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pydantic.BaseModel.from_orm": {
+        "to": "pydantic.TypeAdapter.validate_python",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pydantic.BaseModel.schema": {
+        "to": "pydantic.BaseModel.model_json_schema",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pydantic.BaseModel.schema_json": {
+        "to": "pydantic.BaseModel.model_json_schema",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pydantic.BaseModel.validate": {
+        "to": "pydantic.BaseModel.model_validate",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pydantic.BaseModel.dict": {
+        "to": "pydantic.BaseModel.model_dump",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pydantic.BaseModel.json": {
+        "to": "pydantic.BaseModel.model_dump_json",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pydantic.BaseModel.update_forward_refs": {
+        "to": "pydantic.BaseModel.model_rebuild",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pydantic.BaseModel.__fields__": {
+        "to": "pydantic.BaseModel.model_fields",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pydantic.BaseModel.__validators__": {
+        "to": "pydantic.BaseModel.model_post_init",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pydantic.Required": {
+        "to": "typing.Required",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pydantic.validator": {
+        "to": "pydantic.field_validator",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pydantic.root_validator": {
+        "to": "pydantic.model_validator",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pydantic.parse_obj_as": {
+        "to": "pydantic.TypeAdapter",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pydantic.parse_raw_as": {
+        "to": "pydantic.TypeAdapter",
+        "relation": "deprecated_in_favor_of"
+      },
+      "pydantic.BaseSettings": {
+        "to": "pydantic_settings.BaseSettings",
+        "relation": "moved_to"
+      },
+      "pydantic.types": {
+        "relation": "deprecated_in",
+        "to": "2.0.0"
+      }
     },
     "1.9.0": {
-      "pydantic.color": {"relation": "deprecated_in", "to": "1.9.0"},
-      "pydantic.types": {"relation": "deprecated_in", "to": "1.9.0"}
-    },
-    "1.8.0": {
-      "pydantic.Field": {"relation": "deprecated_in", "to": "1.8.0"}
-    },
-    "1.7.0": {
-      "pydantic.validator": {"relation": "deprecated_in", "to": "1.7.0"}
+      "pydantic.color": {
+        "relation": "deprecated_in",
+        "to": "1.9.0"
+      },
+      "pydantic.types": {
+        "relation": "deprecated_in",
+        "to": "1.9.0"
+      }
     },
     "1.6.0": {
-      "pydantic.BaseSettings": {"relation": "deprecated_in", "to": "1.6.0"}
-    },
-    "1.5.0": {
-      "pydantic.BaseModel": {"relation": "deprecated_in", "to": "1.5.0"}
-    },
-    "1.4.0": {
-      "pydantic.BaseModel": {"relation": "deprecated_in", "to": "1.4.0"}
-    },
-    "1.3.0": {
-      "pydantic.BaseModel": {"relation": "deprecated_in", "to": "1.3.0"}
-    },
-    "1.0.0": {
-      "pydantic.BaseModel": {"relation": "deprecated_in", "to": "1.0.0"}
+      "pydantic.BaseSettings": {
+        "relation": "deprecated_in",
+        "to": "1.6.0"
+      }
     }
   },
   "openai": {
     "1.55.0": {
-      "openai.types.chat.ChatCompletionMessage": {"relation": "deprecated_in", "to": "1.55.0"}
+      "openai.types.chat.ChatCompletionMessage": {
+        "relation": "deprecated_in",
+        "to": "1.55.0"
+      }
     },
     "1.50.0": {
-      "openai.resources": {"relation": "deprecated_in", "to": "1.50.0"}
+      "openai.resources": {
+        "relation": "deprecated_in",
+        "to": "1.50.0"
+      }
     },
     "1.42.0": {
-      "openai.lib": {"relation": "deprecated_in", "to": "1.42.0"}
+      "openai.lib": {
+        "relation": "deprecated_in",
+        "to": "1.42.0"
+      }
     },
     "1.30.0": {
-      "openai.types": {"relation": "deprecated_in", "to": "1.30.0"}
+      "openai.types": {
+        "relation": "deprecated_in",
+        "to": "1.30.0"
+      }
     },
     "1.20.0": {
-      "openai.pagination": {"relation": "deprecated_in", "to": "1.20.0"}
+      "openai.pagination": {
+        "relation": "deprecated_in",
+        "to": "1.20.0"
+      }
     },
     "1.10.0": {
-      "openai.cli": {"relation": "deprecated_in", "to": "1.10.0"}
+      "openai.cli": {
+        "relation": "deprecated_in",
+        "to": "1.10.0"
+      }
     },
     "1.6.0": {
-      "openai.ChatCompletion": {"relation": "deprecated_in", "to": "1.6.0"}
+      "openai.ChatCompletion": {
+        "relation": "deprecated_in",
+        "to": "1.6.0"
+      }
     },
     "1.0.0": {
-      "openai.ChatCompletion.create": {"to": "openai.chat.completions.create", "relation": "deprecated_in_favor_of"},
-      "openai.Completion.create": {"to": "openai.chat.completions.create", "relation": "deprecated_in_favor_of"},
-      "openai.Embedding.create": {"to": "openai.embeddings.create", "relation": "deprecated_in_favor_of"},
-      "openai.Moderation.create": {"to": "openai.moderations.create", "relation": "deprecated_in_favor_of"},
-      "openai.Image.create": {"to": "openai.images.generate", "relation": "deprecated_in_favor_of"},
-      "openai.Model.list": {"to": "openai.models.list", "relation": "deprecated_in_favor_of"},
-      "openai.Model.retrieve": {"to": "openai.models.retrieve", "relation": "deprecated_in_favor_of"},
-      "openai.api_base": {"to": "openai.base_url", "relation": "deprecated_in_favor_of"},
-      "openai.api_key": {"to": "openai.api_key", "relation": "deprecated_in_favor_of"},
-      "openai.organization": {"to": "openai.organization", "relation": "deprecated_in_favor_of"},
-      "openai.error": {"to": "openai.OpenAIError", "relation": "deprecated_in_favor_of"},
-      "openai.error.APIError": {"to": "openai.APIError", "relation": "deprecated_in_favor_of"},
-      "openai.error.Timeout": {"to": "openai.APITimeoutError", "relation": "deprecated_in_favor_of"},
-      "openai.error.RateLimitError": {"to": "openai.RateLimitError", "relation": "deprecated_in_favor_of"},
-      "openai.error.InvalidRequestError": {"to": "openai.BadRequestError", "relation": "deprecated_in_favor_of"},
-      "openai.error.AuthenticationError": {"to": "openai.AuthenticationError", "relation": "deprecated_in_favor_of"},
-      "openai.error.PermissionError": {"to": "openai.PermissionDeniedError", "relation": "deprecated_in_favor_of"},
-      "openai.error.TryAgain": {"to": "openai.InternalServerError", "relation": "deprecated_in_favor_of"},
-      "openai.error.ServiceUnavailableError": {"to": "openai.InternalServerError", "relation": "deprecated_in_favor_of"},
-      "openai.File": {"to": "openai.files", "relation": "deprecated_in_favor_of"},
-      "openai.FineTune": {"to": "openai.fine_tuning", "relation": "deprecated_in_favor_of"},
-      "openai.ChatCompletion": {"relation": "deprecated_in", "to": "1.0.0"},
-      "openai.Completion": {"relation": "deprecated_in", "to": "1.0.0"},
-      "openai.Embedding": {"relation": "deprecated_in", "to": "1.0.0"},
-      "openai.Moderation": {"relation": "deprecated_in", "to": "1.0.0"},
-      "openai.Image": {"relation": "deprecated_in", "to": "1.0.0"},
-      "openai.Model": {"relation": "deprecated_in", "to": "1.0.0"}
+      "openai.ChatCompletion.create": {
+        "to": "openai.chat.completions.create",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.Completion.create": {
+        "to": "openai.chat.completions.create",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.Embedding.create": {
+        "to": "openai.embeddings.create",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.Moderation.create": {
+        "to": "openai.moderations.create",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.Image.create": {
+        "to": "openai.images.generate",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.Model.list": {
+        "to": "openai.models.list",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.Model.retrieve": {
+        "to": "openai.models.retrieve",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.api_base": {
+        "to": "openai.base_url",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.api_key": {
+        "to": "openai.api_key",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.organization": {
+        "to": "openai.organization",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.error": {
+        "to": "openai.OpenAIError",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.error.APIError": {
+        "to": "openai.APIError",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.error.Timeout": {
+        "to": "openai.APITimeoutError",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.error.RateLimitError": {
+        "to": "openai.RateLimitError",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.error.InvalidRequestError": {
+        "to": "openai.BadRequestError",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.error.AuthenticationError": {
+        "to": "openai.AuthenticationError",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.error.PermissionError": {
+        "to": "openai.PermissionDeniedError",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.error.TryAgain": {
+        "to": "openai.InternalServerError",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.error.ServiceUnavailableError": {
+        "to": "openai.InternalServerError",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.File": {
+        "to": "openai.files",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.FineTune": {
+        "to": "openai.fine_tuning",
+        "relation": "deprecated_in_favor_of"
+      },
+      "openai.ChatCompletion": {
+        "relation": "deprecated_in",
+        "to": "1.0.0"
+      },
+      "openai.Completion": {
+        "relation": "deprecated_in",
+        "to": "1.0.0"
+      },
+      "openai.Embedding": {
+        "relation": "deprecated_in",
+        "to": "1.0.0"
+      },
+      "openai.Moderation": {
+        "relation": "deprecated_in",
+        "to": "1.0.0"
+      },
+      "openai.Image": {
+        "relation": "deprecated_in",
+        "to": "1.0.0"
+      },
+      "openai.Model": {
+        "relation": "deprecated_in",
+        "to": "1.0.0"
+      }
     }
   },
   "django": {
     "5.1": {
-      "django.conf.DEFAULT_FILE_STORAGE": {"to": "django.conf.STORAGES", "relation": "deprecated_in_favor_of"},
-      "django.conf.STATICFILES_STORAGE": {"to": "django.conf.STORAGES", "relation": "deprecated_in_favor_of"}
+      "django.conf.DEFAULT_FILE_STORAGE": {
+        "to": "django.conf.STORAGES",
+        "relation": "deprecated_in_favor_of"
+      },
+      "django.conf.STATICFILES_STORAGE": {
+        "to": "django.conf.STORAGES",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "4.0": {
-      "django.utils.encoding.force_text": {"to": "builtins.str", "relation": "deprecated_in_favor_of"},
-      "django.utils.encoding.smart_text": {"to": "builtins.str", "relation": "deprecated_in_favor_of"},
-      "django.utils.encoding.smart_bytes": {"to": "builtins.bytes", "relation": "deprecated_in_favor_of"},
-      "django.utils.encoding.force_bytes": {"to": "builtins.bytes", "relation": "deprecated_in_favor_of"},
-      "django.utils.translation.ugettext": {"to": "django.utils.translation.gettext", "relation": "deprecated_in_favor_of"},
-      "django.utils.translation.ugettext_lazy": {"to": "django.utils.translation.gettext_lazy", "relation": "deprecated_in_favor_of"},
-      "django.utils.translation.ungettext": {"to": "django.utils.translation.ngettext", "relation": "deprecated_in_favor_of"}
+      "django.utils.encoding.force_text": {
+        "to": "builtins.str",
+        "relation": "deprecated_in_favor_of"
+      },
+      "django.utils.encoding.smart_text": {
+        "to": "builtins.str",
+        "relation": "deprecated_in_favor_of"
+      },
+      "django.utils.encoding.smart_bytes": {
+        "to": "builtins.bytes",
+        "relation": "deprecated_in_favor_of"
+      },
+      "django.utils.encoding.force_bytes": {
+        "to": "builtins.bytes",
+        "relation": "deprecated_in_favor_of"
+      },
+      "django.utils.translation.ugettext": {
+        "to": "django.utils.translation.gettext",
+        "relation": "deprecated_in_favor_of"
+      },
+      "django.utils.translation.ugettext_lazy": {
+        "to": "django.utils.translation.gettext_lazy",
+        "relation": "deprecated_in_favor_of"
+      },
+      "django.utils.translation.ungettext": {
+        "to": "django.utils.translation.ngettext",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "3.1": {
-      "django.utils.http.urlquote": {"to": "urllib.parse.quote", "relation": "deprecated_in_favor_of"},
-      "django.utils.http.urlquote_plus": {"to": "urllib.parse.quote_plus", "relation": "deprecated_in_favor_of"},
-      "django.utils.http.urlencode": {"to": "urllib.parse.urlencode", "relation": "deprecated_in_favor_of"}
+      "django.utils.http.urlquote": {
+        "to": "urllib.parse.quote",
+        "relation": "deprecated_in_favor_of"
+      },
+      "django.utils.http.urlquote_plus": {
+        "to": "urllib.parse.quote_plus",
+        "relation": "deprecated_in_favor_of"
+      },
+      "django.utils.http.urlencode": {
+        "to": "urllib.parse.urlencode",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "3.0": {
-      "django.utils.six": {"relation": "removed_in", "to": "3.0"}
+      "django.utils.six": {
+        "relation": "removed_in",
+        "to": "3.0"
+      }
     },
     "2.0": {
-      "django.core.urlresolvers.reverse": {"to": "django.urls.reverse", "relation": "deprecated_in_favor_of"},
-      "django.core.urlresolvers.resolve": {"to": "django.urls.resolve", "relation": "deprecated_in_favor_of"},
-      "django.core.urlresolvers.get_mod_func": {"to": "django.urls.get_mod_func", "relation": "deprecated_in_favor_of"},
-      "django.core.urlresolvers.get_callable": {"to": "django.urls.get_callable", "relation": "deprecated_in_favor_of"},
-      "django.core.urlresolvers.NoReverseMatch": {"to": "django.urls.NoReverseMatch", "relation": "deprecated_in_favor_of"}
+      "django.core.urlresolvers.reverse": {
+        "to": "django.urls.reverse",
+        "relation": "deprecated_in_favor_of"
+      },
+      "django.core.urlresolvers.resolve": {
+        "to": "django.urls.resolve",
+        "relation": "deprecated_in_favor_of"
+      },
+      "django.core.urlresolvers.get_mod_func": {
+        "to": "django.urls.get_mod_func",
+        "relation": "deprecated_in_favor_of"
+      },
+      "django.core.urlresolvers.get_callable": {
+        "to": "django.urls.get_callable",
+        "relation": "deprecated_in_favor_of"
+      },
+      "django.core.urlresolvers.NoReverseMatch": {
+        "to": "django.urls.NoReverseMatch",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "1.10": {
-      "django.conf.urls.patterns": {"relation": "removed_in", "to": "1.10"},
-      "django.views.generic.simple.direct_to_template": {"relation": "removed_in", "to": "1.10"}
+      "django.conf.urls.patterns": {
+        "relation": "removed_in",
+        "to": "1.10"
+      },
+      "django.views.generic.simple.direct_to_template": {
+        "relation": "removed_in",
+        "to": "1.10"
+      }
     }
   },
   "flask": {
     "2.3": {
-      "flask.before_first_request": {"relation": "removed_in", "to": "2.3"},
-      "flask.Flask.before_first_request": {"relation": "removed_in", "to": "2.3"},
-      "flask._app_ctx_stack": {"relation": "removed_in", "to": "2.3"},
-      "flask._request_ctx_stack": {"relation": "removed_in", "to": "2.3"}
+      "flask.before_first_request": {
+        "relation": "removed_in",
+        "to": "2.3"
+      },
+      "flask.Flask.before_first_request": {
+        "relation": "removed_in",
+        "to": "2.3"
+      },
+      "flask._app_ctx_stack": {
+        "relation": "removed_in",
+        "to": "2.3"
+      },
+      "flask._request_ctx_stack": {
+        "relation": "removed_in",
+        "to": "2.3"
+      }
     },
     "2.0": {
-      "flask.Flask.open_resource": {"relation": "deprecated_in", "to": "2.0"},
-      "flask.json_encoder": {"to": "flask.json.provider.DefaultJSONProvider", "relation": "deprecated_in_favor_of"},
-      "flask.json_decoder": {"relation": "deprecated_in", "to": "2.0"}
+      "flask.Flask.open_resource": {
+        "relation": "deprecated_in",
+        "to": "2.0"
+      },
+      "flask.json_encoder": {
+        "to": "flask.json.provider.DefaultJSONProvider",
+        "relation": "deprecated_in_favor_of"
+      },
+      "flask.json_decoder": {
+        "relation": "deprecated_in",
+        "to": "2.0"
+      }
     }
   },
   "sqlalchemy": {
     "2.0": {
-      "sqlalchemy.orm.Query.get": {"to": "sqlalchemy.orm.Session.get", "relation": "deprecated_in_favor_of"},
-      "sqlalchemy.orm.Query.all": {"to": "sqlalchemy.orm.Session.scalars", "relation": "deprecated_in_favor_of"},
-      "sqlalchemy.orm.Query.filter": {"to": "sqlalchemy.sql.expression.where", "relation": "deprecated_in_favor_of"},
-      "sqlalchemy.orm.Query.filter_by": {"to": "sqlalchemy.sql.expression.where", "relation": "deprecated_in_favor_of"},
-      "sqlalchemy.orm.Session.query": {"to": "sqlalchemy.orm.Session.execute", "relation": "deprecated_in_favor_of"},
-      "sqlalchemy.engine.Engine.execute": {"to": "sqlalchemy.engine.Connection.execute", "relation": "deprecated_in_favor_of"},
-      "sqlalchemy.orm.Session.autocommit": {"relation": "removed_in", "to": "2.0"},
-      "sqlalchemy.orm.query.Query": {"to": "sqlalchemy.sql.expression.select", "relation": "deprecated_in_favor_of"},
-      "sqlalchemy.sql.expression.text": {"to": "sqlalchemy.text", "relation": "deprecated_in_favor_of"}
+      "sqlalchemy.orm.Query.all": {
+        "to": "sqlalchemy.orm.Session.scalars",
+        "relation": "deprecated_in_favor_of"
+      },
+      "sqlalchemy.orm.Query.filter": {
+        "to": "sqlalchemy.sql.expression.where",
+        "relation": "deprecated_in_favor_of"
+      },
+      "sqlalchemy.orm.Query.filter_by": {
+        "to": "sqlalchemy.sql.expression.where",
+        "relation": "deprecated_in_favor_of"
+      },
+      "sqlalchemy.orm.Session.query": {
+        "to": "sqlalchemy.orm.Session.execute",
+        "relation": "deprecated_in_favor_of"
+      },
+      "sqlalchemy.engine.Engine.execute": {
+        "to": "sqlalchemy.engine.Connection.execute",
+        "relation": "deprecated_in_favor_of"
+      },
+      "sqlalchemy.orm.Session.autocommit": {
+        "relation": "removed_in",
+        "to": "2.0"
+      },
+      "sqlalchemy.orm.query.Query": {
+        "to": "sqlalchemy.sql.expression.select",
+        "relation": "deprecated_in_favor_of"
+      },
+      "sqlalchemy.sql.expression.text": {
+        "to": "sqlalchemy.text",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "1.4": {
-      "sqlalchemy.ext.declarative.declarative_base": {"to": "sqlalchemy.orm.DeclarativeBase", "relation": "deprecated_in_favor_of"},
-      "sqlalchemy.orm.mapper.class_mapper": {"relation": "deprecated_in", "to": "1.4"}
+      "sqlalchemy.ext.declarative.declarative_base": {
+        "to": "sqlalchemy.orm.DeclarativeBase",
+        "relation": "deprecated_in_favor_of"
+      },
+      "sqlalchemy.orm.mapper.class_mapper": {
+        "relation": "deprecated_in",
+        "to": "1.4"
+      }
     }
   },
   "jinja2": {
     "3.0": {
-      "jinja2.Markup": {"to": "markupsafe.Markup", "relation": "deprecated_in_favor_of"},
-      "jinja2.escape": {"to": "markupsafe.escape", "relation": "deprecated_in_favor_of"},
-      "jinja2.utils.contextfunction": {"to": "jinja2.pass_context", "relation": "deprecated_in_favor_of"},
-      "jinja2.utils.environmentfunction": {"to": "jinja2.pass_environment", "relation": "deprecated_in_favor_of"},
-      "jinja2.utils.evalcontextfunction": {"to": "jinja2.pass_eval_context", "relation": "deprecated_in_favor_of"}
+      "jinja2.Markup": {
+        "to": "markupsafe.Markup",
+        "relation": "deprecated_in_favor_of"
+      },
+      "jinja2.escape": {
+        "to": "markupsafe.escape",
+        "relation": "deprecated_in_favor_of"
+      },
+      "jinja2.utils.contextfunction": {
+        "to": "jinja2.pass_context",
+        "relation": "deprecated_in_favor_of"
+      },
+      "jinja2.utils.environmentfunction": {
+        "to": "jinja2.pass_environment",
+        "relation": "deprecated_in_favor_of"
+      },
+      "jinja2.utils.evalcontextfunction": {
+        "to": "jinja2.pass_eval_context",
+        "relation": "deprecated_in_favor_of"
+      }
     }
   },
   "werkzeug": {
     "3.0": {
-      "werkzeug.url_encode": {"to": "urllib.parse.urlencode", "relation": "deprecated_in_favor_of"},
-      "werkzeug.url_quote": {"to": "urllib.parse.quote", "relation": "deprecated_in_favor_of"},
-      "werkzeug.url_quote_plus": {"to": "urllib.parse.quote_plus", "relation": "deprecated_in_favor_of"},
-      "werkzeug.url_unquote": {"to": "urllib.parse.unquote", "relation": "deprecated_in_favor_of"},
-      "werkzeug.url_unquote_plus": {"to": "urllib.parse.unquote_plus", "relation": "deprecated_in_favor_of"}
+      "werkzeug.url_encode": {
+        "to": "urllib.parse.urlencode",
+        "relation": "deprecated_in_favor_of"
+      },
+      "werkzeug.url_quote": {
+        "to": "urllib.parse.quote",
+        "relation": "deprecated_in_favor_of"
+      },
+      "werkzeug.url_quote_plus": {
+        "to": "urllib.parse.quote_plus",
+        "relation": "deprecated_in_favor_of"
+      },
+      "werkzeug.url_unquote": {
+        "to": "urllib.parse.unquote",
+        "relation": "deprecated_in_favor_of"
+      },
+      "werkzeug.url_unquote_plus": {
+        "to": "urllib.parse.unquote_plus",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "2.0": {
-      "werkzeug.MultiDict": {"relation": "deprecated_in", "to": "2.0"},
-      "werkzeug.ImmutableMultiDict": {"relation": "deprecated_in", "to": "2.0"}
+      "werkzeug.MultiDict": {
+        "relation": "deprecated_in",
+        "to": "2.0"
+      },
+      "werkzeug.ImmutableMultiDict": {
+        "relation": "deprecated_in",
+        "to": "2.0"
+      }
     }
   },
   "pillow": {
     "10.0": {
-      "PIL.Image.tostring": {"to": "PIL.Image.tobytes", "relation": "deprecated_in_favor_of"},
-      "PIL.Image.fromstring": {"to": "PIL.Image.frombytes", "relation": "deprecated_in_favor_of"},
-      "PIL.Image.ENTROPY": {"relation": "deprecated_in", "to": "10.0"}
+      "PIL.Image.tostring": {
+        "to": "PIL.Image.tobytes",
+        "relation": "deprecated_in_favor_of"
+      },
+      "PIL.Image.fromstring": {
+        "to": "PIL.Image.frombytes",
+        "relation": "deprecated_in_favor_of"
+      },
+      "PIL.Image.ENTROPY": {
+        "relation": "deprecated_in",
+        "to": "10.0"
+      }
     },
     "9.0": {
-      "PIL.Image.save.palette": {"relation": "deprecated_in", "to": "9.0"}
+      "PIL.Image.save.palette": {
+        "relation": "deprecated_in",
+        "to": "9.0"
+      }
     }
   },
   "click": {
     "8.0": {
-      "click.get_os_args": {"relation": "deprecated_in", "to": "8.0"},
-      "click.utils.LazyFile": {"relation": "deprecated_in", "to": "8.0"}
+      "click.get_os_args": {
+        "relation": "deprecated_in",
+        "to": "8.0"
+      },
+      "click.utils.LazyFile": {
+        "relation": "deprecated_in",
+        "to": "8.0"
+      }
     }
   },
   "pytest": {
     "8.0": {
-      "pytest.warns(None)": {"relation": "removed_in", "to": "8.0"}
+      "pytest.warns(None)": {
+        "relation": "removed_in",
+        "to": "8.0"
+      }
     },
     "7.0": {
-      "pytest._fillfuncargs": {"relation": "removed_in", "to": "7.0"},
-      "pytest.yield_fixture": {"to": "pytest.fixture", "relation": "deprecated_in_favor_of"}
+      "pytest._fillfuncargs": {
+        "relation": "removed_in",
+        "to": "7.0"
+      },
+      "pytest.yield_fixture": {
+        "to": "pytest.fixture",
+        "relation": "deprecated_in_favor_of"
+      }
     }
   },
   "celery": {
     "5.4": {
-      "celery.task.base.Task.__call__": {"relation": "deprecated_in", "to": "5.4"}
+      "celery.task.base.Task.__call__": {
+        "relation": "deprecated_in",
+        "to": "5.4"
+      }
     },
     "5.3": {
-      "celery.app.base.Celery.task": {"to": "celery.app.base.Celery.task", "relation": "deprecated_in_favor_of"}
+      "celery.app.base.Celery.task": {
+        "to": "celery.app.base.Celery.task",
+        "relation": "deprecated_in_favor_of"
+      }
     },
     "5.0": {
-      "celery.platforms.Pidfile": {"relation": "deprecated_in", "to": "5.0"}
+      "celery.platforms.Pidfile": {
+        "relation": "deprecated_in",
+        "to": "5.0"
+      }
     }
   },
   "cryptography": {
     "42.0": {
-      "cryptography.x509.extensions.UnrecognizedExtension": {"relation": "deprecated_in", "to": "42.0"}
+      "cryptography.x509.extensions.UnrecognizedExtension": {
+        "relation": "deprecated_in",
+        "to": "42.0"
+      }
     },
     "40.0": {
-      "cryptography.hazmat.primitives.twofactor": {"relation": "deprecated_in", "to": "40.0"}
+      "cryptography.hazmat.primitives.twofactor": {
+        "relation": "deprecated_in",
+        "to": "40.0"
+      }
     },
     "35.0": {
-      "cryptography.hazmat.primitives.ciphers.algorithms.AES": {"relation": "deprecated_in", "to": "35.0"}
+      "cryptography.hazmat.primitives.ciphers.algorithms.AES": {
+        "relation": "deprecated_in",
+        "to": "35.0"
+      }
     }
   },
   "boto3": {
     "1.28": {
-      "boto3.client.machinelearning": {"relation": "removed_in", "to": "1.28"},
-      "boto3.client.codedeploy": {"relation": "deprecated_in", "to": "1.28"}
+      "boto3.client.machinelearning": {
+        "relation": "removed_in",
+        "to": "1.28"
+      },
+      "boto3.client.codedeploy": {
+        "relation": "deprecated_in",
+        "to": "1.28"
+      }
     }
   }
 }

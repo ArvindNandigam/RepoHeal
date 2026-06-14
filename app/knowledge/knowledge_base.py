@@ -7,9 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import gspread
-import requests
 from google.oauth2.service_account import Credentials
-from requests.adapters import HTTPAdapter
 
 from app.config import get_settings
 
@@ -41,14 +39,6 @@ def _get_client() -> gspread.Client | None:
             scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"],
         )
         _client = gspread.authorize(creds)
-        # Set 10s timeout on all underlying HTTP requests
-        session = _client.http_session
-        session.mount("https://", HTTPAdapter())
-        original_request = session.request
-        def _timed_request(method, url, **kwargs):
-            kwargs.setdefault("timeout", 10)
-            return original_request(method, url, **kwargs)
-        session.request = _timed_request
         return _client
     except Exception as e:
         logger.warning("Could not authorize Google Sheets: %s — KB disabled for this session", e)
