@@ -54,11 +54,10 @@ class RemediationEngine:
 
             def visit_Name(self, node):
                 if node.id == self.old:
-                    if self.new_expr:
-                        node.id = self.new_parts[-1]
-                    else:
-                        node.id = self.new_name
                     self.modified = True
+                    if self.new_expr:
+                        return self.new_expr
+                    node.id = self.new_name
                 return node
 
             def visit_Attribute(self, node):
@@ -77,6 +76,35 @@ class RemediationEngine:
         if renamer.modified:
             self.modified = True
         return renamer.modified
+
+    def rewrite_import_path(self, old_path: str, new_path: str):
+        """Rewrite sub-module import paths (e.g. sklearn.cross_validation → sklearn.model_selection).
+        Handles both 'from ... import' and 'import ...' statements.
+        """
+        class ImportPathRewriter(ast.NodeTransformer):
+            def __init__(self, old, new):
+                self.old = old
+                self.new = new
+                self.modified = False
+
+            def visit_Import(self, node):
+                for alias in node.names:
+                    if alias.name == self.old or alias.name.startswith(self.old + "."):
+                        alias.name = self.new + alias.name[len(self.old):]
+                        self.modified = True
+                return node
+
+            def visit_ImportFrom(self, node):
+                if node.module == self.old or (node.module and node.module.startswith(self.old + ".")):
+                    node.module = self.new + node.module[len(self.old):]
+                    self.modified = True
+                return node
+
+        rewriter = ImportPathRewriter(old_path, new_path)
+        self.tree = rewriter.visit(self.tree)
+        if rewriter.modified:
+            self.modified = True
+        return rewriter.modified
 
     def update_api_signature(self, function_name: str, new_kwargs: Dict[str, Any]):
         """Add or update keyword arguments in function calls."""

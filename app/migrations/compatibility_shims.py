@@ -170,11 +170,12 @@ def _resolve_import_aliases(source_code: str) -> Dict[str, str]:
     return aliases
 
 
-def _replace_module_with_alias(replacement: str, aliases: Dict[str, str]) -> str:
+def _replace_module_with_alias(replacement: Optional[str], aliases: Dict[str, str]) -> Optional[str]:
     """Replace the top-level module portion of a dotted replacement with its alias.
-    Eg 'pandas.concat({args})' -> 'pd.concat({args})' when aliases={'pandas':'pd'}.
+    Eg 'pandas.concat' -> 'pd.concat' when aliases={'pandas':'pd'}.
+    Returns None when replacement is None.
     """
-    if not aliases:
+    if not replacement or not aliases:
         return replacement
     parts = replacement.split(".")
     if parts and parts[0] in aliases:
@@ -204,20 +205,24 @@ async def tiered_patch_with_retry(
     """
     # ── Resolve import aliases so replacements use local names ────────
     aliases = _resolve_import_aliases(original_code)
-    replacement_alias = _replace_module_with_alias(replacement or "", aliases) or replacement
+    replacement_alias = _replace_module_with_alias(replacement, aliases)
 
     # ── Tier 1: AST transform ──────────────────────────────────────────
     from app.remediation.engine import RemediationEngine
 
     engine = RemediationEngine(original_code)
-    modified = False
 
-    if replacement_alias:
-        parts = symbol.split(".")
-        if len(parts) >= 2:
-            engine.rewrite_import(parts[0], parts[0])
-        engine.rename_symbol(symbol, replacement_alias) if "." in replacement_alias else None
+    if replacement_alias and "." in replacement_alias:
+        # ── Module-level import path rename (e.g. sklearn.cross_validation → model_selection) ──
+        # Detect: symbol is a sub-module path being replaced with another path
+        sym_parts = symbol.split(".")
+        if len(sym_parts) >= 2 and replacement_alias.count(".") >= 1:
+            engine.rewrite_import_path(symbol, replacement_alias)
+
+        # ── Function/attribute rename ──
+        engine.rename_symbol(symbol, replacement_alias)
         engine.rename_symbol(symbol.split(".")[-1], replacement_alias)
+
         if engine.validate():
             modified_code = engine.get_modified_source()
             if modified_code != original_code:
