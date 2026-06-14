@@ -364,7 +364,7 @@ def get_all_metrics() -> Dict[str, Any]:
             result["max_analysis_time"] = doc.get("max_analysis_time", 0)
         elif metric == "failure_reasons":
             reasons = doc.get("reasons", {})
-            sorted_reasons = sorted(reasons.items(), key=lambda x: -x[1])
+            sorted_reasons = sorted(reasons.items(), key=lambda x: -(x[1] if isinstance(x[1], (int, float)) else 0))
             result["failure_reasons"] = dict(sorted_reasons)
 
     if result["min_analysis_time"] == float("inf"):
