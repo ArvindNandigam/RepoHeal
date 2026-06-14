@@ -101,9 +101,9 @@
 
     function buildApproveSection(content) {
       if (!content) return;
-      const symbols = [];
+      const symbolMap = new Map();
       const lines = content.split("\n");
-      // Pass 1: build replacement map from Migration Paths ( - `sym` -> `repl` )
+      // Pass 1: build replacement map from Migration Paths
       const replMap = {};
       let inPaths = false;
       for (const line of lines) {
@@ -113,7 +113,7 @@
         const m = line.match(/^[*-]\s+`([^`]+)`\s*->\s*`([^`]+)`/);
         if (m) replMap[m[1].trim()] = m[2].trim();
       }
-      // Pass 2: parse symbols from all three sections
+      // Pass 2: parse symbols from all three sections (deduped by symbol)
       let inSection = false;
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
@@ -123,30 +123,33 @@
         }
         if (inSection && /^##\s/.test(line)) { inSection = false; continue; }
         if (!inSection) continue;
-        // Migration Paths format
         let m = line.match(/^[*-]\s+`([^`]+)`\s*->\s*`([^`]+)`/);
         if (m) {
           const sym = m[1].trim();
-          const lib = sym.includes(".") ? sym.split(".")[0] : "unknown";
-          symbols.push({ symbol: sym, replacement: m[2].trim(), library: lib });
+          if (!symbolMap.has(sym)) {
+            const lib = sym.includes(".") ? sym.split(".")[0] : "unknown";
+            symbolMap.set(sym, { symbol: sym, replacement: m[2].trim(), library: lib });
+          }
           continue;
         }
-        // Deprecated APIs / Breaking Changes format: ### symbol, - Library: lib
         m = line.match(/^###\s+(.+)/);
         if (m) {
           const sym = m[1].trim();
-          let lib = "unknown";
-          for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
-            const l = lines[j];
-            if (/^-\s+Library:/i.test(l)) {
-              lib = l.replace(/^-\s+Library:\s*/i, "").trim();
-              break;
+          if (!symbolMap.has(sym)) {
+            let lib = "unknown";
+            for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
+              const l = lines[j];
+              if (/^-\s+Library:/i.test(l)) {
+                lib = l.replace(/^-\s+Library:\s*/i, "").trim();
+                break;
+              }
+              if (/^##\s/.test(l)) break;
             }
-            if (/^##\s/.test(l)) break;
+            symbolMap.set(sym, { symbol: sym, replacement: replMap[sym] || "", library: lib });
           }
-          symbols.push({ symbol: sym, replacement: replMap[sym] || "", library: lib });
         }
       }
+      const symbols = Array.from(symbolMap.values());
       if (symbols.length === 0) return;
       document.getElementById("approveSection").classList.remove("hidden");
       const approveAllBtn = document.getElementById("approveAllBtn");
@@ -187,9 +190,12 @@
           if (symbolsFilter) url += `&symbols=${encodeURIComponent(symbolsFilter)}`;
           const res = await fetch(url, { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"} });
           const result = await res.json();
-          const prs = result.prs || (result.pr_url ? [{pr_number: result.pr_number, pr_url: result.pr_url}] : []);
+          const prs = result.prs || (result.pr_url ? [{pr_number: result.pr_number, pr_url: result.pr_url, merged: result.merged}] : []);
           if (prs.length > 0) {
-            msg.innerHTML = prs.map(p => `PR created: <a href="${p.pr_url}" target="_blank" style="color:var(--accent);">#${p.pr_number}</a>`).join("<br>");
+            msg.innerHTML = prs.map(p => {
+              const merged = p.merged ? '<span style="color:var(--accent);font-weight:700;"> ✓ Merged</span>' : '<span style="color:var(--warning);font-weight:700;"> ✗ Merge failed</span>';
+              return `PR <a href="${p.pr_url}" target="_blank" style="color:var(--accent);">#${p.pr_number}</a>${merged}`;
+            }).join("<br>");
           } else {
             msg.innerHTML = `Approved${result.error ? " with error: " + result.error : ""}. No PRs created.`;
           }

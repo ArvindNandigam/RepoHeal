@@ -77,7 +77,8 @@ class Settings:
     SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
     SMTP_USER = os.getenv("SMTP_USER", "")
     SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-    EMAIL_FROM = os.getenv("EMAIL_FROM", "repoheal@noreply.local")
+    EMAIL_FROM = os.getenv("EMAIL_FROM") or os.getenv("SMTP_FROM", "repoheal@noreply.local")
+    REPORT_RECIPIENT = os.getenv("REPORT_RECIPIENT", "")
 
 settings = Settings()
 

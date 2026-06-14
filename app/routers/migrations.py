@@ -484,9 +484,13 @@ async def approve_migration(
                 body="\n".join(body_parts),
                 head=branch_name,
                 base=repo.default_branch,
-                draft=(risk_score > 70 if risk_score else False),
+                draft=False,
             )
-            prs.append({"pr_number": pr.number, "pr_url": pr.html_url})
+            try:
+                pr.merge(merge_method="squash")
+                prs.append({"pr_number": pr.number, "pr_url": pr.html_url, "merged": True})
+            except Exception:
+                prs.append({"pr_number": pr.number, "pr_url": pr.html_url, "merged": False})
 
         return {
             "status": "approved", "migration_id": migration_id, "pr_created": True,
