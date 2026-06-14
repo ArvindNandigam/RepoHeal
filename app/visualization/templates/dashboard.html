@@ -375,6 +375,17 @@
       padding: 4px 8px;
     }
 
+    .alert-banner {
+      padding: 12px 18px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      background: rgba(249, 112, 102, 0.12);
+      border: 1px solid var(--danger);
+      color: var(--danger);
+    }
+
     .empty-state,
     .error-state,
     .loading-state {
@@ -475,17 +486,8 @@
       </div>
     </section>
 
-    <section id="migrationSection" class="panel" style="padding: 22px; display: grid; gap: 18px;">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <div>
-          <p class="eyebrow" style="margin-bottom: 8px;">Migration Documents</p>
-          <div class="lede" style="margin: 0;">Recently generated migration documents across all repositories.</div>
-        </div>
-        <button class="button secondary" type="button" id="refreshMigrations" style="padding: 8px 14px; font-size: 12px;">Refresh</button>
-      </div>
-      <div id="migrationDocsList" style="max-height: 200px; overflow-y: auto; display: grid; gap: 8px;"></div>
-      <div id="migrationDocsEmpty" class="empty-state hidden">No migration documents yet. Run an analysis with health refresh to generate them.</div>
-    </section>
+    
+    <div id="neo4jWarning" class="alert-banner hidden"></div>
 
     <section class="panel" style="padding: 22px; display: grid; gap: 18px;">
       <div class="toolbar">
@@ -857,6 +859,17 @@ function updateCardFromStatus(card, status) {
   }
 }
 
+function showNeo4jWarning(status) {
+  const banner = document.getElementById("neo4jWarning");
+  if (!banner) return;
+  if (status.neo4j_available === false || status.neo4j_warning) {
+    banner.textContent = status.neo4j_warning || "Neo4j is unavailable — graph features may be limited";
+    banner.classList.remove("hidden");
+  } else {
+    banner.classList.add("hidden");
+  }
+}
+
 async function refreshRepositoryStatus(repo) {
   const card = repoGrid.querySelector(`[data-repo-name="${CSS.escape(repo.name)}"]`);
   if (!card) return;
@@ -873,6 +886,7 @@ async function refreshRepositoryStatus(repo) {
     const response = await fetch(repo.status_url, { credentials: "same-origin" });
     if (!response.ok) throw new Error(`Status returned ${response.status}`);
     const status = await response.json();
+    showNeo4jWarning(status);
     setStatusBadge(statusBadge, status);
     updateCardFromStatus(card, status);
     const lastDate = status.last_analysis || status.completed_at;
@@ -1093,48 +1107,7 @@ async function refreshRepositoryStatus(repo) {
     populateTimezones();
     userTimezone = localStorage.getItem("repoheal_timezone") || "auto";
 
-    async function loadMigrationDocs() {
-      const list = document.getElementById("migrationDocsList");
-      const empty = document.getElementById("migrationDocsEmpty");
-      list.innerHTML = "";
-      let total = 0;
-
-      for (const repo of repositories) {
-        try {
-          const res = await fetch(`/migrations/${repo.owner}/${repo.repo}`);
-          if (!res.ok) continue;
-          const data = await res.json();
-          const migs = data.migrations || [];
-          migs.slice(-3).forEach(m => {
-            total++;
-            const item = document.createElement("div");
-            item.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid var(--border);";
-            const ts = m.timestamp ? new Date(m.timestamp).toLocaleString() : "N/A";
-            const migScore = m.migration_risk_score != null ? Number(m.migration_risk_score) : (m.risk_score != null ? Number(m.risk_score) : null);
-            const migLevel = (m.migration_risk_level || m.overall_risk_level || "").toUpperCase();
-            const riskText = migScore != null
-              ? (migLevel ? `${migLevel} (${migScore}/100)` : `${migScore}/100`)
-              : (migLevel || "?");
-            item.innerHTML = `<span><strong>${repo.name}</strong> · <span style="color: var(--muted);">${ts}</span></span>
-              <span style="display: flex; gap: 8px; align-items: center;">
-                <span style="color: ${migScore != null && migScore > 70 ? 'var(--danger)' : migScore != null && migScore > 30 ? 'var(--warning)' : 'var(--accent)'};">Migration Risk: ${riskText}</span>
-                <a class="pill" href="/reports/${repo.owner}/${repo.repo}/health-page?analysis_id=${m.analysis_id}">View</a>
-                <a class="pill" href="/reports/${repo.owner}/${repo.repo}/migration-review?migration_id=${m.migration_id || m.analysis_id}&repo_owner=${repo.owner}&repo_name=${repo.repo}">Review</a>
-              </span>`;
-            list.appendChild(item);
-          });
-        } catch (e) {}
-      }
-
-      empty.classList.toggle("hidden", total > 0);
-      if (total === 0) {
-        list.innerHTML = "";
-      }
-    }
-
-    document.getElementById("refreshMigrations").addEventListener("click", loadMigrationDocs);
-
-    loadDashboard().then(() => loadMigrationDocs());
+    loadDashboard();
 
     // Close SSE connections when leaving page
     window.addEventListener("beforeunload", () => {

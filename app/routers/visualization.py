@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, Request, Response
+from typing import Optional
+from fastapi import APIRouter, Depends, Query, Request, Response
 from app.errors.exceptions import GraphError, RepositoryNotFoundError
 from fastapi.responses import HTMLResponse
 from app.auth.jwt_manager import verify_session_token
@@ -70,6 +71,7 @@ async def visualize_repository_page(
     request: Request,
     repo_owner: str,
     repo_name: str,
+    analysis_id: Optional[str] = Query(None),
     user=Depends(verify_session_token)
 ):
     session_data = get_session_data(user)
@@ -84,6 +86,7 @@ async def visualize_repository_page(
         build_graph_page(
             repo_owner=repo_owner,
             repo_name=repo_name,
-            github_user=user["github_login"]
+            github_user=user["github_login"],
+            analysis_id=analysis_id
         )
     )

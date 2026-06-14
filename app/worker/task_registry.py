@@ -258,10 +258,10 @@ def update_repository_status(
     if status == JobStatus.COMPLETED or status == JobStatus.FAILED:
         update["completed_at"] = now
     if status == JobStatus.COMPLETED:
+        update["last_analysis"] = now
         if job_type == "health_refresh":
             update["last_health_refresh"] = now
         else:
-            update["last_analysis"] = now
             if target_commit_sha:
                 update["last_commit_analyzed"] = target_commit_sha
 
@@ -737,8 +737,11 @@ def run_analysis_in_background(
             selected_branch=selected_branch, target_commit_sha=commit_sha, current_head=current_head,
             current_step="graph",
         )
-        graph_builder = Neo4jGraphBuilder()
-        graph_builder.build_graph(repo_id, analysis)
+        try:
+            graph_builder = Neo4jGraphBuilder()
+            graph_builder.build_graph(repo_id, analysis)
+        except Exception as neo4j_err:
+            logger.warning(f"Neo4j graph build failed for {repo_id} — continuing with metadata-only: {neo4j_err}")
 
         node_count = (
             len(analysis.get("semantic_graph", {}).get("files", {}))
@@ -1029,12 +1032,14 @@ def run_health_refresh_in_background(
         analysis["branch"] = selected_branch
         analysis["commit_sha"] = commit_sha
 
+        health_refresh_aid = metadata_manager.generate_ids(repo_id, selected_branch, commit_sha)[0]
         async def run_pipeline():
             intelligence_provider = create_intelligence_provider()
             pipeline = MigrationPipeline(intelligence_provider, github_client)
             try:
                 return await pipeline.run(
                     analysis, repo_id, repo_obj,
+                    analysis_id=health_refresh_aid,
                     source_branch=selected_branch, commit_sha=commit_sha,
                 )
             finally:

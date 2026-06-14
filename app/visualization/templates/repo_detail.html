@@ -12,6 +12,8 @@
     header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
     header h1 { margin: 0; font-size: 20px; font-weight: 600; }
     .pill { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); font-size: 12px; white-space: nowrap; }
+    .alert-banner { padding: 10px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; line-height: 1.5; background: rgba(249,112,102,0.12); border: 1px solid var(--danger); color: var(--danger); }
+    .hidden { display: none !important; }
     .pill.status { color: #06121c; background: var(--accent); border-color: transparent; font-weight: 800; }
     .pill.status.outdated { color: #240d0b; background: var(--danger); }
     .pill.status.running { color: #201604; background: var(--accent-2); }
@@ -140,6 +142,8 @@
         </div>
       </div>
     </div>
+
+    <div id="neo4jWarning" class="alert-banner hidden"></div>
 
     <div class="card">
       <h3>Reports &amp; Tools</h3>
@@ -281,11 +285,23 @@
       if (lastCommit) lastCommit.textContent = data.last_commit_analyzed ? data.last_commit_analyzed.slice(0, 7) : "--";
     }
 
+    function showNeo4jWarning(status) {
+      const banner = document.getElementById("neo4jWarning");
+      if (!banner) return;
+      if (status.neo4j_available === false || status.neo4j_warning) {
+        banner.textContent = status.neo4j_warning || "Neo4j is unavailable — graph features may be limited";
+        banner.classList.remove("hidden");
+      } else {
+        banner.classList.add("hidden");
+      }
+    }
+
     async function refreshStatus() {
       try {
         const res = await fetch(statusUrl, { credentials: "same-origin" });
         if (res.ok) {
           const data = await res.json();
+          showNeo4jWarning(data);
           updateCard(data);
         }
       } catch (_) {}
@@ -316,7 +332,10 @@
       eventSource.onmessage = (e) => {
         const data = JSON.parse(e.data);
         updateCard(data);
-        if (terminal.has(data.status)) { eventSource.close(); eventSource = null; }
+        if (terminal.has(data.status)) {
+          eventSource.close(); eventSource = null;
+          refreshStatus();
+        }
       };
       eventSource.onerror = () => { if (eventSource) { eventSource.close(); eventSource = null; } };
     }

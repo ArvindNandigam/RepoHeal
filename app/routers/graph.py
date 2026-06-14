@@ -51,6 +51,14 @@ def _is_analysis_incomplete(status: dict) -> bool:
     return status.get("status") not in {"completed", "up_to_date", "outdated"}
 
 
+def _neo4j_info() -> dict:
+    ok, msg = neo4j_connection.storage_ok()
+    return {
+        "neo4j_available": neo4j_connection.is_available(),
+        "neo4j_warning": msg if not ok else "",
+    }
+
+
 def _status_metadata(status: dict) -> dict:
     return {
         "last_analysis": status.get("last_analysis"),
@@ -59,6 +67,7 @@ def _status_metadata(status: dict) -> dict:
         "current_head": status.get("current_head"),
         "selected_branch": status.get("selected_branch"),
         "code_state_status": status.get("code_state_status"),
+        **_neo4j_info(),
     }
 
 
@@ -86,6 +95,7 @@ def _code_state_metadata(repo_id: str, installation_id: int, status: dict) -> di
         "current_head": current_head,
         "selected_branch": selected_branch,
         "code_state_status": code_state_status,
+        **_neo4j_info(),
     }
 
 

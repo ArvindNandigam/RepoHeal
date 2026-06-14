@@ -51,6 +51,7 @@ class RemediationEngine:
                 self.new_expr = _build_attr_expr(new_parts) if len(new_parts) > 1 else None
                 self.new_name = ".".join(new_parts)
                 self.modified = False
+                self._renamed_receivers = {}
 
             def visit_Name(self, node):
                 if node.id == self.old:
@@ -58,6 +59,24 @@ class RemediationEngine:
                     if self.new_expr:
                         return self.new_expr
                     node.id = self.new_name
+                return node
+
+            def visit_Call(self, node):
+                # Preserve receiver for method-to-function conversions
+                if isinstance(node.func, ast.Attribute) and node.func.attr == self.old and self.new_expr and len(self.new_parts) > 1:
+                    receiver = node.func.value
+                    # Only prepend receiver if it is NOT the module root
+                    # (e.g., df.append -> pd.concat: prepend df)
+                    # but NOT np.asscalar -> np.ndarray.item: np is the module, don't prepend
+                    receiver_root = receiver.id if isinstance(receiver, ast.Name) else None
+                    new_root = self.new_parts[0]
+                    if receiver_root != new_root:
+                        node.func.attr = self.new_parts[-1]
+                        node.func.value = _build_attr_expr(self.new_parts[:-1])
+                        node.args = [receiver] + node.args
+                        self.modified = True
+                        return node
+                self.generic_visit(node)
                 return node
 
             def visit_Attribute(self, node):

@@ -86,7 +86,6 @@
               <span style="font-size:12px;color:var(--muted);">${m.analysis_id ? m.analysis_id.slice(0, 16) : ""}</span>
               <span style="font-size:12px;color:var(--muted);">${m.timestamp ? new Date(m.timestamp).toLocaleString() : ""}</span>
             </div>
-            <a class="btn" href="/reports/${repoOwner}/${repoName}/migration-review?migration_id=${m.migration_id || m.analysis_id}&repo_owner=${repoOwner}&repo_name=${repoName}">Review</a>
           `;
           list.appendChild(card);
         });

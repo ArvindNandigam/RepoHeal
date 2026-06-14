@@ -95,14 +95,23 @@ class MetadataBranchManager:
         })
         
         manifest.setdefault("analyses", [])
-        manifest["analyses"].append({
+        existing_analysis_idx = None
+        for i, a in enumerate(manifest["analyses"]):
+            if a.get("branch") == source_branch and a.get("commit") == commit_sha:
+                existing_analysis_idx = i
+                break
+        analysis_entry = {
             "analysis_id": analysis_id,
             "snapshot_id": snapshot_id,
             "branch": source_branch,
             "commit": commit_sha,
             "timestamp": analyzed_at,
             "path": analysis_record_path
-        })
+        }
+        if existing_analysis_idx is not None:
+            manifest["analyses"][existing_analysis_idx] = analysis_entry
+        else:
+            manifest["analyses"].append(analysis_entry)
         
         manifest.setdefault("health_reports", [])
         manifest.setdefault("migration_reports", [])
@@ -464,7 +473,7 @@ class MetadataBranchManager:
         return None
 
     def load_graph_for_analysis(self, repo, analysis_id: str) -> Dict[str, Any] | None:
-        """Load a specific analysis's graph snapshot from the metadata branch."""
+        """Load or generate a specific analysis's graph snapshot."""
         manifest = self._load_manifest(repo)
         analysis_meta = None
         for a in manifest.get("analyses", []):
@@ -479,6 +488,30 @@ class MetadataBranchManager:
         graph_snapshot = self._load_json_file(repo, f"{analysis_base}/dependency_graph_{analysis_id}.json")
         if graph_snapshot:
             return graph_snapshot
+        # Generate graph on-demand from stored analysis data
+        try:
+            analysis_data = self._load_json_file(repo, analysis_meta.get("path", ""))
+            if analysis_data and analysis_data.get("analysis"):
+                from app.visualization.graph_api import GraphVisualizer
+                visualizer = GraphVisualizer(analysis_data["analysis"])
+                graph = visualizer.to_cytoscape_format(analysis_meta.get("branch", "main"))
+                if graph and graph.get("nodes"):
+                    # Cache the generated graph
+                    try:
+                        graph_payload = {"nodes": graph.get("nodes", []), "edges": graph.get("edges", []), "statistics": graph.get("statistics", {})}
+                        analysis = analysis_data.get("analysis", {})
+                        metadata = {
+                            "analysis_id": analysis_id,
+                            "branch": analysis_meta.get("branch"),
+                            "commit": commit,
+                        }
+                        graph_path = f"{analysis_base}/dependency_graph_{analysis_id}.json"
+                        self.client.batch_upsert_files(repo, self.branch_name, {graph_path: self._json({**metadata, **graph_payload})}, f"Graph for {analysis_id}")
+                    except Exception:
+                        pass
+                    return graph
+        except Exception:
+            pass
         return None
 
     def mark_uninstalled(

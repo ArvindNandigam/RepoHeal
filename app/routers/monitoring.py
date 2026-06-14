@@ -265,6 +265,11 @@ async def update_schedule(
     schedule.repository = repo_id
     now = datetime.now(timezone.utc)
     schedule.updated_at = now.isoformat()
+    # Preserve last_run from DB if incoming request doesn't include it
+    db = get_mongo_db()
+    existing = db.monitoring_config.find_one({"repository": repo_id}, {"_id": 0, "last_run": 1})
+    if schedule.last_run is None and existing and existing.get("last_run"):
+        schedule.last_run = existing["last_run"]
     # Compute next_run based on last_run if available, otherwise now
     from app.worker.scheduler import compute_next_run
     if schedule.frequency == "manual":
@@ -272,7 +277,6 @@ async def update_schedule(
     else:
         base = datetime.fromisoformat(schedule.last_run) if schedule.last_run else now
         schedule.next_run = compute_next_run(schedule.frequency, last_run=base)
-    db = get_mongo_db()
     db.monitoring_config.update_one(
         {"repository": repo_id},
         {"$set": schedule.model_dump(mode="json")},

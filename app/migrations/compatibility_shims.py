@@ -217,7 +217,11 @@ async def tiered_patch_with_retry(
         # Detect: symbol is a sub-module path being replaced with another path
         sym_parts = symbol.split(".")
         if len(sym_parts) >= 2 and replacement_alias.count(".") >= 1:
-            engine.rewrite_import_path(symbol, replacement_alias)
+            # Only rewrite when both old and new share the same top-level module
+            sym_root = sym_parts[0]
+            repl_root = replacement_alias.split(".")[0]
+            if sym_root == repl_root:
+                engine.rewrite_import_path(symbol, replacement_alias)
 
         # ── Function/attribute rename ──
         engine.rename_symbol(symbol, replacement_alias)

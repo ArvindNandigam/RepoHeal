@@ -61,6 +61,27 @@ async def get_health_report_data(
         }
     except Exception as e:
         if hasattr(e, "status") and e.status == 404:
+            # Fallback: try to find latest health report from health_reports list
+            if not analysis_id:
+                hr_list = manifest.get("health_reports", [])
+                if hr_list:
+                    latest_hr = max(hr_list, key=lambda x: x.get("timestamp", ""))
+                    try:
+                        content = repo.get_contents(latest_hr["path"], ref=metadata_manager.branch_name)
+                        data = json.loads(content.decoded_content.decode("utf-8"))
+                        report = data.get("report", {})
+                        return {
+                            **report,
+                            "branch": data.get("branch"),
+                            "commit_sha": data.get("generated_from_commit"),
+                            "generated_at": data.get("generated_at"),
+                            "analysis_id": data.get("analysis_id"),
+                            "repository_snapshot_id": data.get("repository_snapshot_id"),
+                            "overall_risk_score": data.get("risk_score", report.get("overall_risk_score", 0)),
+                            "intelligence_warnings": data.get("intelligence_warnings", report.get("intelligence_warnings", [])),
+                        }
+                    except Exception:
+                        pass
             raise HTTPException(status_code=404, detail="Health report not found on GitHub")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -165,6 +186,4 @@ async def analysis_history_page(repo_owner: str, repo_name: str, user=Depends(ve
 async def migration_reports_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
     return HTMLResponse(get_template("migration_reports.html"))
 
-@router.get("/{repo_owner}/{repo_name}/migration-review", response_class=HTMLResponse)
-async def migration_review_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
-    return HTMLResponse(get_template("migration_review.html"))
+

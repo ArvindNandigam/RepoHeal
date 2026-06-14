@@ -3,7 +3,7 @@
 from textwrap import dedent
 
 
-def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
+def build_graph_page(repo_owner: str, repo_name: str, github_user: str, analysis_id: str = "") -> str:
     page = dedent(
         """<!doctype html>
 <html lang="en">
@@ -544,7 +544,7 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
       };
 
       let cy = null;
-      let currentAnalysisId = "";
+      let currentAnalysisId = new URLSearchParams(window.location.search).get("analysis_id") || "";
 
       const loadGraph = async (analysisId = "") => {
         statusLabel.textContent = "Loading graph";
@@ -900,7 +900,7 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
           });
         }
 
-        const payload = await loadGraph("");
+        const payload = await loadGraph(currentAnalysisId);
         renderGraph(payload);
       } catch (error) {
         statusLabel.innerHTML = `<span class="error">Failed to load graph</span>`;

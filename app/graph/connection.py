@@ -75,5 +75,35 @@ class Neo4jConnection:
 
             logger.info("Neo4j connection closed")
 
+    def is_available(self) -> bool:
+        """Check if Neo4j is reachable and the driver is functional."""
+        try:
+            if not self.driver:
+                self.connect()
+            with self.driver.session() as session:
+                session.run("RETURN 1")
+            return True
+        except Exception:
+            return False
+
+    def storage_ok(self) -> tuple[bool, str]:
+        """Check if Neo4j has sufficient storage. Returns (ok, message)."""
+        try:
+            if not self.driver:
+                self.connect()
+            with self.driver.session() as session:
+                result = session.run("CALL dbms.listConfig() YIELD name, value WHERE name = 'dbms.memory.transaction.total.max' RETURN value")
+                record = result.single()
+                if record:
+                    return True, ""
+                return True, ""
+        except Exception as e:
+            err_str = str(e).lower()
+            if "not enough space" in err_str or "disk" in err_str or "storage" in err_str:
+                return False, "Neo4j storage is full — graph features may be limited"
+            if "unavailable" in err_str or "connection" in err_str or "refused" in err_str:
+                return False, "Neo4j is unavailable — graph features may be limited"
+            return True, ""
+
 
 neo4j_connection = Neo4jConnection()

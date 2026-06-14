@@ -129,8 +129,9 @@ class HealthReportGenerator:
                         confidence=rel.confidence
                     ))
                     
-        # Recommended Actions
+        # Recommended Actions (deduplicated by symbol)
         actions = []
+        seen_symbols = set()
         sorted_risks = sorted(risks, key=lambda r: r.risk_score, reverse=True)
         path_by_symbol = {
             path.symbol: path
@@ -138,6 +139,9 @@ class HealthReportGenerator:
             if path.relation == "deprecated_in_favor_of"
         }
         for r in sorted_risks:
+            if r.symbol in seen_symbols:
+                continue
+            seen_symbols.add(r.symbol)
             priority = "low"
             if r.risk_level == "high":
                 priority = "critical"

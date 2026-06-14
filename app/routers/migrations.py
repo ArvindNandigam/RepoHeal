@@ -554,7 +554,3 @@ async def defer_migration(
     raise HTTPException(status_code=404, detail="Migration not found")
 
 
-@router.get("/review", response_class=HTMLResponse)
-async def migration_review_page_redirect(user=Depends(verify_session_token)):
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/dashboard")

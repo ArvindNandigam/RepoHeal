@@ -112,9 +112,6 @@
           item.className = "timeline-item";
 
           const ts = new Date(a.timestamp).toLocaleString();
-          const sc = a.health_score;
-          const scoreStr = sc != null ? `${sc}/100` : "—";
-          const scoreCls = sc != null ? (sc > 70 ? "score-high" : sc > 40 ? "score-med" : "score-low") : "";
 
           let badges = "";
           const commit = a.commit || "";
@@ -127,11 +124,11 @@
               <div class="timeline-meta">
                 <span class="badge" style="background: rgba(255,255,255,0.06);">${a.branch}</span>
                 <code style="color: var(--muted);">${commit.slice(0, 7)}</code>
-                <span class="${scoreCls}">Health: ${scoreStr}</span>
                 ${badges}
               </div>
               <div style="display: flex; gap: 8px;">
                 <a class="btn" style="padding: 6px 12px; font-size: 12px;" href="/reports/${repoOwner}/${repoName}/health-page?analysis_id=${a.analysis_id}">Health Report</a>
+                <a class="btn" style="padding: 6px 12px; font-size: 12px;" href="/visualize/${repoOwner}/${repoName}?analysis_id=${a.analysis_id}">Graph</a>
               </div>
             </div>
           `;
