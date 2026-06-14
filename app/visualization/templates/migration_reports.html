@@ -79,6 +79,7 @@
           const riskClass = risk > 70 ? "high" : risk > 30 ? "medium" : "low";
           const status = m.status || "completed";
 
+          const viewLink = `/reports/${repoOwner}/${repoName}/migration-document?repo_owner=${repoOwner}&repo_name=${repoName}&analysis_id=${m.analysis_id}`;
           card.innerHTML = `
             <div class="meta">
               <span class="badge ${riskClass}">${risk}</span>
@@ -86,6 +87,7 @@
               <span style="font-size:12px;color:var(--muted);">${m.analysis_id ? m.analysis_id.slice(0, 16) : ""}</span>
               <span style="font-size:12px;color:var(--muted);">${m.timestamp ? new Date(m.timestamp).toLocaleString() : ""}</span>
             </div>
+            <a class="btn ghost" href="${viewLink}" style="font-size:12px;padding:4px 12px;text-decoration:none;">View</a>
           `;
           list.appendChild(card);
         });

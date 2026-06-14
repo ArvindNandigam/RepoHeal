@@ -65,17 +65,31 @@ class RemediationEngine:
                 # Preserve receiver for method-to-function conversions
                 if isinstance(node.func, ast.Attribute) and node.func.attr == self.old and self.new_expr and len(self.new_parts) > 1:
                     receiver = node.func.value
-                    # Only prepend receiver if it is NOT the module root
-                    # (e.g., df.append -> pd.concat: prepend df)
-                    # but NOT np.asscalar -> np.ndarray.item: np is the module, don't prepend
                     receiver_root = receiver.id if isinstance(receiver, ast.Name) else None
                     new_root = self.new_parts[0]
-                    if receiver_root != new_root:
+                    if receiver_root is not None and receiver_root != new_root:
                         node.func.attr = self.new_parts[-1]
                         node.func.value = _build_attr_expr(self.new_parts[:-1])
-                        node.args = [receiver] + node.args
+                        new_args = [receiver] + node.args
+                        # pd.concat requires a list as first argument
+                        if node.func.attr == "concat":
+                            node.args = [ast.List(elts=new_args, ctx=ast.Load())]
+                        else:
+                            node.args = new_args
                         self.modified = True
                         return node
+                    if receiver_root is not None and receiver_root == new_root and node.args:
+                        # Module-level static method -> instance method on first arg
+                        # e.g., np.asscalar(x) -> x.item()
+                        method_name = self.new_parts[-1]
+                        first_arg = node.args[0]
+                        new_call = ast.Call(
+                            func=ast.Attribute(value=first_arg, attr=method_name),
+                            args=[],
+                            keywords=node.keywords,
+                        )
+                        self.modified = True
+                        return new_call
                 self.generic_visit(node)
                 return node
 

@@ -24,26 +24,31 @@ class Neo4jGraphBuilder:
 
         inferred = bool(namespace_node.get("inferred", False))
 
+        # MERGE on base :Namespace label only, to avoid constraint violation
+        # when re-analysis changes the sub-label (Package/Symbol/Module).
+        # Old sub-labels are removed before the new one is set.
         if kind == "Package":
-
             session.run(
                 """
-                MERGE (n:Namespace:Package {
+                MERGE (n:Namespace {
                     id: $node_id,
                     repo_id: $repo_id
                 })
 
                 SET
-                    n.package_type = $package_type,
-                    n.package_version = $package_version,
-                    n.package_status = $package_status,
-                    n.inferred = $inferred,
+                    n:Package,
                     n.path = $path,
                     n.name = $name,
                     n.kind = $kind,
                     n.depth = $depth,
                     n.root = $root,
+                    n.inferred = $inferred,
+                    n.package_type = $package_type,
+                    n.package_version = $package_version,
+                    n.package_status = $package_status,
                     n.updated_at = timestamp()
+
+                REMOVE n:Symbol, n:Module
                 """,
                 node_id=node_id,
                 repo_id=repo_id,
@@ -52,25 +57,22 @@ class Neo4jGraphBuilder:
                 kind=kind,
                 depth=namespace_node.get("depth"),
                 root=namespace_node.get("path").split(".")[0],
+                inferred=inferred,
                 package_type=dependency_info.get("type", "detected") if is_root else "hierarchy",
                 package_version=dependency_info.get("version", "unknown") if is_root else "unknown",
                 package_status=dependency_info.get("status", "unknown") if is_root else "unknown"
-                ,
-                inferred=inferred
             )
 
-            return
-
-        if kind == "Symbol":
-
+        elif kind == "Symbol":
             session.run(
                 """
-                MERGE (n:Namespace:Symbol {
+                MERGE (n:Namespace {
                     id: $node_id,
                     repo_id: $repo_id
                 })
 
                 SET
+                    n:Symbol,
                     n.path = $path,
                     n.name = $name,
                     n.kind = $kind,
@@ -78,6 +80,8 @@ class Neo4jGraphBuilder:
                     n.root = $root,
                     n.inferred = $inferred,
                     n.updated_at = timestamp()
+
+                REMOVE n:Package, n:Module
                 """,
                 node_id=node_id,
                 repo_id=repo_id,
@@ -85,39 +89,39 @@ class Neo4jGraphBuilder:
                 name=namespace_node.get("label"),
                 kind=kind,
                 depth=namespace_node.get("depth"),
-                root=namespace_node.get("path").split(".")[0]
-                ,
+                root=namespace_node.get("path").split(".")[0],
                 inferred=inferred
             )
 
-            return
+        else:
+            session.run(
+                """
+                MERGE (n:Namespace {
+                    id: $node_id,
+                    repo_id: $repo_id
+                })
 
-        session.run(
-            """
-            MERGE (n:Namespace:Module {
-                id: $node_id,
-                repo_id: $repo_id
-            })
+                SET
+                    n:Module,
+                    n.path = $path,
+                    n.name = $name,
+                    n.kind = $kind,
+                    n.depth = $depth,
+                    n.root = $root,
+                    n.inferred = $inferred,
+                    n.updated_at = timestamp()
 
-            SET
-                n.path = $path,
-                n.name = $name,
-                n.kind = $kind,
-                n.depth = $depth,
-                n.root = $root,
-                n.inferred = $inferred,
-                n.updated_at = timestamp()
-            """,
-            node_id=node_id,
-            repo_id=repo_id,
-            path=namespace_node.get("path"),
-            name=namespace_node.get("label"),
-            kind=kind,
-            depth=namespace_node.get("depth"),
-            root=namespace_node.get("path").split(".")[0]
-            ,
-            inferred=inferred
-        )
+                REMOVE n:Package, n:Symbol
+                """,
+                node_id=node_id,
+                repo_id=repo_id,
+                path=namespace_node.get("path"),
+                name=namespace_node.get("label"),
+                kind=kind,
+                depth=namespace_node.get("depth"),
+                root=namespace_node.get("path").split(".")[0],
+                inferred=inferred
+            )
 
     def _link_namespace_nodes(
         self,

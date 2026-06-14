@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RepoHeal Migration Document</title>
+  <style>
+    :root { color-scheme: dark; --bg: #0f1113; --panel: #1c1f22; --border: rgba(255,255,255,0.1); --text: #f4f6f8; --muted: #a8b0b8; --accent: #42d6a4; }
+    * { box-sizing: border-box; }
+    body { font-family: Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; }
+    .container { max-width: 900px; margin: 0 auto; display: grid; gap: 20px; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+    .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+    h1 { margin: 0; font-size: 18px; }
+    pre { background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; font-size: 13px; line-height: 1.5; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; padding: 8px 18px; border-radius: 999px; text-decoration: none; font-weight: 600; border: 0; cursor: pointer; color: #021019; background: linear-gradient(135deg, var(--accent), var(--warning)); font-size: 13px; }
+    .btn.ghost { color: var(--text); background: rgba(255,255,255,0.08); border: 1px solid var(--border); }
+    .meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
+    .loading-state { padding: 32px; text-align: center; color: var(--muted); }
+    .error-state { padding: 32px; text-align: center; color: #f97066; border: 1px dashed rgba(249,112,102,0.3); border-radius: 12px; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1 id="docTitle">Migration Document</h1>
+        <p id="docMeta" class="meta"></p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <a id="backLink" class="btn ghost" href="#">Back to Reports</a>
+      </div>
+    </div>
+    <div id="loadingState" class="loading-state">Loading migration document...</div>
+    <div id="errorState" class="error-state hidden">Migration document not found.</div>
+    <div id="contentPanel" class="panel hidden">
+      <pre id="docContent"></pre>
+    </div>
+  </div>
+  <script>
+    (async () => {
+      const params = new URLSearchParams(window.location.search);
+      const repoOwner = params.get("repo_owner");
+      const repoName = params.get("repo_name");
+      const analysisId = params.get("analysis_id");
+      if (!repoOwner || !repoName) {
+        document.getElementById("loadingState").textContent = "Missing repo_owner/repo_name parameters.";
+        return;
+      }
+      document.getElementById("backLink").href = `/reports/${repoOwner}/${repoName}/hub`;
+      document.getElementById("docTitle").textContent = `Migration Document: ${repoOwner}/${repoName}`;
+      if (!analysisId) {
+        document.getElementById("loadingState").classList.add("hidden");
+        document.getElementById("errorState").classList.remove("hidden");
+        document.getElementById("errorState").textContent = "No analysis_id specified.";
+        return;
+      }
+      document.getElementById("docMeta").textContent = `Analysis: ${analysisId}`;
+      try {
+        const res = await fetch(`/reports/${repoOwner}/${repoName}/migration?analysis_id=${analysisId}`, { credentials: "same-origin" });
+        if (!res.ok) throw new Error(`API returned ${res.status}`);
+        const data = await res.json();
+        document.getElementById("loadingState").classList.add("hidden");
+        document.getElementById("contentPanel").classList.remove("hidden");
+        document.getElementById("docContent").textContent = data.content || "No content";
+      } catch (err) {
+        document.getElementById("loadingState").classList.add("hidden");
+        document.getElementById("errorState").classList.remove("hidden");
+        document.getElementById("errorState").textContent = `Error: ${err.message}`;
+      }
+    })();
+  </script>
+</body>
+</html>
