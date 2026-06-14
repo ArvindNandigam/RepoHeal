@@ -111,7 +111,7 @@ def load_knowledge_base() -> dict[str, dict[str, dict[str, Any]]]:
         except Exception as e:
             logger.warning("Could not read sheet %s: %s", lib, e)
             continue
-        if not rows or rows[0][0] != "symbol":
+        if not rows or not rows[0] or rows[0][0] != "symbol":
             continue
 
         symbols: dict[str, dict[str, Any]] = {}

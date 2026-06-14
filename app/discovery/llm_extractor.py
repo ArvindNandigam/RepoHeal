@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from groq import Groq, BadRequestError, APIStatusError
+from groq import Groq, BadRequestError, APIStatusError, APIConnectionError, APITimeoutError
 
 from app.config import get_settings
 
@@ -241,22 +241,34 @@ def _try_extraction(
             "Groq 400 with json_object (library=%s symbol=%s model=%s): %s",
             library, symbol, model, json.dumps(body),
         )
-    except APIStatusError as e:
-        body = e.body if isinstance(e.body, dict) else {"raw": str(e.body)}
-        logger.warning(
-            "Groq HTTP %d (library=%s symbol=%s model=%s): %s",
-            e.status_code, library, symbol, model, json.dumps(body),
-        )
+    except (APIStatusError, APIConnectionError, APITimeoutError) as e:
+        if isinstance(e, APIStatusError):
+            body = e.body if isinstance(e.body, dict) else {"raw": str(e.body)}
+            logger.warning(
+                "Groq HTTP %d (library=%s symbol=%s model=%s): %s",
+                e.status_code, library, symbol, model, json.dumps(body),
+            )
+        else:
+            logger.warning(
+                "Groq %s (library=%s symbol=%s model=%s): %s",
+                type(e).__name__, library, symbol, model, e,
+            )
         return []
 
     # Strategy 2: without response_format (parse JSON from raw text)
     try:
         return _call_groq(client, model, messages, use_json_format=False, symbol=symbol, library=library)
-    except APIStatusError as e:
-        logger.info(
-            "Groq HTTP %d (library=%s symbol=%s model=%s): %s",
-            e.status_code, library, symbol, model, e.body.get("error", {}).get("message", str(e.body)) if isinstance(e.body, dict) else str(e.body),
-        )
+    except (APIStatusError, APIConnectionError, APITimeoutError) as e:
+        if isinstance(e, APIStatusError):
+            logger.info(
+                "Groq HTTP %d (library=%s symbol=%s model=%s): %s",
+                e.status_code, library, symbol, model, e.body.get("error", {}).get("message", str(e.body)) if isinstance(e.body, dict) else str(e.body),
+            )
+        else:
+            logger.info(
+                "Groq %s (library=%s symbol=%s model=%s): %s",
+                type(e).__name__, library, symbol, model, e,
+            )
         return []
 
     return []
