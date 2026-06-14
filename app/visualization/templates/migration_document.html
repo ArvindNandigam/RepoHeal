@@ -103,16 +103,48 @@
       if (!content) return;
       const symbols = [];
       const lines = content.split("\n");
+      // Pass 1: build replacement map from Migration Paths ( - `sym` -> `repl` )
+      const replMap = {};
       let inPaths = false;
       for (const line of lines) {
         if (/^##\s+Migration Paths/i.test(line)) { inPaths = true; continue; }
         if (inPaths && /^##\s/.test(line)) { inPaths = false; continue; }
         if (!inPaths) continue;
         const m = line.match(/^[*-]\s+`([^`]+)`\s*->\s*`([^`]+)`/);
+        if (m) replMap[m[1].trim()] = m[2].trim();
+      }
+      // Pass 2: parse symbols from all three sections
+      let inSection = false;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (/^##\s+(Deprecated APIs|Breaking Changes|Migration Paths)/i.test(line)) {
+          inSection = true;
+          continue;
+        }
+        if (inSection && /^##\s/.test(line)) { inSection = false; continue; }
+        if (!inSection) continue;
+        // Migration Paths format
+        let m = line.match(/^[*-]\s+`([^`]+)`\s*->\s*`([^`]+)`/);
         if (m) {
           const sym = m[1].trim();
           const lib = sym.includes(".") ? sym.split(".")[0] : "unknown";
           symbols.push({ symbol: sym, replacement: m[2].trim(), library: lib });
+          continue;
+        }
+        // Deprecated APIs / Breaking Changes format: ### symbol, - Library: lib
+        m = line.match(/^###\s+(.+)/);
+        if (m) {
+          const sym = m[1].trim();
+          let lib = "unknown";
+          for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
+            const l = lines[j];
+            if (/^-\s+Library:/i.test(l)) {
+              lib = l.replace(/^-\s+Library:\s*/i, "").trim();
+              break;
+            }
+            if (/^##\s/.test(l)) break;
+          }
+          symbols.push({ symbol: sym, replacement: replMap[sym] || "", library: lib });
         }
       }
       if (symbols.length === 0) return;
