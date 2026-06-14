@@ -132,6 +132,16 @@ def check_local_deprecation(
     return None
 
 
+def get_known_replacements() -> set:
+    """Return set of (library, symbol) tuples that are known replacement targets."""
+    replacements = set()
+    for library, entries in LOCAL_KNOWLEDGE.items():
+        for entry in entries:
+            if entry.get("replacement"):
+                replacements.add((library, entry["replacement"]))
+    return replacements
+
+
 def lookup_replacement(library: str, symbol: str) -> Optional[str]:
     """Find replacement for a deprecated symbol from the local KB."""
     entries = LOCAL_KNOWLEDGE.get(library, [])

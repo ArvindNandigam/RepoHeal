@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from app.analysis.fingerprint import expand_symbols_for_intelligence
 from app.intelligence.webtool_client import WebtoolClient
-from app.intelligence.local_deprecation import apply_local_fallback
+from app.intelligence.local_deprecation import apply_local_fallback, get_known_replacements
 from app.models.migration_models import (
     CorrelationResult, SymbolAssessment, SymbolRelationship, VersionDistance
 )
@@ -178,6 +178,12 @@ class MigrationCorrelator:
                             )
                         )
                     )
+
+        known_replacements = get_known_replacements()
+        assessments = [
+            a for a in assessments
+            if (a.library, a.symbol) not in known_replacements
+        ]
 
         self._add_version_gap_assessments(
             assessments,
