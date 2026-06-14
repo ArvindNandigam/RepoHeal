@@ -55,6 +55,13 @@ async def status_event_generator(request: Request, repo_owner: str, repo_name: s
                     return val.isoformat()
                 return str(val) if val is not None else None
 
+            # Compute code_state_status dynamically (same logic as _code_state_metadata in graph.py)
+            cur_head = status.get("current_head")
+            last_commit = status.get("last_commit_analyzed") or status.get("target_commit_sha")
+            code_state_status = None
+            if cur_head and last_commit:
+                code_state_status = "up_to_date" if cur_head == last_commit else "outdated"
+
             current_state = {
                 "status": status.get("status"),
                 "progress": progress,
@@ -66,11 +73,11 @@ async def status_event_generator(request: Request, repo_owner: str, repo_name: s
                 "job_type": status.get("job_type"),
                 "selected_branch": status.get("selected_branch"),
                 "target_commit_sha": status.get("target_commit_sha"),
-                "current_head": status.get("current_head"),
-                "last_commit_analyzed": status.get("last_commit_analyzed"),
+                "current_head": cur_head,
+                "last_commit_analyzed": last_commit,
                 "last_analysis": _to_str(status.get("last_analysis")),
                 "last_health_refresh": _to_str(status.get("last_health_refresh")),
-                "code_state_status": status.get("code_state_status"),
+                "code_state_status": code_state_status,
             }
             
             if current_state != last_status:

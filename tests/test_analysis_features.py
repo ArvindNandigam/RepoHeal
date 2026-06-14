@@ -197,7 +197,7 @@ def test_graph_page_polls_status_before_loading_graph():
 
     assert "while (status.status !== \"completed\")" in page
     assert page.index("await waitForAnalysis();") < page.index(
-        "`/graph/${repoOwner}/${repoName}`"
+        "const payload = await loadGraph"
     )
     assert "Graph API returned no nodes" in page
     assert "Please keep this page open" in page
@@ -269,6 +269,7 @@ def test_graph_endpoint_falls_back_to_metadata_branch_when_cache_is_empty(monkey
             MagicMock(),
             "owner",
             "repo",
+            analysis_id=None,
             user={"session_id": "session", "github_login": "user"}
         )
     )

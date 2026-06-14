@@ -918,6 +918,10 @@ async function refreshRepositoryStatus(repo) {
             autoBadge.style.display = "none";
           }
         }
+        const nextRunEl = card.querySelector("[data-next-run]");
+        if (nextRunEl && autoData.next_run) {
+          nextRunEl.textContent = "Next: " + new Date(autoData.next_run).toLocaleString();
+        }
       }
     } catch (e) {}
   } catch (error) {
@@ -953,6 +957,7 @@ async function refreshRepositoryStatus(repo) {
             <span style="text-transform:uppercase;letter-spacing:0.08em;">Status:</span>
             <span data-eta-display style="display:none;"></span>
             <span data-status-message></span>
+            <span data-next-run style="margin-left:auto;font-size:9px;color:var(--text-muted);"></span>
           </div>
           <div class="repo-progress" style="margin:2px 0 4px;"><span data-progress-bar class="progress-active"></span></div>
           <div data-last-updated style="font-size: 11px; color: var(--muted); display: none;"></div>

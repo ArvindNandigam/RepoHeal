@@ -68,11 +68,35 @@ class ImpactAnalyzer:
         
         # First pass: find direct impacts
         for file_path, data in files.items():
+            # For version-gap assessments (e.g. "numpy@1.19.0 → 2.0.0"),
+            # match by checking if the library appears in the file's imports
+            if version_gap:
+                imports = data.get("imports", [])
+                if isinstance(imports, list):
+                    for imp in imports:
+                        if isinstance(imp, dict):
+                            lib_name = imp.get("module", "") or imp.get("name", "")
+                        else:
+                            lib_name = str(imp)
+                        if assessment.library.lower() in lib_name.lower():
+                            affected_files_dict[file_path].append(0)
+                            break
+                elif isinstance(imports, dict):
+                    norm = imports.get("normalized", [])
+                    if isinstance(norm, list) and assessment.library in norm:
+                        affected_files_dict[file_path].append(0)
+                        break
+                    raw = imports.get("raw", [])
+                    if isinstance(raw, list):
+                        for imp in raw:
+                            if assessment.library.lower() in imp.lower():
+                                affected_files_dict[file_path].append(0)
+                                break
+                continue
+
             for api in data.get("apis", []):
                 api_name = api.get("name", "")
-                matches = (
-                    version_gap and api.get("package") == assessment.library
-                ) or self._matches_symbol(
+                matches = self._matches_symbol(
                     api_name, api.get("package"), assessment.library, symbol, symbol_base
                 )
                 if matches:

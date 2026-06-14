@@ -184,23 +184,31 @@ async def approve_upgrades(
 
         # ── Step 2: Find & patch deprecated API usages in source files ─
         try:
-            from app.analysis.fingerprint import generate_fingerprints
+            from app.intelligence.local_deprecation import lookup_replacement, LOCAL_KNOWLEDGE
             for file_path, source, sha in py_files_cached:
                 if lib.lower() not in source.lower():
                     continue
-                fp = generate_fingerprints({}, {"files": {file_path: source}})
-                lib_symbols = fp.get(lib, {}).get("symbols", [])
+
+                local_entries = LOCAL_KNOWLEDGE.get(lib, [])
+                matched_syms = set()
+                for entry in local_entries:
+                    for pat in entry["match_patterns"]:
+                        if pat.lower() in source.lower():
+                            matched_syms.add(entry["symbol"])
+
                 import_regex = re.compile(
                     rf"(?:from\s+{re.escape(lib)}\s+import\s+\w*|import\s+{re.escape(lib)}\s+)",
                     re.IGNORECASE
                 )
-                if not lib_symbols and not import_regex.search(source):
+                if not matched_syms and not import_regex.search(source):
                     continue
 
-                for sym in lib_symbols:
+                for sym in sorted(matched_syms):
+                    replacement = lookup_replacement(lib, sym)
                     patched, tier = await tiered_patch_with_retry(
                         original_code=source, symbol=sym, library=lib,
-                        replacement=None, llm_provider=llm_provider, max_groq_attempts=3,
+                        replacement=replacement, llm_provider=llm_provider,
+                        max_groq_attempts=3,
                     )
                     if patched:
                         modified_files[file_path] = patched
@@ -374,16 +382,111 @@ async def approve_migration(
 
     risk_score = mig_meta.get("risk_score", 50)
     try:
-        orchestrator = RemediationOrchestrator(client)
-        import asyncio
-        result = asyncio.run(orchestrator.process_migration(
-            repo_id=repo_id,
-            analysis_id=mig_meta.get("analysis_id", ""),
-            migration_id=migration_id,
-            risk_score=risk_score,
-            patches=[]
-        ))
-        return {"status": "approved", "migration_id": migration_id, "pr_created": result is not None, "pr": str(result) if result else None}
+        # Load the migration document content to extract libraries/symbols needing patching
+        mig_path = mig_meta.get("path", "")
+        doc_content = ""
+        if mig_path:
+            try:
+                content = repo.get_contents(mig_path, ref=metadata_manager.branch_name)
+                doc_content = content.decoded_content.decode("utf-8")
+            except Exception:
+                pass
+
+        # Parse migration document for library references
+        libs_found = set()
+        for line in doc_content.splitlines():
+            m = re.match(r"^[*-]\s+`(\w+(?:[-\w]*\w)?)`", line)
+            if m:
+                libs_found.add(m.group(1).lower())
+
+        # Apply patches via the same mechanism as approve_upgrades
+        from app.intelligence.local_deprecation import lookup_replacement, LOCAL_KNOWLEDGE
+        llm_provider = None
+        try:
+            from app.llm.base import create_llm_provider, LLMConfig
+            llm_provider = create_llm_provider(LLMConfig())
+        except Exception:
+            pass
+
+        modified_files = {}
+        py_files_cached = []
+        try:
+            contents_tree = repo.get_contents("", ref=repo.default_branch)
+            if isinstance(contents_tree, list):
+                for item in contents_tree:
+                    if item.name.endswith(".py") and item.name != "repoheal_fixes.py":
+                        try:
+                            src = repo.get_contents(item.path, ref=repo.default_branch)
+                            py_files_cached.append((item.path, src.decoded_content.decode("utf-8"), src.sha))
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        for lib in libs_found:
+            local_entries = LOCAL_KNOWLEDGE.get(lib, [])
+            for file_path, source, sha in py_files_cached:
+                if lib not in source.lower():
+                    continue
+                matched_syms = set()
+                for entry in local_entries:
+                    for pat in entry["match_patterns"]:
+                        if pat.lower() in source.lower():
+                            matched_syms.add(entry["symbol"])
+                import_regex = re.compile(
+                    rf"(?:from\s+{re.escape(lib)}\s+import\s+\w*|import\s+{re.escape(lib)}\s+)",
+                    re.IGNORECASE
+                )
+                if not matched_syms and not import_regex.search(source):
+                    continue
+                for sym in sorted(matched_syms):
+                    replacement = lookup_replacement(lib, sym)
+                    patched, tier = await tiered_patch_with_retry(
+                        original_code=source, symbol=sym, library=lib,
+                        replacement=replacement, llm_provider=llm_provider,
+                        max_groq_attempts=3,
+                    )
+                    if patched:
+                        modified_files[file_path] = patched
+
+        if not modified_files:
+            return {"status": "approved", "migration_id": migration_id, "pr_created": False, "message": "No patchable symbols found in migration document"}
+
+        # Commit changes to a branch and create PR
+        from app.github.changes_branch import ChangesBranchManager
+        branch_manager = ChangesBranchManager(client)
+        safe_mig_id = migration_id.replace("mig_", "").split("_")[0] if migration_id.startswith("mig_") else migration_id
+        branches = []
+        for fpath in modified_files:
+            safe_name = fpath.split("/")[-1].replace(".py", "").replace(".", "_")
+            branch_name = branch_manager.create_changes_branch(repo, f"{migration_id}_{safe_name}")
+            branch_manager.batch_commit_changes(
+                repo, branch_name, {fpath: modified_files[fpath]},
+                f"RepoHeal: {migration_id} - {fpath}"
+            )
+            branches.append(branch_name)
+
+        title = f"[RepoHeal] Apply migration {migration_id}"
+        body_parts = [f"## Migration: {migration_id}", "", "### Changes"]
+        for fpath in modified_files:
+            body_parts.append(f"- `{fpath}`: patched deprecated API usages")
+        body_parts.append(f"\n---\n*Generated by RepoHeal — Approved migration*")
+
+        prs = []
+        for i, (fpath, branch_name) in enumerate(zip(modified_files.keys(), branches)):
+            pr = repo.create_pull(
+                title=title,
+                body="\n".join(body_parts),
+                head=branch_name,
+                base=repo.default_branch,
+                draft=(risk_score > 70 if risk_score else False),
+            )
+            prs.append({"pr_number": pr.number, "pr_url": pr.html_url})
+
+        return {
+            "status": "approved", "migration_id": migration_id, "pr_created": True,
+            "prs": prs, "files_patched": len(modified_files),
+        }
     except Exception as e:
         logger.error(f"PR creation failed for approved migration {migration_id}: {e}")
         return {"status": "approved", "migration_id": migration_id, "pr_created": False, "error": str(e)}
@@ -452,9 +555,6 @@ async def defer_migration(
 
 
 @router.get("/review", response_class=HTMLResponse)
-async def migration_review_page(user=Depends(verify_session_token)):
-    html = (
-        Path(__file__).resolve().parent.parent
-        / "visualization" / "templates" / "migration_review.html"
-    ).read_text(encoding="utf-8")
-    return HTMLResponse(html)
+async def migration_review_page_redirect(user=Depends(verify_session_token)):
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/dashboard")

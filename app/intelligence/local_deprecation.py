@@ -132,6 +132,15 @@ def check_local_deprecation(
     return None
 
 
+def lookup_replacement(library: str, symbol: str) -> Optional[str]:
+    """Find replacement for a deprecated symbol from the local KB."""
+    entries = LOCAL_KNOWLEDGE.get(library, [])
+    for entry in entries:
+        if entry["symbol"] == symbol or _symbol_matches(symbol, entry["match_patterns"]):
+            return entry.get("replacement")
+    return None
+
+
 def apply_local_fallback(
     fingerprints: Dict,
     dependency_graph: Dict,

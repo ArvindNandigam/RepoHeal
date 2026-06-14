@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
-from typing import Union
-from fastapi import APIRouter, Depends, Request, Body
+from typing import Union, Optional
+from fastapi import APIRouter, Depends, Request, Body, Query
 from app.errors.exceptions import GraphError, RepositoryNotFoundError
 from app.models.schemas import GraphResponse, GraphBuildingResponse, RepositoryStatus, RebuildGraphRequest, RebuildGraphResponse
 from app.auth.jwt_manager import verify_session_token
@@ -132,6 +132,7 @@ async def get_graph_visualization(
     request: Request,
     repo_owner: str,
     repo_name: str,
+    analysis_id: Optional[str] = Query(None),
     user=Depends(verify_session_token)
 ):
     session_data = get_session_data(user)
@@ -146,6 +147,29 @@ async def get_graph_visualization(
     logger.info(f"Graph visualization requested for: {repo_id}")
 
     try:
+        # If a specific analysis_id is requested, load graph for that analysis
+        if analysis_id:
+            from app.github.client import RepoHealGitHubClient
+            github_client = RepoHealGitHubClient(installation["id"])
+            repo = github_client.get_repo(repo_id)
+            metadata_manager = MetadataBranchManager(github_client)
+            history_graph = metadata_manager.load_graph_for_analysis(repo, analysis_id)
+            if history_graph:
+                return {
+                    "repository": repo_id,
+                    "nodes": history_graph.get("nodes", []),
+                    "edges": history_graph.get("edges", []),
+                    "analysis_id": analysis_id,
+                    "statistics": history_graph.get("statistics", {}),
+                }
+            return {
+                "repository": repo_id,
+                "status": "not_found",
+                "message": f"No graph snapshot found for analysis {analysis_id}",
+                "nodes": [],
+                "edges": [],
+            }
+
         analysis_status = get_analysis_status(repo_owner, repo_name)
         if (
             _is_analysis_incomplete(analysis_status)

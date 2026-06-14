@@ -306,6 +306,13 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
         <div class="legend-row"><span class="swatch" style="background: var(--api);"></span>API</div>
       </div>
 
+      <div class="stat">
+        <strong>Analysis Snapshot</strong>
+        <select id="analysisSelector" style="width:100%;margin-top:4px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;">
+          <option value="">Latest Analysis</option>
+        </select>
+      </div>
+
       <div class="mini-actions">
         <button class="button secondary" id="resetLayout" type="button">Reset layout</button>
         <button class="button secondary" id="exportPNG" type="button">Download PNG</button>
@@ -335,8 +342,6 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
       const overlay = document.getElementById("overlay");
       const resetLayoutButton = document.getElementById("resetLayout");
       const exportPNGButton = document.getElementById("exportPNG");
-
-      let cy = null;
 
       const escapeHtml = (value) => String(value ?? "")
         .replaceAll("&", "&amp;")
@@ -538,25 +543,27 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
         }
       };
 
-      try {
-        statusLabel.textContent = "Checking analysis";
-        setBuildingStatus(`Checking analysis status for ${repoOwner}/${repoName}`, 0);
-        await waitForAnalysis();
+      let cy = null;
+      let currentAnalysisId = "";
 
+      const loadGraph = async (analysisId = "") => {
         statusLabel.textContent = "Loading graph";
-        setStatus(`Fetching graph data from <strong>/graph/${repoOwner}/${repoName}</strong>.`);
+        const url = analysisId
+          ? `/graph/${repoOwner}/${repoName}?analysis_id=${encodeURIComponent(analysisId)}`
+          : `/graph/${repoOwner}/${repoName}`;
+        setStatus(`Fetching graph data from <strong>${url}</strong>.`);
 
-        const payload = await fetchJson(
-          `/graph/${repoOwner}/${repoName}`,
-          "Graph API"
-        );
+        const payload = await fetchJson(url, "Graph API");
         if (payload.status === "building") {
           throw new Error(payload.message || "Graph is still building");
         }
         if (!Array.isArray(payload.nodes) || payload.nodes.length === 0) {
           throw new Error("Graph API returned no nodes");
         }
+        return payload;
+      };
 
+      const renderGraph = (payload) => {
         const elements = [
           ...(payload.nodes || []),
           ...(payload.edges || [])
@@ -567,6 +574,7 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
         statusLabel.textContent = "Graph loaded";
         setStatus(defaultOverlay(payload.nodes?.length || 0, payload.edges?.length || 0));
 
+        if (cy) cy.destroy();
         cy = cytoscape({
           container: document.getElementById("graph"),
           elements,
@@ -850,6 +858,50 @@ def build_graph_page(repo_owner: str, repo_name: str, github_user: str) -> str:
         cy.on("mouseout", "node", () => {
           setStatus(defaultOverlay(payload.nodes?.length || 0, payload.edges?.length || 0));
         });
+      };
+
+      // ---- Main execution ----
+      try {
+        statusLabel.textContent = "Checking analysis";
+        setBuildingStatus(`Checking analysis status for ${repoOwner}/${repoName}`, 0);
+        await waitForAnalysis();
+
+        // Populate analysis selector
+        const analysisSelector = document.getElementById("analysisSelector");
+        if (analysisSelector) {
+          try {
+            const historyRes = await fetch(`/reports/${repoOwner}/${repoName}/history`, { credentials: "same-origin" });
+            if (historyRes.ok) {
+              const historyData = await historyRes.json();
+              const timeline = historyData.timeline || [];
+              timeline.forEach(a => {
+                if (a.analysis_id) {
+                  const opt = document.createElement("option");
+                  opt.value = a.analysis_id;
+                  const ts = a.timestamp ? new Date(a.timestamp).toLocaleString() : "unknown";
+                  opt.textContent = `${a.branch || "?"} @ ${(a.commit || "").slice(0, 7)} — ${ts}`;
+                  analysisSelector.appendChild(opt);
+                }
+              });
+            }
+          } catch (e) {
+            console.warn("Failed to load analysis history", e);
+          }
+
+          analysisSelector.addEventListener("change", async () => {
+            currentAnalysisId = analysisSelector.value;
+            try {
+              const payload = await loadGraph(currentAnalysisId);
+              renderGraph(payload);
+            } catch (e) {
+              statusLabel.innerHTML = `<span class="error">${e.message}</span>`;
+              overlay.innerHTML = `<span class="error">${e.message}</span>`;
+            }
+          });
+        }
+
+        const payload = await loadGraph("");
+        renderGraph(payload);
       } catch (error) {
         statusLabel.innerHTML = `<span class="error">Failed to load graph</span>`;
         overlay.innerHTML = `<span class="error">${error.message}</span>`;

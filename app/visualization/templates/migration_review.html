@@ -110,11 +110,44 @@
       const repoOwner = params.get("repo_owner");
       const repoName = params.get("repo_name");
 
-      if (!migrationId || !repoOwner || !repoName) {
+      if (!repoOwner || !repoName) {
         document.getElementById("loadingState").classList.add("hidden");
         document.getElementById("errorState").classList.remove("hidden");
-        document.getElementById("errorState").textContent = "Missing migration_id, repo_owner, or repo_name query parameters.";
+        document.getElementById("errorState").textContent = "Missing repo_owner or repo_name query parameters.";
         return;
+      }
+
+      // If no migration_id provided, fetch the latest migration for this repo
+      if (!migrationId) {
+        try {
+          const migRes = await fetch(`/migrations/${repoOwner}/${repoName}?status=pending_review`, { credentials: "same-origin" });
+          if (migRes.ok) {
+            const migData = await migRes.json();
+            const migrations = migData.migrations || [];
+            if (migrations.length > 0) {
+              migrationId = migrations[0].migration_id || migrations[0].analysis_id;
+            }
+          }
+          if (!migrationId) {
+            // Fallback: try any migration
+            const fallbackRes = await fetch(`/migrations/${repoOwner}/${repoName}`, { credentials: "same-origin" });
+            if (fallbackRes.ok) {
+              const fallbackData = await fallbackRes.json();
+              const allMigs = fallbackData.migrations || [];
+              if (allMigs.length > 0) {
+                migrationId = allMigs[0].migration_id || allMigs[0].analysis_id;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to auto-fetch migration", e);
+        }
+        if (!migrationId) {
+          document.getElementById("loadingState").classList.add("hidden");
+          document.getElementById("errorState").classList.remove("hidden");
+          document.getElementById("errorState").textContent = "No migration found for this repository. Run a health refresh first.";
+          return;
+        }
       }
 
       document.getElementById("migrationTitle").textContent = `Migration: ${migrationId.slice(0, 30)}`;

@@ -1033,7 +1033,23 @@ def run_health_refresh_in_background(
             finally:
                 await intelligence_provider.close()
 
-        report = asyncio.run(run_pipeline())
+        try:
+            report = asyncio.run(run_pipeline())
+        except Exception as pipe_err:
+            logger.error(f"Health refresh pipeline failed (continuing): {pipe_err}")
+            report = None
+
+        if report is None:
+            update_job(job_id, JobStatus.COMPLETED, result={
+                "repository": repo_id, "status": "health_refresh_degraded",
+                "error": "Pipeline failed — partial results may be available",
+            }, progress=50, message="Degraded", current_step="pipeline_failed")
+            update_repository_status(repo_owner, repo_name, JobStatus.COMPLETED, 50,
+                "Health refresh degraded", job_id=job_id, job_type=job_type,
+                selected_branch=selected_branch, target_commit_sha=commit_sha,
+                current_head=current_head,
+            )
+            return
 
         del analysis
         gc.collect()

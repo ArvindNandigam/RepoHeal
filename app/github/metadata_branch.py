@@ -208,11 +208,20 @@ class MetadataBranchManager:
             "latest_health_report": health_report_path,
         })
         manifest.setdefault("health_reports", [])
-        manifest["health_reports"].append({
+        existing_idx = None
+        for i, hr in enumerate(manifest["health_reports"]):
+            if hr.get("analysis_id") == analysis_id:
+                existing_idx = i
+                break
+        entry = {
             "analysis_id": analysis_id,
             "timestamp": health_data["generated_at"],
             "path": health_report_path,
-        })
+        }
+        if existing_idx is not None:
+            manifest["health_reports"][existing_idx] = entry
+        else:
+            manifest["health_reports"].append(entry)
         files_to_commit = {
             f"{self.base_path}/metadata.json": self._json(manifest),
             health_report_path: self._json(health_data),
@@ -279,21 +288,39 @@ class MetadataBranchManager:
         })
         
         manifest.setdefault("health_reports", [])
-        manifest["health_reports"].append({
+        health_entry = {
             "analysis_id": analysis_id,
             "timestamp": refreshed_at.isoformat(),
             "path": health_report_path
-        })
+        }
+        existing_hr_idx = None
+        for i, hr in enumerate(manifest["health_reports"]):
+            if hr.get("analysis_id") == analysis_id:
+                existing_hr_idx = i
+                break
+        if existing_hr_idx is not None:
+            manifest["health_reports"][existing_hr_idx] = health_entry
+        else:
+            manifest["health_reports"].append(health_entry)
         
         manifest.setdefault("migration_reports", [])
-        manifest["migration_reports"].append({
+        mig_entry = {
             "migration_id": migration_id,
             "analysis_id": analysis_id,
             "timestamp": refreshed_at.isoformat(),
             "path": migration_report_path,
             "risk_score": health_data["risk_score"],
             "overall_risk_level": health_data["overall_risk_level"],
-        })
+        }
+        existing_mr_idx = None
+        for i, mr in enumerate(manifest["migration_reports"]):
+            if mr.get("analysis_id") == analysis_id or mr.get("migration_id") == migration_id:
+                existing_mr_idx = i
+                break
+        if existing_mr_idx is not None:
+            manifest["migration_reports"][existing_mr_idx] = mig_entry
+        else:
+            manifest["migration_reports"].append(mig_entry)
         
         files_to_commit = {
             f"{self.base_path}/metadata.json": self._json(manifest),
@@ -432,6 +459,24 @@ class MetadataBranchManager:
             return None
         analysis_base = f"{self.base_path}/analyses/{self._safe_name(analysis_meta.get('branch', 'main'))}/{analysis_meta.get('commit', '')[:7]}"
         graph_snapshot = self._load_json_file(repo, f"{analysis_base}/dependency_graph_{latest_analysis_id}.json")
+        if graph_snapshot:
+            return graph_snapshot
+        return None
+
+    def load_graph_for_analysis(self, repo, analysis_id: str) -> Dict[str, Any] | None:
+        """Load a specific analysis's graph snapshot from the metadata branch."""
+        manifest = self._load_manifest(repo)
+        analysis_meta = None
+        for a in manifest.get("analyses", []):
+            if isinstance(a, dict) and a.get("analysis_id") == analysis_id:
+                analysis_meta = a
+                break
+        if not analysis_meta:
+            return None
+        branch = analysis_meta.get("branch", "main")
+        commit = analysis_meta.get("commit", "")
+        analysis_base = f"{self.base_path}/analyses/{self._safe_name(branch)}/{commit[:7]}"
+        graph_snapshot = self._load_json_file(repo, f"{analysis_base}/dependency_graph_{analysis_id}.json")
         if graph_snapshot:
             return graph_snapshot
         return None
