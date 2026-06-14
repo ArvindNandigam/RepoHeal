@@ -13,8 +13,23 @@
     .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
     h1 { margin: 0; font-size: 18px; }
     pre { background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; font-size: 13px; line-height: 1.5; }
+    #docContent h1 { font-size: 20px; margin: 24px 0 12px; }
+    #docContent h2 { font-size: 17px; margin: 20px 0 10px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+    #docContent h3 { font-size: 15px; margin: 16px 0 8px; }
+    #docContent p { margin: 8px 0; line-height: 1.6; }
+    #docContent table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+    #docContent th, #docContent td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+    #docContent th { background: rgba(255,255,255,0.04); font-weight: 600; }
+    #docContent tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+    #docContent code { background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+    #docContent pre code { padding: 0; background: none; }
+    #docContent ul, #docContent ol { padding-left: 20px; line-height: 1.6; }
+    #docContent li { margin: 4px 0; }
+    #docContent hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+    #docContent strong { color: var(--accent); }
     .btn { display: inline-flex; align-items: center; justify-content: center; padding: 8px 18px; border-radius: 999px; text-decoration: none; font-weight: 600; border: 0; cursor: pointer; color: #021019; background: linear-gradient(135deg, var(--accent), var(--warning)); font-size: 13px; }
     .btn.ghost { color: var(--text); background: rgba(255,255,255,0.08); border: 1px solid var(--border); }
+    .btn.approve { background: var(--accent); color: #021019; }
     .meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
     .loading-state { padding: 32px; text-align: center; color: var(--muted); }
     .error-state { padding: 32px; text-align: center; color: #f97066; border: 1px dashed rgba(249,112,102,0.3); border-radius: 12px; }
@@ -30,14 +45,17 @@
       </div>
       <div style="display:flex;gap:8px;">
         <a id="backLink" class="btn ghost" href="#">Back to Reports</a>
+        <button id="approveBtn" class="btn approve" style="display:none;">Approve</button>
       </div>
     </div>
     <div id="loadingState" class="loading-state">Loading migration document...</div>
     <div id="errorState" class="error-state hidden">Migration document not found.</div>
     <div id="contentPanel" class="panel hidden">
-      <pre id="docContent"></pre>
+      <div id="docContent"></div>
     </div>
+    <div id="approveMsg" class="panel hidden" style="text-align:center;font-size:14px;"></div>
   </div>
+  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
   <script>
     (async () => {
       const params = new URLSearchParams(window.location.search);
@@ -63,13 +81,43 @@
         const data = await res.json();
         document.getElementById("loadingState").classList.add("hidden");
         document.getElementById("contentPanel").classList.remove("hidden");
-        document.getElementById("docContent").textContent = data.content || "No content";
+        document.getElementById("docContent").innerHTML = marked.parse(data.content || "*No content*");
+        document.getElementById("approveBtn").style.display = "inline-flex";
       } catch (err) {
         document.getElementById("loadingState").classList.add("hidden");
         document.getElementById("errorState").classList.remove("hidden");
         document.getElementById("errorState").textContent = `Error: ${err.message}`;
       }
     })();
+    document.getElementById("approveBtn").addEventListener("click", async () => {
+      const params = new URLSearchParams(window.location.search);
+      const repoOwner = params.get("repo_owner");
+      const repoName = params.get("repo_name");
+      const analysisId = params.get("analysis_id");
+      const btn = document.getElementById("approveBtn");
+      const msg = document.getElementById("approveMsg");
+      btn.disabled = true;
+      btn.textContent = "Approving...";
+      try {
+        const res = await fetch(`/migrations/${analysisId}/approve?repo_owner=${repoOwner}&repo_name=${repoName}`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" }
+        });
+        const result = await res.json();
+        msg.classList.remove("hidden");
+        msg.innerHTML = result.pr_created
+          ? `Migration approved — PR created: <a href="${result.pr_url || "#"}" target="_blank" style="color:var(--accent);">#${result.pr_number || ""}</a>`
+          : `Migration approved${result.error ? " with error: " + result.error : ""}.`;
+        if (!result.pr_created) msg.innerHTML += " No PR was created.";
+        btn.style.display = "none";
+      } catch (err) {
+        msg.classList.remove("hidden");
+        msg.innerHTML = `<span style="color:var(--danger);">Error: ${err.message}</span>`;
+        btn.disabled = false;
+        btn.textContent = "Approve";
+      }
+    });
   </script>
 </body>
 </html>

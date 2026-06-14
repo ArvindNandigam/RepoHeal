@@ -32,12 +32,13 @@ def store_zip_stream(
     }
     filename = f"{repo_owner}/{repo_name}.zip"
     total = 0
-    with fs.open_upload_stream(filename, metadata=metadata) as grid_file:
-        for chunk in response_iter:
-            if chunk:
-                total += len(chunk)
-                grid_file.write(chunk)
-        written = grid_file._id
+    buf = io.BytesIO()
+    for chunk in response_iter:
+        if chunk:
+            total += len(chunk)
+            buf.write(chunk)
+    buf.seek(0)
+    written = fs.put(buf, filename=filename, metadata=metadata)
     logger.info(
         f"Stored {repo_owner}/{repo_name}.zip in GridFS ({total / 1024 / 1024:.1f}MB), id={written}"
     )
