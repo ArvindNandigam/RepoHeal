@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -383,26 +384,10 @@ async def approve_migration(
 
     risk_score = mig_meta.get("risk_score", 50)
     try:
-        # Load the migration document content to extract libraries/symbols needing patching
-        mig_path = mig_meta.get("path", "")
-        doc_content = ""
-        if mig_path:
-            try:
-                content = repo.get_contents(mig_path, ref=metadata_manager.branch_name)
-                doc_content = content.decoded_content.decode("utf-8")
-            except Exception:
-                pass
-
-        # Parse migration document for library references
-        libs_found = set()
         symbols_filter = {s.strip() for s in symbols.split(",")} if symbols else None
-        for line in doc_content.splitlines():
-            m = re.match(r"^[*-]\s+`(\w+(?:[-\w]*\w)?)`", line)
-            if m:
-                libs_found.add(m.group(1).lower())
 
-        # Apply patches via the same mechanism as approve_upgrades
-        from app.intelligence.local_deprecation import lookup_replacement, LOCAL_KNOWLEDGE
+        # Load health report data to get assessments (library, symbol, files_using)
+        from app.intelligence.local_deprecation import lookup_replacement
         llm_provider = None
         try:
             from app.llm.base import create_llm_provider, LLMConfig
@@ -410,6 +395,31 @@ async def approve_migration(
         except Exception:
             pass
 
+        analysis_id = mig_meta.get("analysis_id", "")
+        hr_path = ""
+        for hr in manifest.get("health_reports", []):
+            if hr.get("analysis_id") == analysis_id:
+                hr_path = hr.get("path", "")
+                break
+        assessments = []
+        if hr_path:
+            try:
+                hr_content = repo.get_contents(hr_path, ref=metadata_manager.branch_name)
+                hr_data = json.loads(hr_content.decoded_content.decode("utf-8"))
+                report_data = hr_data.get("report", {})
+                for key in ("deprecated_apis", "breaking_changes"):
+                    for a in report_data.get(key, []):
+                        sym = a.get("symbol", "")
+                        lib = a.get("library", "")
+                        if sym and lib:
+                            assessments.append(a)
+            except Exception:
+                pass
+
+        if not assessments:
+            return {"status": "approved", "migration_id": migration_id, "pr_created": False, "message": "No library/symbol assessments found in health report"}
+
+        # Cache Python files from the default branch
         modified_files = {}
         py_files_cached = []
         try:
@@ -425,43 +435,32 @@ async def approve_migration(
         except Exception:
             pass
 
-        for lib in libs_found:
-            local_entries = LOCAL_KNOWLEDGE.get(lib, [])
+        for assessment in assessments:
+            lib = assessment.get("library", "")
+            sym = assessment.get("symbol", "")
+            if symbols_filter and sym not in symbols_filter:
+                continue
+            files_using = assessment.get("files_using", [])
+            replacement = lookup_replacement(lib, sym)
             for file_path, source, sha in py_files_cached:
-                if lib not in source.lower():
+                if files_using and not any(f in file_path for f in files_using):
                     continue
-                matched_syms = set()
-                for entry in local_entries:
-                    for pat in entry["match_patterns"]:
-                        if pat.lower() in source.lower():
-                            matched_syms.add(entry["symbol"])
-                import_regex = re.compile(
-                    rf"(?:from\s+{re.escape(lib)}\s+import\s+\w*|import\s+{re.escape(lib)}\s+)",
-                    re.IGNORECASE
+                if lib.lower() not in source.lower() and sym.lower() not in source.lower():
+                    continue
+                patched, tier = await tiered_patch_with_retry(
+                    original_code=source, symbol=sym, library=lib,
+                    replacement=replacement, llm_provider=llm_provider,
+                    max_groq_attempts=3,
                 )
-                if not matched_syms and not import_regex.search(source):
-                    continue
-                if symbols_filter:
-                    matched_syms = {s for s in matched_syms if s in symbols_filter}
-                if not matched_syms:
-                    continue
-                for sym in sorted(matched_syms):
-                    replacement = lookup_replacement(lib, sym)
-                    patched, tier = await tiered_patch_with_retry(
-                        original_code=source, symbol=sym, library=lib,
-                        replacement=replacement, llm_provider=llm_provider,
-                        max_groq_attempts=3,
-                    )
-                    if patched:
-                        modified_files[file_path] = patched
+                if patched:
+                    modified_files[file_path] = patched
 
         if not modified_files:
-            return {"status": "approved", "migration_id": migration_id, "pr_created": False, "message": "No patchable symbols found in migration document"}
+            return {"status": "approved", "migration_id": migration_id, "pr_created": False, "message": "No patchable symbols found"}
 
         # Commit changes to a branch and create PR
         from app.github.changes_branch import ChangesBranchManager
         branch_manager = ChangesBranchManager(client)
-        safe_mig_id = migration_id.replace("mig_", "").split("_")[0] if migration_id.startswith("mig_") else migration_id
         branches = []
         for fpath in modified_files:
             safe_name = fpath.split("/")[-1].replace(".py", "").replace(".", "_")
