@@ -43,6 +43,7 @@ class Settings:
 
     # Google Sheets Knowledge Base
     google_service_account_json: str | None = None
+    google_sheet_id: str = ""
     google_sheet_title: str = "Restricted Webtool - Migration Intelligence"
 
     # Daily Report / Email
@@ -78,6 +79,7 @@ class Settings:
         max_search_results = int(os.getenv("MAX_SEARCH_RESULTS", "20"))
         serper_api_key = os.getenv("SERPER_API_KEY", "").strip() or None
         google_service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip() or None
+        google_sheet_id = os.getenv("GOOGLE_SHEET_ID", "").strip()
         google_sheet_title = (os.getenv("GOOGLE_SHEET_TITLE", "").strip() or "Restricted Webtool - Migration Intelligence")
 
         smtp_host = os.getenv("SMTP_HOST", "").strip()
@@ -102,6 +104,7 @@ class Settings:
             max_search_results=max_search_results,
             serper_api_key=serper_api_key,
             google_service_account_json=google_service_account_json,
+            google_sheet_id=google_sheet_id,
             google_sheet_title=google_sheet_title,
             smtp_host=smtp_host,
             smtp_port=smtp_port,

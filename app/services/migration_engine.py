@@ -85,7 +85,7 @@ class MigrationEngine:
         latest_version = lib_doc.get("latest_version") if lib_doc else None
         
         results = []
-        _overall_quota_exhausted = False
+        _overall_budget_exhausted = False
         
         for symbol in symbols:
             # Step 1: Mongo Lookup
@@ -233,13 +233,13 @@ class MigrationEngine:
                 all_rels.extend(fallback_rels)
             
             # PHASE 4: Groq — ONLY if fallback + regex found nothing useful
-            groq_quota_exhausted = False
+            groq_budget_exhausted = False
             if not all_rels:
                 if debug: debug_trace["groq_used"] = True
                 all_snippets = [s for page in page_data_cache for s in page["snippets"]]
-                groq_rels, groq_quota_exhausted = extract_relationships_groq(symbol, library, all_snippets, ranked_results)
-                if groq_quota_exhausted:
-                    _overall_quota_exhausted = True
+                groq_rels, groq_budget_exhausted = extract_relationships_groq(symbol, library, all_snippets, ranked_results)
+                if groq_budget_exhausted:
+                    _overall_budget_exhausted = True
                 if groq_rels:
                     if debug:
                         debug_trace["groq_relationships"].extend(groq_rels)
@@ -261,8 +261,8 @@ class MigrationEngine:
                 else:
                     if debug:
                         debug_trace["groq_failed"] = True
-                        if groq_quota_exhausted:
-                            debug_trace["groq_skip_reason"] = "quota_exhausted"
+                        if groq_budget_exhausted:
+                            debug_trace["groq_skip_reason"] = "budget_exhausted"
                         else:
                             debug_trace["groq_skip_reason"] = "no_relationships_returned"
             else:
@@ -313,8 +313,8 @@ class MigrationEngine:
                 "_debug": debug_trace
             })
             
-        intelligence_status = "degraded" if _overall_quota_exhausted else "ok"
-        intelligence_reason = "quota_exhausted" if _overall_quota_exhausted else None
+        intelligence_status = "degraded" if _overall_budget_exhausted else "ok"
+        intelligence_reason = "budget_exhausted" if _overall_budget_exhausted else None
 
         return {
             "library": library,

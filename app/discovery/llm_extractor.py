@@ -12,34 +12,71 @@ logger = logging.getLogger(__name__)
 _SEPARATOR = "\n\n---\n\n"
 _FALLBACK_MODEL = "llama-3.1-8b-instant"
 
-# Groq free tier on_demand: 6,000 TPM, 100,000 TPD per model.
+# Groq free tier limits for llama-3.3-70b-versatile (confirmed 2026-06):
+#   RPM: 30, RPD: 1,000, TPM: 12,000, TPD: 100,000
 # 1 token ~= 4 chars. Leave ~2K tokens for completion budget.
 # Max prompt tokens ~4,000 -> ~16,000 chars total.
 # System prompt ~700 chars, header variable. Safe snippet budget: 12,000 chars.
 _MAX_BATCH_CHARS = 12_000
 
-_TPM_LIMIT = 6_000
+_RPM_LIMIT = 30
+_RPD_LIMIT = 1_000
+_TPM_LIMIT = 12_000
 _TPD_LIMIT = 100_000
 _SAFE_WAIT_SECONDS = 3.0
 
+_TO_TOKEN_RATIO = 4  # chars per token estimate
+
 _TOKEN_HISTORY: list[tuple[float, int]] = []
+_REQUEST_HISTORY: list[float] = []
+_LAST_KEY_HASH: int = 0
 
 
-def _prune_token_history() -> None:
+def _check_key_change() -> None:
+    """Clear token history if the API key has changed (key rotation)."""
+    global _LAST_KEY_HASH
+    settings = get_settings()
+    key = settings.groq_api_key or ""
+    key_hash = hash(key)
+    if _LAST_KEY_HASH != 0 and _LAST_KEY_HASH != key_hash:
+        _TOKEN_HISTORY.clear()
+        logger.info("Groq API key changed — reset token history")
+    _LAST_KEY_HASH = key_hash
+
+
+def _prune_history() -> None:
     now = time.time()
     cutoff_24h = now - 86400
-    # Prune old entries and keep only last 24h
     _TOKEN_HISTORY[:] = [(ts, t) for ts, t in _TOKEN_HISTORY if ts > cutoff_24h]
+    _REQUEST_HISTORY[:] = [ts for ts in _REQUEST_HISTORY if ts > cutoff_24h]
+
+
+def _check_rpm_budget() -> float:
+    """Return seconds to wait to stay under RPM limit."""
+    now = time.time()
+    cutoff_1m = now - 60
+    rpm_used = sum(1 for ts in _REQUEST_HISTORY if ts > cutoff_1m)
+    if rpm_used >= _RPM_LIMIT:
+        oldest_in_window = min((ts for ts in _REQUEST_HISTORY if ts > cutoff_1m), default=None)
+        if oldest_in_window:
+            wait = oldest_in_window + 60 - now + 0.5
+            return max(wait, 1.0)
+    return 0.0
+
+
+def _check_rpd_budget() -> bool:
+    """Return True if we have enough RPD budget."""
+    _prune_history()
+    rpd_used = len(_REQUEST_HISTORY)
+    return rpd_used < _RPD_LIMIT
 
 
 def _check_tpm_budget(needed: int) -> float:
-    """Return seconds to wait before next call to stay under TPM limit."""
+    """Return seconds to wait to stay under TPM limit."""
     now = time.time()
     cutoff_1m = now - 60
     tpm_used = sum(t for ts, t in _TOKEN_HISTORY if ts > cutoff_1m)
     if tpm_used + needed > _TPM_LIMIT:
-        # How long until enough budget frees up?
-        # Oldest entry within the 60s window that we need to age out
         in_window = [(ts, t) for ts, t in _TOKEN_HISTORY if ts > cutoff_1m]
         in_window.sort()
         needed_freed = (tpm_used + needed) - _TPM_LIMIT
@@ -54,13 +91,24 @@ def _check_tpm_budget(needed: int) -> float:
 
 def _check_tpd_budget(needed: int) -> bool:
     """Return True if we have enough TPD budget."""
-    _prune_token_history()
+    _prune_history()
     tpd_used = sum(t for _, t in _TOKEN_HISTORY)
     return tpd_used + needed <= _TPD_LIMIT
 
 
-def _record_tokens(tokens: int) -> None:
-    _TOKEN_HISTORY.append((time.time(), tokens))
+def _can_make_request(needed_tokens: int) -> tuple[bool, str | None]:
+    """Check all budgets. Returns (can_proceed, skip_reason)."""
+    if not _check_rpd_budget():
+        return False, "RPD_exhausted"
+    if not _check_tpd_budget(needed_tokens):
+        return False, "TPD_exhausted"
+    return True, None
+
+
+def _record_request(tokens: int) -> None:
+    now = time.time()
+    _TOKEN_HISTORY.append((now, tokens))
+    _REQUEST_HISTORY.append(now)
 
 SYSTEM_PROMPT = """
 You are an evidence extraction engine.
@@ -215,9 +263,10 @@ def _try_extraction(
 
 
 def extract_relationships_groq(symbol: str, library: str, snippets: list[str], source_context: list[dict]) -> tuple[list[dict], bool]:
-    """Returns (relationships, quota_exhausted).
-    quota_exhausted is True if any batch was skipped due to TPD budget exhaustion.
+    """Returns (relationships, budget_exhausted).
+    budget_exhausted is True if any batch was skipped due to RPD/TPD exhaustion.
     """
+    _check_key_change()
     settings = get_settings()
     api_key = settings.groq_api_key
     if not api_key:
@@ -232,23 +281,27 @@ def extract_relationships_groq(symbol: str, library: str, snippets: list[str], s
                 len(snippets), len(batches), _MAX_BATCH_CHARS)
 
     all_rels: list[dict] = []
-    quota_exhausted = False
+    budget_exhausted = False
 
     for i, batch in enumerate(batches):
         user_prompt = _build_user_prompt(symbol, library, batch, source_context)
         prompt_tokens = len(user_prompt) // 4 + len(SYSTEM_PROMPT) // 4
+        total_needed = prompt_tokens + 2048
         logger.debug("Batch %d/%d: ~%d tokens", i + 1, len(batches), prompt_tokens)
 
-        # Check TPD budget — skip if we'd exceed daily limit
-        if not _check_tpd_budget(prompt_tokens + 2048):
-            logger.warning("TPD budget exhausted, skipping batch %d/%d", i + 1, len(batches))
-            quota_exhausted = True
+        # Check all daily budgets — skip if any exhausted
+        can_proceed, skip_reason = _can_make_request(total_needed)
+        if not can_proceed:
+            logger.warning("%s budget exhausted, skipping batch %d/%d", skip_reason, i + 1, len(batches))
+            budget_exhausted = True
             continue
 
-        # Pace to stay under TPM limit
-        wait = _check_tpm_budget(prompt_tokens + 2048)
+        # Pace to stay under per-minute limits (RPM + TPM)
+        rpm_wait = _check_rpm_budget()
+        tpm_wait = _check_tpm_budget(total_needed)
+        wait = max(rpm_wait, tpm_wait)
         if wait > 0:
-            logger.debug("TPM pacing: sleeping %.1fs before batch %d/%d", wait, i + 1, len(batches))
+            logger.debug("Pacing: sleeping %.1fs before batch %d/%d", wait, i + 1, len(batches))
             time.sleep(wait)
         elif i > 0:
             time.sleep(_SAFE_WAIT_SECONDS)
@@ -256,7 +309,7 @@ def extract_relationships_groq(symbol: str, library: str, snippets: list[str], s
         # Try primary model first
         rels = _try_extraction(client, primary_model, symbol, library, user_prompt)
         if rels:
-            _record_tokens(prompt_tokens + 2048)
+            _record_request(total_needed)
             logger.info("Groq batch %d/%d: extracted %d relationship(s)", i + 1, len(batches), len(rels))
             all_rels.extend(rels)
             continue
@@ -266,8 +319,8 @@ def extract_relationships_groq(symbol: str, library: str, snippets: list[str], s
             logger.info("Groq primary model %s returned nothing, trying fallback %s", primary_model, _FALLBACK_MODEL)
             rels = _try_extraction(client, _FALLBACK_MODEL, symbol, library, user_prompt)
             if rels:
-                _record_tokens(prompt_tokens + 2048)
+                _record_request(total_needed)
                 logger.info("Groq batch %d/%d: extracted %d relationship(s)", i + 1, len(batches), len(rels))
                 all_rels.extend(rels)
 
-    return all_rels, quota_exhausted
+    return all_rels, budget_exhausted

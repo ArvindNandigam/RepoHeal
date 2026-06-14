@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 import gspread
+import requests
 from google.oauth2.service_account import Credentials
+from requests.adapters import HTTPAdapter
 
 from app.config import get_settings
 
@@ -17,17 +19,21 @@ _COLUMNS = ["symbol", "to", "relation", "confidence", "source", "first_seen", "e
 
 _kb_cache: dict[str, dict[str, dict[str, Any]]] | None = None
 _client: gspread.Client | None = None
+_client_disabled: bool = False
 _sheet_id: str | None = None
 
 
 def _get_client() -> gspread.Client | None:
-    global _client
+    global _client, _client_disabled
+    if _client_disabled:
+        return None
     if _client is not None:
         return _client
     settings = get_settings()
     key_json = settings.google_service_account_json
     if not key_json:
         logger.warning("GOOGLE_SERVICE_ACCOUNT_JSON not set — KB disabled")
+        _client_disabled = True
         return None
     try:
         creds = Credentials.from_service_account_info(
@@ -35,40 +41,36 @@ def _get_client() -> gspread.Client | None:
             scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"],
         )
         _client = gspread.authorize(creds)
+        # Set 10s timeout on all underlying HTTP requests
+        session = _client.http_session
+        session.mount("https://", HTTPAdapter())
+        original_request = session.request
+        def _timed_request(method, url, **kwargs):
+            kwargs.setdefault("timeout", 10)
+            return original_request(method, url, **kwargs)
+        session.request = _timed_request
         return _client
     except Exception as e:
-        logger.warning("Could not authorize Google Sheets: %s", e)
+        logger.warning("Could not authorize Google Sheets: %s — KB disabled for this session", e)
+        _client_disabled = True
         return None
 
 
 def _get_or_create_sheet(client: gspread.Client) -> gspread.Spreadsheet | None:
     global _sheet_id
     settings = get_settings()
-    title = settings.google_sheet_title
+    sheet_id = settings.google_sheet_id or _sheet_id
 
-    if _sheet_id:
-        try:
-            return client.open_by_key(_sheet_id)
-        except Exception:
-            _sheet_id = None
+    if not sheet_id:
+        logger.warning("GOOGLE_SHEET_ID not set — KB disabled")
+        return None
 
     try:
-        sheet = client.open(title)
-        _sheet_id = sheet.id
+        sheet = client.open_by_key(sheet_id)
+        _sheet_id = sheet_id
         return sheet
-    except gspread.SpreadsheetNotFound:
-        try:
-            sheet = client.create(title)
-            _sheet_id = sheet.id
-            ws = sheet.get_worksheet(0)
-            ws.update_title("_metadata")
-            ws.append_row(["library", "updated", "__created__", datetime.now(timezone.utc).date().isoformat()])
-            return sheet
-        except Exception as e:
-            logger.warning("Could not create Google Sheet: %s", e)
-            return None
     except Exception as e:
-        logger.warning("Could not open Google Sheet: %s", e)
+        logger.warning("Could not open Google Sheet by key %s: %s", sheet_id, e)
         return None
 
 
