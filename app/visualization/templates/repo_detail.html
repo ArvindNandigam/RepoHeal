@@ -79,14 +79,17 @@
       </div>
     </div>
 
+    <div class="card" id="queueCard" style="display:none;">
+      <h3>Active Jobs</h3>
+      <div id="queueList"></div>
+    </div>
+
     <div class="card">
       <h3>Analyze</h3>
       <div class="grid-3">
         <button class="button secondary" type="button" data-action="analyze-latest" data-queued-text="Queued...">Latest Commit</button>
-        <button class="button secondary" type="button" data-action="analyze-branch" data-queued-text="Queued...">Analyze Branch</button>
         <button class="button secondary" type="button" data-action="analyze-commit" disabled data-queued-text="Queued...">Analyze Commit</button>
-        <button class="button tertiary" type="button" data-action="reanalyze" data-queued-text="Queued...">Refresh Analysis</button>
-        <button class="button tertiary" type="button" data-action="health" data-queued-text="Queued...">Refresh Health Report</button>
+        <button class="button tertiary" type="button" data-action="health" data-queued-text="Queued...">Health and Migration Report</button>
       </div>
       <div class="flex-row" style="margin-top: 12px;">
         <label class="field">
@@ -205,6 +208,7 @@
         showToast(msg, result?.deduplicated ? "info" : "success");
         setupSSE();
         await refreshStatus();
+        await refreshQueue();
       } catch (err) {
         showToast(`${FULL_NAME}: ${err.message}`, "error");
       } finally {
@@ -325,6 +329,30 @@
       } catch (_) {}
     }
 
+    async function refreshQueue() {
+      try {
+        const res = await fetch(`/jobs/queue?repo_owner=${OWNER}&repo_name=${REPO}`, { credentials: "same-origin" });
+        if (!res.ok) return;
+        const data = await res.json();
+        const card = document.getElementById("queueCard");
+        const list = document.getElementById("queueList");
+        if (!card || !list) return;
+        const jobs = data.active_jobs || [];
+        if (jobs.length === 0) {
+          card.style.display = "none";
+          return;
+        }
+        card.style.display = "block";
+        list.innerHTML = jobs.map(j => {
+          const created = j.created_at ? new Date(j.created_at).toLocaleTimeString() : "";
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;">
+            <span><strong>${j.job_type || "job"}</strong> ${j.selected_branch ? "on " + j.selected_branch : ""}<span style="color:var(--muted);margin-left:8px;">${created}</span></span>
+            <span class="pill" style="text-transform:capitalize;">${j.status || "unknown"}</span>
+          </div>`;
+        }).join("");
+      } catch (_) {}
+    }
+
     function setupSSE() {
       if (eventSource) eventSource.close();
       eventSource = new EventSource(`/sse/status/${OWNER}/${REPO}`);
@@ -335,6 +363,7 @@
         if (terminal.has(data.status)) {
           eventSource.close(); eventSource = null;
           refreshStatus();
+          refreshQueue();
         }
       };
       eventSource.onerror = () => { if (eventSource) { eventSource.close(); eventSource = null; } };
@@ -627,6 +656,7 @@
     document.addEventListener("visibilitychange", () => { if (document.hidden && eventSource) { eventSource.close(); eventSource = null; } });
 
     refreshStatus();
+    refreshQueue();
     setupSSE();
   </script>
 </body>

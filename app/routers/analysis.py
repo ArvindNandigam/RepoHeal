@@ -431,11 +431,18 @@ async def simulate_upgrades_endpoint(
 
 
 @router.get("/jobs/queue", response_model=Dict[str, Any])
-async def get_job_queue(user=Depends(verify_session_token)):
-    """Return all active jobs across all repositories (auto-recovery aware)."""
+async def get_job_queue(
+    repo_owner: str = Query(None, description="Filter by repo owner"),
+    repo_name: str = Query(None, description="Filter by repo name"),
+    user=Depends(verify_session_token),
+):
+    """Return active jobs, optionally filtered by repository."""
+    jobs = get_active_jobs()
+    if repo_owner and repo_name:
+        jobs = [j for j in jobs if j.get("repo_owner") == repo_owner and j.get("repo_name") == repo_name]
     return {
-        "active_jobs": get_active_jobs(),
-        "total_active": len(get_active_jobs()),
+        "active_jobs": jobs,
+        "total_active": len(jobs),
     }
 
 

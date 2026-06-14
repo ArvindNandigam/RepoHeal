@@ -25,7 +25,7 @@ Analyze supports three modes:
 - Specific Branch: analyzes HEAD for the selected branch, such as `main`, `develop`, `feature/*`, or `release/*`.
 - Specific Commit: analyzes an exact commit SHA.
 
-Refresh Analysis and Refresh Health Report accept a branch and optional commit SHA. New runs are stored as separate records and do not overwrite historical results.
+Analysis and health report regeneration accept a branch and optional commit SHA. New runs are stored as separate records and do not overwrite historical results.
 
 ## Metadata Storage
 
