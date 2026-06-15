@@ -18,6 +18,45 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+
+def _get_cell_source(cell: dict) -> str:
+    src = cell.get("source", "")
+    return "".join(src) if isinstance(src, list) else src
+
+
+def _set_cell_source(cell: dict, new_source: str) -> None:
+    orig = cell.get("source", "")
+    if isinstance(orig, list):
+        cell["source"] = new_source.splitlines(keepends=True)
+    else:
+        cell["source"] = new_source
+
+
+async def _patch_notebook(notebook_json: str, lib: str, sym: str, replacement: Optional[str], llm_provider) -> Optional[str]:
+    """Patch deprecated API usages inside a Jupyter notebook's code cells."""
+    try:
+        nb = json.loads(notebook_json)
+    except json.JSONDecodeError:
+        return None
+    cells = nb.get("cells", [])
+    modified = False
+    for cell in cells:
+        if cell.get("cell_type") != "code":
+            continue
+        source = _get_cell_source(cell)
+        if lib.lower() not in source.lower() and sym.lower() not in source.lower():
+            continue
+        patched, _ = await tiered_patch_with_retry(
+            original_code=source, symbol=sym, library=lib,
+            replacement=replacement, llm_provider=llm_provider,
+            max_groq_attempts=3,
+        )
+        if patched:
+            _set_cell_source(cell, patched)
+            modified = True
+    return json.dumps(nb, indent=1, ensure_ascii=False) if modified else None
+
+
 router = APIRouter(prefix="/migrations", tags=["migrations"])
 
 
@@ -206,11 +245,17 @@ async def approve_upgrades(
 
                 for sym in sorted(matched_syms):
                     replacement = lookup_replacement(lib, sym)
-                    patched, tier = await tiered_patch_with_retry(
-                        original_code=source, symbol=sym, library=lib,
-                        replacement=replacement, llm_provider=llm_provider,
-                        max_groq_attempts=3,
-                    )
+                    if file_path.endswith(".ipynb"):
+                        patched = await _patch_notebook(
+                            source, lib, sym, replacement, llm_provider
+                        )
+                        tier = "auto_merge"
+                    else:
+                        patched, tier = await tiered_patch_with_retry(
+                            original_code=source, symbol=sym, library=lib,
+                            replacement=replacement, llm_provider=llm_provider,
+                            max_groq_attempts=3,
+                        )
                     if patched:
                         modified_files[file_path] = patched
                         if tier == "human_review":
@@ -426,7 +471,7 @@ async def approve_migration(
             contents_tree = repo.get_contents("", ref=repo.default_branch)
             if isinstance(contents_tree, list):
                 for item in contents_tree:
-                    if item.name.endswith(".py") and item.name != "repoheal_fixes.py":
+                    if item.name.endswith((".py", ".ipynb")) and item.name != "repoheal_fixes.py":
                         try:
                             src = repo.get_contents(item.path, ref=repo.default_branch)
                             py_files_cached.append((item.path, src.decoded_content.decode("utf-8"), src.sha))
@@ -447,11 +492,14 @@ async def approve_migration(
                     continue
                 if lib.lower() not in source.lower() and sym.lower() not in source.lower():
                     continue
-                patched, tier = await tiered_patch_with_retry(
-                    original_code=source, symbol=sym, library=lib,
-                    replacement=replacement, llm_provider=llm_provider,
-                    max_groq_attempts=3,
-                )
+                if file_path.endswith(".ipynb"):
+                    patched = await _patch_notebook(source, lib, sym, replacement, llm_provider)
+                else:
+                    patched, tier = await tiered_patch_with_retry(
+                        original_code=source, symbol=sym, library=lib,
+                        replacement=replacement, llm_provider=llm_provider,
+                        max_groq_attempts=3,
+                    )
                 if patched:
                     modified_files[file_path] = patched
 
@@ -463,7 +511,7 @@ async def approve_migration(
         branch_manager = ChangesBranchManager(client)
         branches = []
         for fpath in modified_files:
-            safe_name = fpath.split("/")[-1].replace(".py", "").replace(".", "_")
+            safe_name = Path(fpath).stem.replace(".", "_")
             branch_name = branch_manager.create_changes_branch(repo, f"{migration_id}_{safe_name}")
             branch_manager.batch_commit_changes(
                 repo, branch_name, {fpath: modified_files[fpath]},
