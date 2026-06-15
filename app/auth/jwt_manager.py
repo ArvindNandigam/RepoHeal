@@ -17,6 +17,16 @@ JWT_SECRET = settings.JWT_SECRET_KEY
 JWT_ALGORITHM = "HS256"
 
 
+class SessionExpired(Exception):
+    def __init__(self, redirect_url: str = "/auth/login-page?reason=expired"):
+        self.redirect_url = redirect_url
+
+
+def _accepts_html(request: Request) -> bool:
+    accept = request.headers.get("accept", "")
+    return "text/html" in accept
+
+
 def create_session_token(
     payload: dict
 ):
@@ -42,7 +52,8 @@ def verify_session_token(
     )
 
     if not token:
-
+        if _accepts_html(request):
+            raise SessionExpired()
         raise HTTPException(
             status_code=401,
             detail="Authentication required"
@@ -59,7 +70,8 @@ def verify_session_token(
         return decoded
 
     except jwt.PyJWTError:
-
+        if _accepts_html(request):
+            raise SessionExpired()
         raise HTTPException(
             status_code=401,
             detail="Invalid session"
