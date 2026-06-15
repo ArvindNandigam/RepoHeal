@@ -8,7 +8,7 @@ from app.graph.connection import neo4j_connection
 from app.utils.logger import get_logger
 from app.utils.rate_limit import limiter
 from app.errors.handlers import register_error_handlers
-from app.routers import health, auth, dashboard, workspace, visualization, webhook, analysis, graph, reports, sse, migrations, monitoring, admin, repo_data, repo_detail
+from app.routers import health, auth, dashboard, workspace, visualization, webhook, analysis, graph, reports, sse, migrations, monitoring, admin, repo_data, repo_detail, legal
 
 logger = get_logger(__name__)
 
@@ -85,6 +85,7 @@ app.include_router(monitoring.router)
 app.include_router(admin.router)
 app.include_router(repo_data.router)
 app.include_router(repo_detail.router)
+app.include_router(legal.router)
 
 @app.get("/login")
 async def login_redirect():

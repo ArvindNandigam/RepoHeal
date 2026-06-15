@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy — RepoHeal</title>
+  <style>
+    :root { color-scheme: dark; --bg: #101214; --surface: #181a1d; --text: #e8eaed; --muted: #9aa0a6; --accent: #42d6a4; --border: rgba(255,255,255,0.06); }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; }
+    .container { max-width: 720px; margin: 0 auto; padding: 48px 24px 80px; }
+    h1 { font-size: 28px; font-weight: 700; margin: 0 0 4px; }
+    .sub { color: var(--muted); font-size: 14px; margin: 0 0 40px; }
+    h2 { font-size: 18px; font-weight: 600; margin: 32px 0 12px; }
+    p { font-size: 15px; line-height: 1.7; color: var(--muted); margin: 0 0 16px; }
+    ul { margin: 0 0 16px; padding-left: 20px; }
+    li { font-size: 15px; line-height: 1.7; color: var(--muted); margin-bottom: 4px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+    .back { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; margin-bottom: 32px; text-decoration: none; }
+    .back:hover { color: var(--accent); }
+    .footer { font-size: 13px; color: var(--muted); text-align: center; margin-top: 48px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a class="back" href="/">&larr; Back to RepoHeal</a>
+    <h1>Privacy Policy</h1>
+    <p class="sub">Effective date: June 15, 2026</p>
+
+    <h2>1. Introduction</h2>
+    <p>RepoHeal is a GitHub App that analyzes repositories to provide health reports, migration intelligence, and monitoring. This policy explains what data RepoHeal collects, why it is collected, where it is stored, and how it is handled.</p>
+
+    <h2>2. Information Collected</h2>
+    <p>RepoHeal collects the following information:</p>
+    <ul>
+      <li><strong>GitHub account identifiers</strong> — username, avatar URL, and GitHub user ID for authentication and repository access.</li>
+      <li><strong>Repository metadata</strong> — repository name, description, visibility (public or private), default branch, file listing, and commit history relevant to analysis.</li>
+      <li><strong>Dependency information</strong> — declared dependencies from requirements files and detected imports from source code.</li>
+      <li><strong>Analysis results</strong> — AST scan data, dependency graphs, fingerprints, health scores, risk assessments, and migration reports derived from repository contents.</li>
+      <li><strong>Health and monitoring data</strong> — health score snapshots, alert configurations, watchlists, and monitoring preferences.</li>
+      <li><strong>Application logs</strong> — operational logs including request timestamps, error events, and job status transitions. No credentials or sensitive payloads are logged.</li>
+    </ul>
+    <p>RepoHeal <strong>does not sell user data</strong>. Data is collected and processed solely to provide repository analysis and migration intelligence.</p>
+
+    <h2>3. Repository Content</h2>
+    <p>Repository contents are downloaded temporarily to perform analysis. Source code is scanned for imports, API usage patterns, and dependency declarations. The following applies:</p>
+    <ul>
+      <li>Source code is processed in memory where possible. Disk extraction is used only when necessary and is cleaned up after analysis completes.</li>
+      <li>Analysis artifacts (dependency graphs, fingerprints, reports) may be retained. Extracted source code is not permanently stored.</li>
+      <li>No source code is shared with third parties beyond the analysis pipeline described in Section 4.</li>
+    </ul>
+
+    <h2>4. Third-Party Services</h2>
+    <p>RepoHeal uses the following third-party services. Each service receives only the data necessary for its function:</p>
+    <ul>
+      <li><strong>GitHub</strong> — repository content access, OAuth authentication, webhook events, and pull request creation.</li>
+      <li><strong>MongoDB Atlas</strong> — stores application state, analysis results, cache data, monitoring records, and session tokens.</li>
+      <li><strong>Neo4j AuraDB</strong> — stores knowledge graph data (repository structure, symbol relationships, dependency edges).</li>
+      <li><strong>Groq</strong> — LLM-based migration intelligence and patch generation. Library names and symbol names are sent; full source files are sent only during patch generation.</li>
+      <li><strong>Serper</strong> — web search for deprecated API discovery. Library and symbol names are sent as search queries.</li>
+      <li><strong>PyPI</strong> — version lookups for installed Python packages.</li>
+      <li><strong>Render</strong> — hosting platform for both RepoHeal and the Restricted Webtool microservice.</li>
+    </ul>
+
+    <h2>5. Data Security</h2>
+    <p>RepoHeal implements the following security measures:</p>
+    <ul>
+      <li>All traffic between users, GitHub, and RepoHeal is encrypted over HTTPS.</li>
+      <li>API keys, credentials, and secrets are stored as environment variables, not in source code or databases.</li>
+      <li>Session tokens are encrypted at rest using Fernet symmetric encryption with a key stored in environment variables.</li>
+      <li>GitHub App permissions are scoped to the minimum required for analysis functionality. RepoHeal does not request admin or delete permissions.</li>
+      <li>Webhook payloads from GitHub are verified using HMAC-SHA256 signatures.</li>
+    </ul>
+
+    <h2>6. Data Retention</h2>
+    <p>Data is retained only as long as necessary to provide analysis and monitoring functionality:</p>
+    <ul>
+      <li>Analysis history is capped at 2 records per repository.</li>
+      <li>Cache entries expire after 7 days.</li>
+      <li>Session tokens expire after 24 hours and are cleaned up automatically.</li>
+      <li>Evidence cache entries have a 30-day time-to-live.</li>
+    </ul>
+    <p>When you uninstall the RepoHeal GitHub App, analysis and monitoring data associated with your repositories may be retained in operational backups. Contact the address in Section 8 to request deletion of stored data.</p>
+
+    <h2>7. User Rights</h2>
+    <p>You have the following rights regarding your data:</p>
+    <ul>
+      <li><strong>Uninstall</strong> — you can remove RepoHeal from your GitHub account at any time through GitHub App settings.</li>
+      <li><strong>Access</strong> — you can view all analysis reports, health data, and monitoring configurations through the RepoHeal dashboard.</li>
+      <li><strong>Deletion</strong> — you can request deletion of stored data by contacting the address in Section 8.</li>
+      <li><strong>Correction</strong> — analysis results are automatically regenerated on each analysis run. Triggering a new analysis replaces prior results.</li>
+    </ul>
+
+    <h2>8. Contact</h2>
+    <p>For questions about this privacy policy or to request data deletion, contact:</p>
+    <p><a href="mailto:repoheal@gmail.com">repoheal@gmail.com</a></p>
+
+    <hr>
+    <div class="footer">&copy; 2026 RepoHeal</div>
+  </div>
+</body>
+</html>
