@@ -90,3 +90,59 @@ app.include_router(legal.router)
 @app.get("/login")
 async def login_redirect():
     return RedirectResponse(url="/auth/login-page")
+
+from fastapi import Request
+import os
+import json
+import smtplib
+from email.mime.text import MIMEText
+
+
+@app.post("/github-marketplace-webhook")
+async def github_marketplace_webhook(request: Request):
+    payload = await request.json()
+
+    logger.info(
+        f"GitHub Marketplace Event: "
+        f"{payload.get('action', 'unknown')}"
+    )
+
+    # Optional email notification
+    try:
+        if os.getenv("EMAIL_ENABLED", "false").lower() == "true":
+
+            msg = MIMEText(
+                json.dumps(payload, indent=2)
+            )
+
+            msg["Subject"] = (
+                f"RepoHeal Marketplace: "
+                f"{payload.get('action', 'unknown')}"
+            )
+
+            msg["From"] = os.getenv("SMTP_FROM")
+            msg["To"] = os.getenv("REPORT_RECIPIENT")
+
+            with smtplib.SMTP(
+                os.getenv("SMTP_HOST"),
+                int(os.getenv("SMTP_PORT"))
+            ) as server:
+
+                server.starttls()
+
+                server.login(
+                    os.getenv("SMTP_USER"),
+                    os.getenv("SMTP_PASSWORD")
+                )
+
+                server.send_message(msg)
+
+    except Exception as e:
+        logger.error(
+            f"Marketplace email failed: {e}"
+        )
+
+    return {
+        "status": "ok",
+        "action": payload.get("action")
+    }
