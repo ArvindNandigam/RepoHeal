@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from app.models.schemas import HealthResponse
 from app.db.database import check_mongo_health
+from app.graph.connection import neo4j_connection
 
 router = APIRouter(tags=["health"])
 
@@ -18,7 +19,8 @@ def root():
 def healthz():
     return {
         "status": "healthy",
-        "mongodb": "healthy" if check_mongo_health() else "unhealthy"
+        "mongodb": "healthy" if check_mongo_health() else "unhealthy",
+        "neo4j": "healthy" if neo4j_connection.is_available() else "unhealthy"
     }
 from fastapi import Response
 

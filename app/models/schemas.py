@@ -116,6 +116,7 @@ class WebhookResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     mongodb: Optional[str] = None
+    neo4j: Optional[str] = None
     version: Optional[str] = None
     authentication: Optional[str] = None
     documentation: Optional[str] = None
