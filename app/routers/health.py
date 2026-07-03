@@ -26,4 +26,5 @@ from fastapi import Response
 
 @router.head("/healthz")
 def healthz_head():
+    neo4j_connection.is_available()
     return Response(status_code=200)
