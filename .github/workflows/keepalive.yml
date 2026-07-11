@@ -1,0 +1,16 @@
+name: Keep-Alive Ping
+
+on:
+  schedule:
+    # Run every 10 minutes to prevent Render's 15-minute inactivity sleep
+    - cron: "*/10 * * * *"
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Health Endpoint
+        run: |
+          echo "Pinging RepoHeal to keep Render and Neo4j awake..."
+          curl -f -s https://repoheal.onrender.com/healthz || echo "Ping failed, but workflow will not fail entirely."
