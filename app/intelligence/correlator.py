@@ -217,6 +217,11 @@ class MigrationCorrelator:
                     return response
             except Exception as e:
                 logger.warning(f"Bulk intelligence request failed: {e}")
+                if "429" in str(e) or (hasattr(e, "response") and e.response.status_code == 429):
+                    raise
+                # Only fallback for specific errors like 404 (Not Found) if the endpoint is missing
+                if hasattr(e, "response") and e.response.status_code != 404:
+                    raise
 
         if not hasattr(self.client, "get_symbol_intelligence"):
             return {"results": []}

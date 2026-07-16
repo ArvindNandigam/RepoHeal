@@ -127,7 +127,7 @@ class WebtoolClient:
             raise JobCancelledException("Job was cancelled during request")
 
     async def _request_uncached(self, method: str, endpoint: str, **kwargs):
-        delays = [2, 4, 8, 16, 32, 60]
+        delays = [2, 4, 8, 16, 32, 60, 90, 120, 120, 120]
 
         for attempt in range(len(delays) + 1):
             self._check_cancelled()
@@ -140,11 +140,11 @@ class WebtoolClient:
                 return response.json()
                 
             except (httpx.RequestError, httpx.HTTPStatusError) as e:
-                if (
+                is_429 = (
                     isinstance(e, httpx.HTTPStatusError)
-                    and e.response.status_code == 429
-                    and attempt < len(delays)
-                ):
+                    and (e.response.status_code == 429 or "429" in str(e))
+                )
+                if is_429 and attempt < len(delays):
                     retry_after = e.response.headers.get("Retry-After")
                     try:
                         delay = max(float(retry_after), delays[attempt])
