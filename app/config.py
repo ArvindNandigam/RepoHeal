@@ -36,6 +36,7 @@ class Settings:
     service_version: str = SERVICE_VERSION
     
     # RepoHeal V3 Settings
+    gemini_api_key: str | None = None
     groq_api_key: str | None = None
     groq_model: str = "llama-3.3-70b-versatile"
     max_search_results: int = 20
@@ -74,6 +75,7 @@ class Settings:
             if domain.strip()
         )
         
+        gemini_api_key = os.getenv("GEMINI_KEY", "").strip() or None
         groq_api_key = os.getenv("GROQ_API_KEY", "").strip() or None
         groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
         max_search_results = int(os.getenv("MAX_SEARCH_RESULTS", "20"))
@@ -99,6 +101,7 @@ class Settings:
             upstream_retry_count=upstream_retry_count,
             internal_api_key=internal_api_key,
             allowed_domains=allowed_domains,
+            gemini_api_key=gemini_api_key,
             groq_api_key=groq_api_key,
             groq_model=groq_model,
             max_search_results=max_search_results,

@@ -4,6 +4,7 @@ import json
 import logging
 import time
 from groq import Groq, BadRequestError, APIStatusError
+import google.generativeai as genai
 
 from app.config import get_settings
 
@@ -271,20 +272,59 @@ def _try_extraction(
     return []
 
 
+
+def _try_extraction_gemini(
+    model_name: str,
+    symbol: str,
+    library: str,
+    user_prompt: str,
+) -> list[dict]:
+    try:
+        model = genai.GenerativeModel(model_name)
+        prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}"
+        logger.debug("Gemini call: library=%s symbol=%s model=%s", library, symbol, model_name)
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                response_mime_type="application/json",
+                temperature=0,
+            )
+        )
+        if response and response.text:
+            rels = _parse_json_response(response.text)
+            for r in rels:
+                r["extraction_method"] = "gemini"
+            return rels
+    except Exception as e:
+        logger.warning("Gemini extraction failed (library=%s symbol=%s model=%s): %s", library, symbol, model_name, e)
+    return []
+
+
 def extract_relationships_groq_batch(library: str, targets: list[dict]) -> tuple[dict[str, list[dict]], bool]:
     """Returns mapping of symbol -> relationships, and budget_exhausted bool."""
     _check_key_change()
     settings = get_settings()
-    api_key = settings.groq_api_key
-    if not api_key:
-        logger.warning("GROQ_API_KEY not set. Cannot run LLM extraction.")
-        return {}, False
+    
+    # Configure Gemini
+    gemini_key = settings.gemini_api_key
+    has_gemini = False
+    if gemini_key:
+        try:
+            genai.configure(api_key=gemini_key)
+            has_gemini = True
+        except Exception as e:
+            logger.warning("Failed to configure Gemini: %s", e)
 
-    client = Groq(api_key=api_key)
+    api_key = settings.groq_api_key
+    client = Groq(api_key=api_key) if api_key else None
     primary_model = settings.groq_model
 
+    if not has_gemini and not client:
+        logger.warning("Neither GEMINI_KEY nor GROQ_API_KEY set. Cannot run LLM extraction.")
+        return {}, False
+
     batches = _batch_targets(targets, library)
-    logger.info("Groq: %d target(s) split into %d batch(es)", len(targets), len(batches))
+    logger.info("LLM: %d target(s) split into %d batch(es)", len(targets), len(batches))
 
     results_map = {}
     budget_exhausted = False
@@ -294,29 +334,42 @@ def extract_relationships_groq_batch(library: str, targets: list[dict]) -> tuple
         prompt_tokens = len(user_prompt) // 4 + len(SYSTEM_PROMPT) // 4
         total_needed = prompt_tokens + 2048
 
-        can_proceed, skip_reason = _can_make_request(total_needed)
-        if not can_proceed:
-            budget_exhausted = True
-            continue
+        # --- Layer 1: Gemini ---
+        rels = []
+        if has_gemini:
+            # Simple rate limiting for Gemini free tier (15 RPM)
+            import time
+            if i > 0:
+                time.sleep(4.1)  # To stay under 15 RPM ~ 4s per request
+            rels = _try_extraction_gemini("gemini-1.5-flash", "BATCH", library, user_prompt)
+        
+        # --- Layer 2: Groq Fallback ---
+        if not rels and client:
+            logger.info("Falling back to Groq for batch %d", i)
+            can_proceed, skip_reason = _can_make_request(total_needed)
+            if not can_proceed:
+                budget_exhausted = True
+                continue
 
-        rpm_wait = _check_rpm_budget()
-        tpm_wait = _check_tpm_budget(total_needed)
-        wait = max(rpm_wait, tpm_wait)
-        if wait > 0:
-            logger.info("Groq rate-limit wait: %.1fs before batch %d", wait, i)
-            time.sleep(wait)
-        elif i > 0:
-            time.sleep(_SAFE_WAIT_SECONDS)
+            rpm_wait = _check_rpm_budget()
+            tpm_wait = _check_tpm_budget(total_needed)
+            wait = max(rpm_wait, tpm_wait)
+            import time
+            if wait > 0:
+                logger.info("Groq rate-limit wait: %.1fs before batch %d", wait, i)
+                time.sleep(wait)
+            elif i > 0:
+                time.sleep(_SAFE_WAIT_SECONDS)
 
-        # Record BEFORE the call so rate tracking is accurate even on empty responses
-        _record_request(total_needed)
-
-        rels = _try_extraction(client, primary_model, "BATCH", library, user_prompt)
-        if not rels and primary_model != _FALLBACK_MODEL:
-            time.sleep(_SAFE_WAIT_SECONDS)
+            # Record BEFORE the call so rate tracking is accurate even on empty responses
             _record_request(total_needed)
-            rels = _try_extraction(client, _FALLBACK_MODEL, "BATCH", library, user_prompt)
 
+            rels = _try_extraction(client, primary_model, "BATCH", library, user_prompt)
+            if not rels and primary_model != _FALLBACK_MODEL:
+                time.sleep(_SAFE_WAIT_SECONDS)
+                _record_request(total_needed)
+                rels = _try_extraction(client, _FALLBACK_MODEL, "BATCH", library, user_prompt)
+            
         if rels:
             for rel in rels:
                 sym = rel.get("from")
