@@ -55,7 +55,7 @@ class Settings:
     smtp_from: str = ""
     report_recipient: str = ""
     report_hour: int = 6  # UTC hour to send daily report
-    resend_api_key: str | None = None
+    sendgrid_api_key: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -92,7 +92,7 @@ class Settings:
         smtp_from = os.getenv("SMTP_FROM", "").strip()
         report_recipient = os.getenv("REPORT_RECIPIENT", "").strip()
         report_hour = int(os.getenv("REPORT_HOUR", "6"))
-        resend_api_key = os.getenv("RESEND_API_KEY", "").strip() or None
+        sendgrid_api_key = os.getenv("SENDGRID_API_KEY", "").strip() or None
 
         return cls(
             mongodb_uri=mongodb_uri,
@@ -118,7 +118,7 @@ class Settings:
             smtp_from=smtp_from,
             report_recipient=report_recipient,
             report_hour=report_hour,
-            resend_api_key=resend_api_key,
+            sendgrid_api_key=sendgrid_api_key,
         )
 
 

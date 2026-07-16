@@ -18,10 +18,42 @@ def send_email(
     body: str,
 ) -> bool:
     settings = get_settings()
-    api_key = settings.resend_api_key
+    api_key = settings.sendgrid_api_key
     
     if not from_addr or not to_addr or not api_key:
-        logger.warning("Email not configured (RESEND_API_KEY missing) — skipping send")
+        logger.warning("Email not configured (SENDGRID_API_KEY missing) — skipping send")
+        return False
+        
+    try:
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "personalizations": [{"to": [{"email": to_addr}], "subject": subject}],
+            "from": {"email": from_addr},
+            "content": [
+                {"type": "text/plain", "value": body}
+            ]
+        }
+
+        response = httpx.post(
+            "https://api.sendgrid.com/v3/mail/send",
+            headers=headers,
+            json=payload,
+            timeout=10.0
+        )
+
+        if response.status_code in (200, 201, 202):
+            logger.info("Email sent to %s: %s", to_addr, subject)
+            return True
+        else:
+            logger.error("Failed to send email. SendGrid API returned %s: %s", response.status_code, response.text)
+            return False
+            
+    except Exception as e:
+        logger.error("Failed to send email: %s", e)
         return False
         
     try:
