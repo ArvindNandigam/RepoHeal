@@ -79,6 +79,7 @@ class Settings:
     SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
     EMAIL_FROM = os.getenv("EMAIL_FROM") or os.getenv("SMTP_FROM", "repoheal@noreply.local")
     REPORT_RECIPIENT = os.getenv("REPORT_RECIPIENT", "")
+    RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 
 settings = Settings()
 

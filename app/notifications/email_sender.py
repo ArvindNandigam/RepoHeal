@@ -1,7 +1,4 @@
-import smtplib
-import ssl
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import httpx
 from typing import Any
 
 from app.config import settings
@@ -19,7 +16,7 @@ def send_digest_email(
         logger.info(f"Email disabled, skipping digest for {repository}")
         return False
 
-    subject = f"RepoHeal Weekly Digest — {repository}"
+    subject = f"RepoHeal Weekly Digest â€” {repository}"
     html = _render_digest_html(repository, digest)
     text = _render_digest_text(repository, digest)
 
@@ -34,7 +31,7 @@ def _render_digest_html(repository: str, digest: dict[str, Any]) -> str:
 
     trend_html = ""
     if health_trend is not None:
-        emoji = "🟢" if health_trend >= 0 else "🔴"
+        emoji = "ðŸŸ¢" if health_trend >= 0 else "ðŸ”´"
         direction = "improved" if health_trend >= 0 else "declined"
         trend_html = f"<p>Health score {direction} by <strong>{abs(health_trend)}</strong> points.</p>"
 
@@ -45,7 +42,7 @@ def _render_digest_html(repository: str, digest: dict[str, Any]) -> str:
     deps_html = ""
     if dep_updates:
         for d in dep_updates[:10]:
-            deps_html += f"<li>{d.get('package', '?')}: {d.get('old_version', '?')} → {d.get('new_version', '?')}</li>"
+            deps_html += f"<li>{d.get('package', '?')}: {d.get('old_version', '?')} â†’ {d.get('new_version', '?')}</li>"
         deps_html = f"<ul>{deps_html}</ul>" if deps_html else ""
 
     return f"""<!DOCTYPE html>
@@ -78,7 +75,7 @@ def _render_digest_text(repository: str, digest: dict[str, Any]) -> str:
     health_trend = digest.get("health_trend")
     recommendations = digest.get("recommendations", [])
 
-    lines = [f"RepoHeal Weekly Digest — {repository}", "=" * 40, ""]
+    lines = [f"RepoHeal Weekly Digest â€” {repository}", "=" * 40, ""]
     if health_trend is not None:
         direction = "improved" if health_trend >= 0 else "declined"
         lines.append(f"Health score {direction} by {abs(health_trend)} points.")
@@ -91,22 +88,39 @@ def _render_digest_text(repository: str, digest: dict[str, Any]) -> str:
 
 def _send_email(to_email: str, subject: str, text: str, html: str) -> bool:
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = settings.EMAIL_FROM
-        msg["To"] = to_email
-        msg.attach(MIMEText(text, "plain"))
-        msg.attach(MIMEText(html, "html"))
+        api_key = settings.RESEND_API_KEY
+        if not api_key:
+            logger.error("Failed to send digest email: RESEND_API_KEY is not set.")
+            return False
 
-        context = ssl.create_default_context()
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-            server.starttls(context=context)
-            if settings.SMTP_USER:
-                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.EMAIL_FROM, [to_email], msg.as_string())
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "from": settings.EMAIL_FROM,
+            "to": [to_email],
+            "subject": subject,
+            "text": text,
+            "html": html
+        }
 
-        logger.info(f"Digest email sent to {to_email} for subject '{subject}'")
-        return True
+        # Use httpx to send a POST request to Resend API
+        response = httpx.post(
+            "https://api.resend.com/emails",
+            headers=headers,
+            json=payload,
+            timeout=10.0
+        )
+
+        if response.status_code in (200, 201):
+            logger.info(f"Digest email sent to {to_email} for subject '{subject}'")
+            return True
+        else:
+            logger.error(f"Failed to send digest email. Resend API returned {response.status_code}: {response.text}")
+            return False
+            
     except Exception as e:
         logger.error(f"Failed to send digest email: {e}")
         return False
