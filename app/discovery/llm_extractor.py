@@ -12,11 +12,9 @@ logger = logging.getLogger(__name__)
 _SEPARATOR = "\n\n---\n\n"
 _FALLBACK_MODEL = "llama-3.1-8b-instant"
 
-# Groq free tier limits for llama-3.3-70b-versatile (confirmed 2026-06):
+# Groq FREE tier limits for llama-3.3-70b-versatile:
 #   RPM: 30, RPD: 1,000, TPM: 12,000, TPD: 100,000
-# 1 token ~= 4 chars. Leave ~2K tokens for completion budget.
-# Max prompt tokens ~4,000 -> ~16,000 chars total.
-# System prompt ~700 chars, header variable. Safe snippet budget: 12,000 chars.
+# 1 token ~= 4 chars. Safe snippet budget: 12,000 chars.
 _MAX_BATCH_CHARS = 12_000
 
 _RPM_LIMIT = 30

@@ -85,7 +85,7 @@ async def _resolve_symbol_intelligence(
 
 
 @router.post("/symbol-intelligence")
-@limiter.limit("3000/minute")
+@limiter.limit("6000/minute")
 async def symbol_intelligence(
     request: Request,
     service: MigrationEngine = Depends(get_migration_engine),
@@ -107,7 +107,7 @@ async def symbol_intelligence(
 
 
 @router.post("/debug-symbol-intelligence")
-@limiter.limit("3000/minute")
+@limiter.limit("6000/minute")
 async def debug_symbol_intelligence(
     request: Request,
     service: MigrationEngine = Depends(get_migration_engine),
