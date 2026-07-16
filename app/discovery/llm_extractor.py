@@ -4,7 +4,12 @@ import json
 import logging
 import time
 from groq import Groq, BadRequestError, APIStatusError
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+    _HAS_GENAI = True
+except ImportError:
+    genai = None
+    _HAS_GENAI = False
 
 from app.config import get_settings
 
@@ -308,7 +313,7 @@ def extract_relationships_groq_batch(library: str, targets: list[dict]) -> tuple
     # Configure Gemini
     gemini_key = settings.gemini_api_key
     has_gemini = False
-    if gemini_key:
+    if _HAS_GENAI and gemini_key:
         try:
             genai.configure(api_key=gemini_key)
             has_gemini = True
