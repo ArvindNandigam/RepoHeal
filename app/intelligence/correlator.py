@@ -102,17 +102,15 @@ class MigrationCorrelator:
             total_symbols += len(symbols)
 
         libraries_checked = len(requests)
-        for offset in range(0, len(requests), 25):
-            batch = requests[offset:offset + 25]
+        for idx, item in enumerate(requests):
             try:
-                response = await self._fetch_batch_intelligence(batch)
+                response = await self._fetch_batch_intelligence([item])
             except Exception as e:
-                batch_names = ", ".join(item["library"] for item in batch)
                 error_msg = str(e)
                 if hasattr(e, "response") and hasattr(e.response, "text"):
                     error_msg += f" - Response: {e.response.text}"
-                logger.error(f"Error fetching bulk intelligence for {batch_names}: {error_msg}")
-                errors.append(f"{batch_names}: {error_msg}")
+                logger.error(f"Error fetching intelligence for {item['library']}: {error_msg}")
+                errors.append(f"{item['library']}: {error_msg}")
                 continue
 
             for library_response in response.get("results", []):
