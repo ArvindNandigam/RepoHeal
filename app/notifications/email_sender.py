@@ -88,10 +88,42 @@ def _render_digest_text(repository: str, digest: dict[str, Any]) -> str:
 
 def _send_email(to_email: str, subject: str, text: str, html: str) -> bool:
     try:
-        api_key = settings.RESEND_API_KEY
+        api_key = settings.SENDGRID_API_KEY
         if not api_key:
-            logger.error("Failed to send digest email: RESEND_API_KEY is not set.")
+            logger.error("Failed to send digest email: SENDGRID_API_KEY is not set.")
             return False
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "personalizations": [{"to": [{"email": to_email}], "subject": subject}],
+            "from": {"email": settings.EMAIL_FROM},
+            "content": [
+                {"type": "text/plain", "value": text},
+                {"type": "text/html", "value": html}
+            ]
+        }
+
+        response = httpx.post(
+            "https://api.sendgrid.com/v3/mail/send",
+            headers=headers,
+            json=payload,
+            timeout=10.0
+        )
+
+        if response.status_code in (200, 201, 202):
+            logger.info(f"Digest email sent to {to_email} for subject '{subject}'")
+            return True
+        else:
+            logger.error(f"Failed to send digest email. SendGrid API returned {response.status_code}: {response.text}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Failed to send digest email: {e}")
+        return False
 
         headers = {
             "Authorization": f"Bearer {api_key}",
