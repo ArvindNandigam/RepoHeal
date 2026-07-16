@@ -27,7 +27,7 @@ MAX_LIBRARIES_PER_REQUEST = 25
 class Settings:
     mongodb_uri: str
     mongodb_database: str = "repoheal"
-    cache_expiry_days: int = 7
+    cache_expiry_days: int = 30
     port: int = 8000
     upstream_timeout_seconds: float = 15.0
     upstream_retry_count: int = 3
@@ -62,7 +62,7 @@ class Settings:
             raise ValueError("MONGODB_URI is required")
 
         mongodb_database = os.getenv("MONGODB_DATABASE", "repoheal").strip() or "repoheal"
-        cache_expiry_days = int(os.getenv("CACHE_EXPIRY_DAYS", "7"))
+        cache_expiry_days = int(os.getenv("CACHE_EXPIRY_DAYS", "30"))
         port = int(os.getenv("PORT", "8000"))
         upstream_timeout_seconds = float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "15"))
         upstream_retry_count = int(os.getenv("UPSTREAM_RETRY_COUNT", "3"))

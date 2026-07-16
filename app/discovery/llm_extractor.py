@@ -137,33 +137,46 @@ Use "deprecated_in_favor_of" when the old symbol is deprecated and a replacement
 """
 
 
-def _build_user_prompt(symbol: str, library: str, batch: list[str], source_context: list[dict]) -> str:
-    context_str = json.dumps(
-        [{"title": c.get("title"), "url": c.get("url")} for c in source_context], indent=2
-    ) if source_context else "[]"
-    combined = _SEPARATOR.join(batch)
-    return (
-        f"Target symbol: {symbol}\nLibrary: {library}\n\n"
-        f"Ranked Sources:\n{context_str}\n\nSnippets:\n{combined}"
-    )
+def _build_batch_user_prompt(library: str, target_batch: list[dict]) -> str:
+    import json
+    parts = [f"Library: {library}\n"]
+    for target in target_batch:
+        symbol = target["symbol"]
+        snippets = target["snippets"]
+        context_str = json.dumps(
+            [{"title": c.get("title"), "url": c.get("url")} for c in target.get("source_context", [])], indent=2
+        ) if target.get("source_context") else "[]"
+        combined = "\n---\n".join(snippets)
+        parts.append(f"--- TARGET SYMBOL: {symbol} ---")
+        parts.append(f"Ranked Sources:\n{context_str}\n\nSnippets:\n{combined}\n")
+    return "\n".join(parts)
 
 
-def _batch_snippets(snippets: list[str], symbol: str, library: str, source_context: list[dict]) -> list[list[str]]:
-    header = _build_user_prompt(symbol, library, [], source_context)
-    overhead = len(SYSTEM_PROMPT) + len(header)
+def _batch_targets(targets: list[dict], library: str) -> list[list[dict]]:
+    overhead = len(SYSTEM_PROMPT) + len(f"Library: {library}\n")
+    batches = []
+    current_batch = []
+    current_size = overhead
 
-    batches: list[list[str]] = []
-    current_batch: list[str] = []
-    current_size = 0
-
-    for s in snippets:
-        cost = len(s) + len(_SEPARATOR)
-        batch_header = overhead + len(_SEPARATOR) * max(0, len(current_batch))
-        if current_batch and (current_size + cost + batch_header > _MAX_BATCH_CHARS):
+    for target in targets:
+        symbol = target["symbol"]
+        snippets = target["snippets"]
+        
+        # Calculate cost for this target
+        import json
+        context_str = json.dumps(
+            [{"title": c.get("title"), "url": c.get("url")} for c in target.get("source_context", [])], indent=2
+        ) if target.get("source_context") else "[]"
+        combined = "\n---\n".join(snippets)
+        target_str = f"--- TARGET SYMBOL: {symbol} ---\nRanked Sources:\n{context_str}\n\nSnippets:\n{combined}\n\n"
+        cost = len(target_str)
+        
+        if current_batch and (current_size + cost > 25000): # _MAX_BATCH_CHARS
             batches.append(current_batch)
             current_batch = []
-            current_size = 0
-        current_batch.append(s)
+            current_size = overhead
+        
+        current_batch.append(target)
         current_size += cost
 
     if current_batch:
@@ -260,65 +273,52 @@ def _try_extraction(
     return []
 
 
-def extract_relationships_groq(symbol: str, library: str, snippets: list[str], source_context: list[dict]) -> tuple[list[dict], bool]:
-    """Returns (relationships, budget_exhausted).
-    budget_exhausted is True if any batch was skipped due to RPD/TPD exhaustion.
-    """
+def extract_relationships_groq_batch(library: str, targets: list[dict]) -> tuple[dict[str, list[dict]], bool]:
+    """Returns mapping of symbol -> relationships, and budget_exhausted bool."""
     _check_key_change()
     settings = get_settings()
     api_key = settings.groq_api_key
     if not api_key:
         logger.warning("GROQ_API_KEY not set. Cannot run LLM extraction.")
-        return [], False
+        return {}, False
 
     client = Groq(api_key=api_key)
     primary_model = settings.groq_model
 
-    batches = _batch_snippets(snippets, symbol, library, source_context)
-    logger.info("Groq: %d snippet(s) split into %d batch(es) at %d chars/batch",
-                len(snippets), len(batches), _MAX_BATCH_CHARS)
+    batches = _batch_targets(targets, library)
+    logger.info("Groq: %d target(s) split into %d batch(es)", len(targets), len(batches))
 
-    all_rels: list[dict] = []
+    results_map = {}
     budget_exhausted = False
 
     for i, batch in enumerate(batches):
-        user_prompt = _build_user_prompt(symbol, library, batch, source_context)
+        user_prompt = _build_batch_user_prompt(library, batch)
         prompt_tokens = len(user_prompt) // 4 + len(SYSTEM_PROMPT) // 4
         total_needed = prompt_tokens + 2048
-        logger.debug("Batch %d/%d: ~%d tokens", i + 1, len(batches), prompt_tokens)
 
-        # Check all daily budgets — skip if any exhausted
         can_proceed, skip_reason = _can_make_request(total_needed)
         if not can_proceed:
-            logger.warning("%s budget exhausted, skipping batch %d/%d", skip_reason, i + 1, len(batches))
             budget_exhausted = True
             continue
 
-        # Pace to stay under per-minute limits (RPM + TPM)
         rpm_wait = _check_rpm_budget()
         tpm_wait = _check_tpm_budget(total_needed)
         wait = max(rpm_wait, tpm_wait)
+        import time
         if wait > 0:
-            logger.debug("Pacing: sleeping %.1fs before batch %d/%d", wait, i + 1, len(batches))
             time.sleep(wait)
         elif i > 0:
             time.sleep(_SAFE_WAIT_SECONDS)
 
-        # Try primary model first
-        rels = _try_extraction(client, primary_model, symbol, library, user_prompt)
+        rels = _try_extraction(client, primary_model, "BATCH", library, user_prompt)
+        if not rels and primary_model != _FALLBACK_MODEL:
+            rels = _try_extraction(client, _FALLBACK_MODEL, "BATCH", library, user_prompt)
+            
         if rels:
             _record_request(total_needed)
-            logger.info("Groq batch %d/%d: extracted %d relationship(s)", i + 1, len(batches), len(rels))
-            all_rels.extend(rels)
-            continue
+            for rel in rels:
+                sym = rel.get("from")
+                if sym:
+                    results_map.setdefault(sym, []).append(rel)
 
-        # Fallback to secondary model if primary returned nothing
-        if primary_model != _FALLBACK_MODEL:
-            logger.info("Groq primary model %s returned nothing, trying fallback %s", primary_model, _FALLBACK_MODEL)
-            rels = _try_extraction(client, _FALLBACK_MODEL, symbol, library, user_prompt)
-            if rels:
-                _record_request(total_needed)
-                logger.info("Groq batch %d/%d: extracted %d relationship(s)", i + 1, len(batches), len(rels))
-                all_rels.extend(rels)
-
-    return all_rels, budget_exhausted
+    return results_map, budget_exhausted

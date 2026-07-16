@@ -46,6 +46,11 @@ class KnowledgeRepository:
             self.relationships.create_index("library")
             self.evidence.create_index("relationship_id")
             # TTL: auto-delete evidence older than cache expiry to save disk space
+            # Note: If TTL changes, create_index fails unless we drop it first
+            try:
+                self.evidence.drop_index("retrieved_at_1")
+            except pymongo.errors.OperationFailure:
+                pass
             self.evidence.create_index("retrieved_at", expireAfterSeconds=86400 * 30)
             self.libraries.create_index("library", unique=True)
         except pymongo.errors.PyMongoError as e:
@@ -163,8 +168,29 @@ class KnowledgeRepository:
                 "snippet": snippet,
                 "retrieved_at": now,
             })
+            
+            # Non-blocking size check
+            self._manage_cache_size()
         except pymongo.errors.PyMongoError as e:
             logger.warning("MongoDB write failed (insert_evidence %s): %s", relationship_id, e)
+
+    def _manage_cache_size(self) -> None:
+        # Cache limit: 50MB (52,428,800 bytes)
+        MAX_CACHE_SIZE_BYTES = 52_428_800
+        try:
+            # Get collection stats for evidence, which dominates cache size
+            stats = self.database.command("collStats", "evidence")
+            size = stats.get("size", 0)
+            
+            if size > MAX_CACHE_SIZE_BYTES:
+                # Need to clear some space. We'll delete oldest 100 records
+                logger.warning(f"Cache size {size} > {MAX_CACHE_SIZE_BYTES}, evicting oldest evidence...")
+                oldest = list(self.evidence.find({}, {"_id": 1}).sort("retrieved_at", 1).limit(100))
+                if oldest:
+                    ids_to_delete = [doc["_id"] for doc in oldest]
+                    self.evidence.delete_many({"_id": {"$in": ids_to_delete}})
+        except Exception as e:
+            logger.warning(f"Failed to manage cache size: {e}")
 
     def lookup_evidence(self, relationship_id: ObjectId) -> list[dict[str, Any]]:
         records = list(self.evidence.find({"relationship_id": relationship_id}))

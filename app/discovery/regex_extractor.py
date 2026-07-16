@@ -9,7 +9,7 @@ _VERSION_NUM_RE = re.compile(r"^v?\d+(\.\d+)*$")
 _PROSE_WITH_DOTS = {
     "deprecated.since", "removed.in", "replaced.by", "use.instead",
     "none.null", "true.false", "version.x", "see.also", "note.that",
-    "e.g", "i.e", "et.al", "w.r.t",
+    "e.g", "i.e", "et.al", "w.r.t", "vs.", "approx.", "etc.",
 }
 
 def normalize_symbol(raw: str) -> str:
@@ -118,7 +118,7 @@ def extract_arrow_patterns(text: str) -> list[dict]:
             })
 
     # "removed in version X"
-    removed_phrases = r"(?:is\s+)?removed\s+(?:as\s+of|since|from|in)\s+(?:version\s+)?([\d.]+)"
+    removed_phrases = r"(?:is\s+|will\s+be\s+|scheduled\s+for\s+removal\s+in\s+)?removed\s+(?:as\s+of|since|from|in)\s+(?:version\s+)?([\d.]+)"
     removed_pattern = rf"([a-zA-Z0-9_\.]+)\s*(?:\(\))?\s*{removed_phrases}"
     for match in re.finditer(removed_pattern, text, re.IGNORECASE):
         from_sym = normalize_symbol(match.group(1))
@@ -133,7 +133,7 @@ def extract_arrow_patterns(text: str) -> list[dict]:
             })
 
     # Forward transition patterns
-    forward_phrases = r"(?:->|→|(?:was\s+|is\s+|has\s+been\s+)?replaced\s+by|(?:was\s+|is\s+|has\s+been\s+)?renamed\s+to|(?:was\s+|is\s+|has\s+been\s+)?migrated\s+to|(?:was\s+|is\s+|has\s+been\s+)?superseded\s+by|becomes|(?:was\s+|is\s+|has\s+been\s+)?replaced\s+with|should\s+be\s+replaced\s+with|is\s+no\s+longer\s+supported;?\s*use)"
+    forward_phrases = r"(?:->|→|(?:was\s+|is\s+|has\s+been\s+)?replaced\s+by|(?:was\s+|is\s+|has\s+been\s+)?renamed\s+to|(?:was\s+|is\s+|has\s+been\s+)?migrated\s+to|(?:was\s+|is\s+|has\s+been\s+)?superseded\s+by|becomes|(?:was\s+|is\s+|has\s+been\s+)?replaced\s+with|should\s+be\s+replaced\s+with|is\s+no\s+longer\s+supported;?\s*use|is\s+now)"
 
     pattern = rf"([a-zA-Z0-9_\.]+)\s*(?:\(\))?\s*{forward_phrases}\s*([a-zA-Z0-9_\.]+)(?:\(\))?"
 

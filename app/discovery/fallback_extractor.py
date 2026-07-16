@@ -235,6 +235,20 @@ def extract_relationships_fallback(symbol: str, library: str) -> list[dict]:
         })
         return rels
 
+    # Strategy 2c: Internal module stripping heuristic (e.g., library._internal.symbol -> library.symbol)
+    if "._" in symbol or ".internal." in symbol:
+        stripped = re.sub(r"\._[^.]+\.", ".", symbol)
+        stripped = stripped.replace(".internal.", ".")
+        if stripped != symbol:
+            rels.append({
+                "from": symbol,
+                "relation": "replaced_by",
+                "to": stripped,
+                "confidence": 0.6,
+                "extraction_method": "fallback",
+            })
+            return rels
+
     # Strategy 3: Name-based heuristics (version suffix stripping, etc.)
     parts = _get_symbol_parts(symbol)
     if parts:

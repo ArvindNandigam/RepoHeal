@@ -10,7 +10,7 @@ from app.knowledge.knowledge_base import add_to_knowledge_base
 from app.discovery.web_search import generate_search_queries, serper_search, rank_sources
 from app.discovery.document_extractor import fetch_page, extract_relevant_sections
 from app.discovery.regex_extractor import extract_relationships_regex
-from app.discovery.llm_extractor import extract_relationships_groq
+from app.discovery.llm_extractor import extract_relationships_groq_batch
 from app.discovery.fallback_extractor import extract_relationships_fallback
 from app.discovery.validation import validate_relationship
 from app.services.version_resolver import resolve_library_metadata
@@ -61,90 +61,64 @@ class MigrationEngine:
 
     def resolve(self, library: str, symbols: list[str], debug: bool = False) -> dict[str, Any]:
         """
-        For EACH symbol independently:
-        1. Mongo lookup (symbols + relationships)
-        2. If hit -> return immediately
-        3. If miss -> run discovery pipeline
-        4. Store discoveries as candidates
-        5. If rediscovered -> promote to verified
+        Main entry point for discovery.
         """
-        
-        # 1. Ensure Library Exists
-        lib_doc = self.knowledge_repository.lookup_library(library)
-        if not lib_doc:
-            metadata = resolve_library_metadata(library)
-            self.knowledge_repository.upsert_library(
-                library=library,
-                latest_version=metadata.get("latest_version"),
-                official_docs=metadata.get("official_docs"),
-                github_repo=metadata.get("github_repo"),
-                pypi_url=metadata.get("pypi_url"),
-            )
-            lib_doc = self.knowledge_repository.lookup_library(library)
-            
-        latest_version = lib_doc.get("latest_version") if lib_doc else None
-        
-        results = []
-        _overall_budget_exhausted = False
-        
-        for symbol in symbols:
-            # Step 1: Mongo Lookup
-            known_symbol = self.knowledge_repository.lookup_symbol(symbol)
-            known_relationships = self.knowledge_repository.lookup_relationships(symbol)
-            
-            if known_symbol and known_relationships:
-                # Cache HIT — symbol has relationships
-                # Check if cache is still fresh; if expired, re-run discovery
-                updated_at = known_symbol.get("updated_at")
-                if updated_at:
-                    expiry = timedelta(days=get_settings().cache_expiry_days)
-                    if datetime.now(timezone.utc) - updated_at > expiry:
-                        if debug:
-                            logger.info("Symbol %s cache expired, re-running discovery", symbol)
-                        # Don't return cache — fall through to discovery
-                    else:
-                        results.append({
-                            "symbol": symbol,
-                            "known": True,
-                            "relationships": known_relationships,
-                            "_debug": {"flow": "mongo_hit"} if debug else None
-                        })
-                        continue
-                else:
-                    results.append({
-                        "symbol": symbol,
-                        "known": True,
-                        "relationships": known_relationships,
-                        "_debug": {"flow": "mongo_hit"} if debug else None
-                    })
-                    continue
+        logger.info("Resolving %d symbols for %s", len(symbols), library)
 
-            if known_symbol and not known_relationships:
-                # Symbol exists but has stale/empty relationships — re-run discovery
-                # (don't return cached empty — fall through to discovery below)
-                if debug:
-                    logger.info("Symbol %s has empty relationships, re-running discovery", symbol)
+        _overall_budget_exhausted = False
+        results: list[dict] = []
+        
+        # Determine library context
+        library_record = self.knowledge_repository.lookup_library(library)
+        if not library_record:
+            meta = resolve_library_metadata(library)
+            if meta:
+                self.knowledge_repository.upsert_library(
+                    library=library,
+                    latest_version=meta.get("latest_version"),
+                    official_docs=meta.get("official_docs"),
+                    github_repo=meta.get("github_repo"),
+                    pypi_url=meta.get("pypi_url")
+                )
+                latest_version = meta.get("latest_version")
+            else:
+                self.knowledge_repository.upsert_library(library=library)
+                latest_version = None
+        else:
+            latest_version = library_record.get("latest_version")
+
+        groq_pending = []
+        symbol_data_map = {}
+
+        # PHASE 1 & 2: Search, Regex, Fallback
+        for symbol in symbols:
+            # Step 1: Check knowledge base (Level 1 + 2)
+            known_relationships = self.knowledge_repository.lookup_relationships(symbol)
+            if known_relationships:
+                # Refresh cache timestamp
+                for rel in known_relationships:
+                    self.knowledge_repository.increment_supporting_sources(rel["_id"])
                 
-            # Miss: we don't know the symbol — run discovery first, insert after
-                
+                results.append({
+                    "symbol": symbol,
+                    "known": True,
+                    "relationships": known_relationships,
+                    "_debug": {"cached": True} if debug else None
+                })
+                continue
+            
             debug_trace = {
-                "flow": "discovery",
-                "search_provider": "serper",
                 "queries": [],
-                "raw_results_count": 0,
-                "ranked_results": [],
                 "urls_fetched": [],
+                "raw_results_count": 0,
                 "snippets_extracted": [],
-                "relationships_extracted": [],
                 "regex_used": False,
-                "groq_used": False,
-                "groq_failed": False,
-                "groq_skip_reason": None,
+                "regex_relationships": [],
                 "fallback_used": False,
                 "fallback_relationships": [],
-                "skip_reason": None,
-                "regex_relationships": [],
+                "groq_used": False,
                 "groq_relationships": [],
+                "relationships_extracted": [],
                 "deduplicated_relationships": [],
                 "validation_results": [],
                 "rejected_relationships": [],
@@ -160,12 +134,7 @@ class MigrationEngine:
             ranked_results = rank_sources(search_results)
             if debug: debug_trace["ranked_results"] = [{"title": r.get("title"), "url": r.get("url"), "score": r.get("score")} for r in ranked_results]
             
-            # Step 3 & 4: Fetch pages and extraction (HYBRID mode)
-            # Fetch ALL pages first, then run regex, Groq, and fallback,
-            # then merge and deduplicate results from all extractors.
-            
             page_data_cache = []
-            
             for result in ranked_results:
                 url = result.get("url")
                 if not url: continue
@@ -179,19 +148,16 @@ class MigrationEngine:
                 if debug: debug_trace["snippets_extracted"].extend(snippets)
                 
                 page_data_cache.append({"url": url, "page_text": page_text, "snippets": snippets})
-            
-            # PHASE 1: Fallback — runs UNCONDITIONALLY (independent of search/fetch success)
+
             fallback_rels = extract_relationships_fallback(symbol, library)
             
             if not page_data_cache:
-                # No content fetched from web — rely on fallback if available
                 if debug: debug_trace["skip_reason"] = "no_page_content"
                 if fallback_rels:
                     if debug:
                         debug_trace["fallback_used"] = True
                         debug_trace["fallback_relationships"].extend(fallback_rels)
                         debug_trace["relationships_extracted"].extend(fallback_rels)
-                    logger.info("Fallback matched %d known migration rules for %s.%s", len(fallback_rels), library, symbol)
                     for rel in fallback_rels:
                         rel_id = self.knowledge_repository.insert_relationship(
                             from_sym=rel.get("from"), relation=rel.get("relation"), to_sym=rel.get("to"),
@@ -209,11 +175,9 @@ class MigrationEngine:
                     "_debug": debug_trace
                 })
                 continue
-            
-            # Run all extractors on fetched content
+
             all_rels = []
             
-            # PHASE 2: Regex extraction on every page
             if debug: debug_trace["regex_used"] = True
             for page_data in page_data_cache:
                 regex_rels = extract_relationships_regex(symbol, library, page_data["snippets"])
@@ -223,66 +187,77 @@ class MigrationEngine:
                         debug_trace["relationships_extracted"].extend(regex_rels)
                     all_rels.extend(regex_rels)
 
-            # PHASE 3: Merge fallback results (already fetched unconditionally above)
             if fallback_rels:
                 if debug:
                     debug_trace["fallback_used"] = True
                     debug_trace["fallback_relationships"].extend(fallback_rels)
                     debug_trace["relationships_extracted"].extend(fallback_rels)
-                logger.info("Fallback matched %d known migration rules for %s.%s", len(fallback_rels), library, symbol)
                 all_rels.extend(fallback_rels)
-            
-            # PHASE 4: Groq — ONLY if fallback + regex found nothing useful
-            groq_budget_exhausted = False
+
+            symbol_data_map[symbol] = {
+                "all_rels": all_rels,
+                "page_data_cache": page_data_cache,
+                "debug_trace": debug_trace,
+                "known_relationships": known_relationships,
+                "ranked_results": ranked_results
+            }
+
             if not all_rels:
-                if debug: debug_trace["groq_used"] = True
                 all_snippets = [s for page in page_data_cache for s in page["snippets"]]
-                groq_rels, groq_budget_exhausted = extract_relationships_groq(symbol, library, all_snippets, ranked_results)
-                if groq_budget_exhausted:
-                    _overall_budget_exhausted = True
-                if groq_rels:
-                    if debug:
-                        debug_trace["groq_relationships"].extend(groq_rels)
-                        debug_trace["relationships_extracted"].extend(groq_rels)
-                    all_rels.extend(groq_rels)
-                    # Write Groq-discovered relationships to knowledge base (Level 3)
-                    for rel in groq_rels:
-                        add_to_knowledge_base(
-                            library=library,
-                            symbol=rel.get("from", symbol),
-                            entry={
-                                "to": rel.get("to", ""),
-                                "relation": rel.get("relation", "deprecated_in_favor_of"),
-                                "confidence": rel.get("confidence", 0.9),
-                                "source": "groq",
-                                "first_seen": datetime.now(timezone.utc).date().isoformat(),
-                            }
-                        )
-                else:
-                    if debug:
-                        debug_trace["groq_failed"] = True
-                        if groq_budget_exhausted:
-                            debug_trace["groq_skip_reason"] = "budget_exhausted"
-                        else:
-                            debug_trace["groq_skip_reason"] = "no_relationships_returned"
-            else:
-                if debug:
-                    debug_trace["groq_skip_reason"] = "fallback_or_regex_sufficient"
-            
-            # MERGE: deduplicate across all methods, highest confidence wins
+                groq_pending.append({
+                    "symbol": symbol,
+                    "snippets": all_snippets,
+                    "source_context": ranked_results
+                })
+
+        # PHASE 3: Groq Batching
+        groq_results = {}
+        if groq_pending:
+            logger.info("Batching %d symbols to Groq for %s", len(groq_pending), library)
+            groq_results, groq_budget_exhausted = extract_relationships_groq_batch(library, groq_pending)
+            if groq_budget_exhausted:
+                _overall_budget_exhausted = True
+
+        # PHASE 4: Merge, Deduplicate, Validate, Store
+        for symbol, data in symbol_data_map.items():
+            all_rels = data["all_rels"]
+            page_data_cache = data["page_data_cache"]
+            debug_trace = data["debug_trace"]
+            known_relationships = data["known_relationships"]
+
+            # Merge Groq
+            if symbol in groq_results:
+                groq_rels = groq_results[symbol]
+                if debug_trace:
+                    debug_trace["groq_used"] = True
+                    debug_trace["groq_relationships"].extend(groq_rels)
+                    debug_trace["relationships_extracted"].extend(groq_rels)
+                all_rels.extend(groq_rels)
+                for rel in groq_rels:
+                    add_to_knowledge_base(
+                        library=library,
+                        symbol=rel.get("from", symbol),
+                        entry={
+                            "to": rel.get("to", ""),
+                            "relation": rel.get("relation", "deprecated_in_favor_of"),
+                            "confidence": rel.get("confidence", 0.9),
+                            "source": "groq",
+                            "first_seen": datetime.now(timezone.utc).date().isoformat(),
+                        }
+                    )
+
             if all_rels:
                 deduped = _deduplicate_relationships(all_rels)
-                if debug: debug_trace["deduplicated_relationships"] = deduped
+                if debug_trace: debug_trace["deduplicated_relationships"] = deduped
                 
                 for rel in deduped:
-                    # Normalize 'from' to the symbol being discovered
                     rel_from = rel.get("from", "")
                     if rel_from and rel_from != symbol:
                         rel_from_tail = rel_from.split(".")[-1] if "." in rel_from else rel_from
                         symbol_tail = symbol.split(".")[-1]
                         if rel_from_tail == symbol_tail:
                             rel["from"] = symbol
-                    # Use the first page that has evidence for this relationship
+                            
                     evidence_page = page_data_cache[0]
                     for page_data in page_data_cache:
                         page_text_lower = page_data["page_text"].lower()
@@ -292,7 +267,7 @@ class MigrationEngine:
                             break
                     
                     is_valid, rejection_reason = validate_relationship(rel, evidence_page["page_text"])
-                    if debug:
+                    if debug_trace:
                         debug_trace["validation_results"].append({"relationship": rel, "valid": is_valid})
                         if not is_valid:
                             debug_trace["rejected_relationships"].append({"relationship": rel, "reason": rejection_reason})
@@ -300,10 +275,7 @@ class MigrationEngine:
                     if is_valid:
                         self._store_relationship(rel, evidence_page["url"], evidence_page["snippets"], known_relationships, library, debug_trace)
 
-            # Discovery completed without crashing — NOW insert the symbol as known
             self.knowledge_repository.insert_symbol(symbol, library)
-            
-            # Refresh known relationships after discovery
             final_relationships = self.knowledge_repository.lookup_relationships(symbol)
             
             results.append({
