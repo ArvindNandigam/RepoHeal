@@ -21,7 +21,7 @@ _RPM_LIMIT = 30
 _RPD_LIMIT = 1_000
 _TPM_LIMIT = 12_000
 _TPD_LIMIT = 100_000
-_SAFE_WAIT_SECONDS = 3.0
+_SAFE_WAIT_SECONDS = 4.0
 
 _TO_TOKEN_RATIO = 4  # chars per token estimate
 
@@ -171,13 +171,11 @@ def _batch_targets(targets: list[dict], library: str) -> list[list[dict]]:
         target_str = f"--- TARGET SYMBOL: {symbol} ---\nRanked Sources:\n{context_str}\n\nSnippets:\n{combined}\n\n"
         cost = len(target_str)
         
-        if current_batch and (current_size + cost > 25000): # _MAX_BATCH_CHARS
+        if current_batch:
             batches.append(current_batch)
             current_batch = []
-            current_size = overhead
         
         current_batch.append(target)
-        current_size += cost
 
     if current_batch:
         batches.append(current_batch)
@@ -304,18 +302,22 @@ def extract_relationships_groq_batch(library: str, targets: list[dict]) -> tuple
         rpm_wait = _check_rpm_budget()
         tpm_wait = _check_tpm_budget(total_needed)
         wait = max(rpm_wait, tpm_wait)
-        import time
         if wait > 0:
+            logger.info("Groq rate-limit wait: %.1fs before batch %d", wait, i)
             time.sleep(wait)
         elif i > 0:
             time.sleep(_SAFE_WAIT_SECONDS)
 
+        # Record BEFORE the call so rate tracking is accurate even on empty responses
+        _record_request(total_needed)
+
         rels = _try_extraction(client, primary_model, "BATCH", library, user_prompt)
         if not rels and primary_model != _FALLBACK_MODEL:
-            rels = _try_extraction(client, _FALLBACK_MODEL, "BATCH", library, user_prompt)
-            
-        if rels:
+            time.sleep(_SAFE_WAIT_SECONDS)
             _record_request(total_needed)
+            rels = _try_extraction(client, _FALLBACK_MODEL, "BATCH", library, user_prompt)
+
+        if rels:
             for rel in rels:
                 sym = rel.get("from")
                 if sym:
