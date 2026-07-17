@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/library-intelligence/{library}")
-@limiter.limit("300/minute")
+@limiter.limit("3000/minute")
 async def library_intelligence(
     library: str,
     request: Request,

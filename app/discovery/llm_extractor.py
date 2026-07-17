@@ -18,16 +18,8 @@ logger = logging.getLogger(__name__)
 _SEPARATOR = "\n\n---\n\n"
 _FALLBACK_MODEL = "llama-3.1-8b-instant"
 
-# Groq FREE tier limits for llama-3.3-70b-versatile:
-#   RPM: 30, RPD: 1,000, TPM: 12,000, TPD: 100,000
 # 1 token ~= 4 chars. Safe snippet budget: 12,000 chars.
 _MAX_BATCH_CHARS = 12_000
-
-_RPM_LIMIT = 30
-_RPD_LIMIT = 1_000
-_TPM_LIMIT = 12_000
-_TPD_LIMIT = 100_000
-_SAFE_WAIT_SECONDS = 4.0
 
 _TO_TOKEN_RATIO = 4  # chars per token estimate
 
@@ -57,10 +49,11 @@ def _prune_history() -> None:
 
 def _check_rpm_budget() -> float:
     """Return seconds to wait to stay under RPM limit."""
+    settings = get_settings()
     now = time.time()
     cutoff_1m = now - 60
     rpm_used = sum(1 for ts in _REQUEST_HISTORY if ts > cutoff_1m)
-    if rpm_used >= _RPM_LIMIT:
+    if rpm_used >= settings.groq_rpm_limit:
         oldest_in_window = min((ts for ts in _REQUEST_HISTORY if ts > cutoff_1m), default=None)
         if oldest_in_window:
             wait = oldest_in_window + 60 - now + 0.5
@@ -70,20 +63,22 @@ def _check_rpm_budget() -> float:
 
 def _check_rpd_budget() -> bool:
     """Return True if we have enough RPD budget."""
+    settings = get_settings()
     _prune_history()
     rpd_used = len(_REQUEST_HISTORY)
-    return rpd_used < _RPD_LIMIT
+    return rpd_used < settings.groq_rpd_limit
 
 
 def _check_tpm_budget(needed: int) -> float:
     """Return seconds to wait to stay under TPM limit."""
+    settings = get_settings()
     now = time.time()
     cutoff_1m = now - 60
     tpm_used = sum(t for ts, t in _TOKEN_HISTORY if ts > cutoff_1m)
-    if tpm_used + needed > _TPM_LIMIT:
+    if tpm_used + needed > settings.groq_tpm_limit:
         in_window = [(ts, t) for ts, t in _TOKEN_HISTORY if ts > cutoff_1m]
         in_window.sort()
-        needed_freed = (tpm_used + needed) - _TPM_LIMIT
+        needed_freed = (tpm_used + needed) - settings.groq_tpm_limit
         freed = 0
         for ts, t in in_window:
             freed += t
@@ -95,9 +90,10 @@ def _check_tpm_budget(needed: int) -> float:
 
 def _check_tpd_budget(needed: int) -> bool:
     """Return True if we have enough TPD budget."""
+    settings = get_settings()
     _prune_history()
     tpd_used = sum(t for _, t in _TOKEN_HISTORY)
-    return tpd_used + needed <= _TPD_LIMIT
+    return tpd_used + needed <= settings.groq_tpd_limit
 
 
 def _can_make_request(needed_tokens: int) -> tuple[bool, str | None]:
@@ -177,11 +173,13 @@ def _batch_targets(targets: list[dict], library: str) -> list[list[dict]]:
         target_str = f"--- TARGET SYMBOL: {symbol} ---\nRanked Sources:\n{context_str}\n\nSnippets:\n{combined}\n\n"
         cost = len(target_str)
         
-        if current_batch:
+        if current_batch and current_size + cost > _MAX_BATCH_CHARS:
             batches.append(current_batch)
             current_batch = []
+            current_size = overhead
         
         current_batch.append(target)
+        current_size += cost
 
     if current_batch:
         batches.append(current_batch)
@@ -342,11 +340,14 @@ def extract_relationships_groq_batch(library: str, targets: list[dict]) -> tuple
         # --- Layer 1: Gemini ---
         rels = []
         if has_gemini:
-            # Simple rate limiting for Gemini free tier (15 RPM)
+            # Simple rate limiting for Gemini based on RPM
             import time
             if i > 0:
-                time.sleep(4.1)  # To stay under 15 RPM ~ 4s per request
+                gemini_wait = 60.0 / max(1, settings.gemini_rpm_limit)
+                time.sleep(gemini_wait)
             rels = _try_extraction_gemini("gemini-1.5-flash", "BATCH", library, user_prompt)
+            if rels:
+                logger.info("Batch %d: provider=gemini, symbols=%d, result_count=%d", i, len(batch), len(rels))
         
         # --- Layer 2: Groq Fallback ---
         if not rels and client:
@@ -364,16 +365,19 @@ def extract_relationships_groq_batch(library: str, targets: list[dict]) -> tuple
                 logger.info("Groq rate-limit wait: %.1fs before batch %d", wait, i)
                 time.sleep(wait)
             elif i > 0:
-                time.sleep(_SAFE_WAIT_SECONDS)
+                time.sleep(settings.groq_safe_wait_seconds)
 
             # Record BEFORE the call so rate tracking is accurate even on empty responses
             _record_request(total_needed)
 
             rels = _try_extraction(client, primary_model, "BATCH", library, user_prompt)
             if not rels and primary_model != _FALLBACK_MODEL:
-                time.sleep(_SAFE_WAIT_SECONDS)
+                time.sleep(settings.groq_safe_wait_seconds)
                 _record_request(total_needed)
                 rels = _try_extraction(client, _FALLBACK_MODEL, "BATCH", library, user_prompt)
+                
+            if rels:
+                logger.info("Batch %d: provider=groq, symbols=%d, result_count=%d", i, len(batch), len(rels))
             
         if rels:
             for rel in rels:

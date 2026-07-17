@@ -42,6 +42,14 @@ class Settings:
     max_search_results: int = 20
     serper_api_key: str | None = None
 
+    # LLM Rate Limits (Defaults for Free Tier)
+    groq_rpm_limit: int = 30
+    groq_rpd_limit: int = 1000
+    groq_tpm_limit: int = 12000
+    groq_tpd_limit: int = 100000
+    groq_safe_wait_seconds: float = 4.0
+    gemini_rpm_limit: int = 15
+
     # Google Sheets Knowledge Base
     google_service_account_json: str | None = None
     google_sheet_id: str = ""
@@ -81,6 +89,14 @@ class Settings:
         groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
         max_search_results = int(os.getenv("MAX_SEARCH_RESULTS", "20"))
         serper_api_key = os.getenv("SERPER_API_KEY", "").strip() or None
+        
+        groq_rpm_limit = int(os.getenv("GROQ_RPM_LIMIT", "30"))
+        groq_rpd_limit = int(os.getenv("GROQ_RPD_LIMIT", "1000"))
+        groq_tpm_limit = int(os.getenv("GROQ_TPM_LIMIT", "12000"))
+        groq_tpd_limit = int(os.getenv("GROQ_TPD_LIMIT", "100000"))
+        groq_safe_wait_seconds = float(os.getenv("GROQ_SAFE_WAIT_SECONDS", "4.0"))
+        gemini_rpm_limit = int(os.getenv("GEMINI_RPM_LIMIT", "15"))
+
         google_service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip() or None
         google_sheet_id = os.getenv("GOOGLE_SHEET_ID", "").strip()
         google_sheet_title = (os.getenv("GOOGLE_SHEET_TITLE", "").strip() or "Restricted Webtool - Migration Intelligence")
@@ -108,6 +124,12 @@ class Settings:
             groq_model=groq_model,
             max_search_results=max_search_results,
             serper_api_key=serper_api_key,
+            groq_rpm_limit=groq_rpm_limit,
+            groq_rpd_limit=groq_rpd_limit,
+            groq_tpm_limit=groq_tpm_limit,
+            groq_tpd_limit=groq_tpd_limit,
+            groq_safe_wait_seconds=groq_safe_wait_seconds,
+            gemini_rpm_limit=gemini_rpm_limit,
             google_service_account_json=google_service_account_json,
             google_sheet_id=google_sheet_id,
             google_sheet_title=google_sheet_title,
