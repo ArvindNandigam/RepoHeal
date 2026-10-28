@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
+from time import monotonic
 
-from app.config import MAX_LIBRARIES_PER_REQUEST
+from app.config import MAX_BULK_REQUESTS_PER_MINUTE, MAX_LIBRARIES_PER_REQUEST, get_settings
 from app.dependencies import get_migration_engine, get_operational_repository
 from app.observability.repository import OperationalRepository
 from app.rate_limit import limiter
@@ -16,7 +19,7 @@ router = APIRouter(tags=["library-intelligence"])
 
 
 @router.post("/bulk-library-intelligence")
-@limiter.limit("6000/minute")
+@limiter.limit(f"{MAX_BULK_REQUESTS_PER_MINUTE}/minute")
 async def bulk_library_intelligence(
     request: Request,
     service: MigrationEngine = Depends(get_migration_engine),
@@ -51,16 +54,28 @@ async def bulk_library_intelligence(
 
     results: list[dict] = []
     debug = is_debug_enabled(request.query_params)
+    deadline = monotonic() + get_settings().bulk_deadline_seconds
     try:
         for item in normalized_items:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                return JSONResponse(status_code=504, content={"status": "failed", "reason": "bulk_deadline_exceeded"})
             try:
-                result = service.resolve(item["library"], item["symbols"], debug=debug)
+                result = await asyncio.wait_for(
+                    run_in_threadpool(service.resolve, item["library"], item["symbols"], debug=debug),
+                    timeout=remaining,
+                )
                 results.append(
                     {
                         "library": item["library"],
                         "status": "success",
                         "result": result,
                     }
+                )
+            except asyncio.TimeoutError:
+                return JSONResponse(
+                    status_code=504,
+                    content={"status": "failed", "reason": "bulk_deadline_exceeded"},
                 )
             except Exception as exc:
                 operational_repository.log_error(

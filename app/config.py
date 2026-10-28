@@ -21,6 +21,9 @@ DEFAULT_ALLOWED_DOMAINS = (
     "docs.*",
 )
 MAX_LIBRARIES_PER_REQUEST = 25
+REQUESTS_PER_MINUTE = 100
+MAX_BULK_REQUESTS_PER_MINUTE = 10
+MAX_BULK_DEADLINE_SECONDS = 60.0
 
 
 @dataclass(frozen=True)
@@ -31,6 +34,7 @@ class Settings:
     port: int = 8000
     upstream_timeout_seconds: float = 15.0
     upstream_retry_count: int = 3
+    bulk_deadline_seconds: float = MAX_BULK_DEADLINE_SECONDS
     internal_api_key: str | None = None
     allowed_domains: tuple[str, ...] = DEFAULT_ALLOWED_DOMAINS
     service_version: str = SERVICE_VERSION
@@ -76,6 +80,7 @@ class Settings:
         port = int(os.getenv("PORT", "8000"))
         upstream_timeout_seconds = float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "15"))
         upstream_retry_count = int(os.getenv("UPSTREAM_RETRY_COUNT", "3"))
+        bulk_deadline_seconds = float(os.getenv("BULK_DEADLINE_SECONDS", str(MAX_BULK_DEADLINE_SECONDS)))
         internal_api_key = os.getenv("INTERNAL_API_KEY", "").strip() or None
         allowed_domains_env = os.getenv("ALLOWED_DOMAINS", "").strip()
         allowed_domains = tuple(
@@ -117,6 +122,7 @@ class Settings:
             port=port,
             upstream_timeout_seconds=upstream_timeout_seconds,
             upstream_retry_count=upstream_retry_count,
+            bulk_deadline_seconds=bulk_deadline_seconds,
             internal_api_key=internal_api_key,
             allowed_domains=allowed_domains,
             gemini_api_key=gemini_api_key,
@@ -148,4 +154,3 @@ class Settings:
 def get_settings() -> Settings:
     load_dotenv()
     return Settings.from_env()
-

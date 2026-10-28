@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
+from app.config import REQUESTS_PER_MINUTE
 from app.dependencies import get_migration_engine, get_operational_repository
 from app.observability.repository import OperationalRepository
 from app.rate_limit import limiter
@@ -16,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/library-intelligence/{library}")
-@limiter.limit("3000/minute")
+@limiter.limit(f"{REQUESTS_PER_MINUTE}/minute")
 async def library_intelligence(
     library: str,
     request: Request,
@@ -30,9 +32,10 @@ async def library_intelligence(
     
     try:
         # We can just call resolve with an empty symbols list to get the library metadata
-        response = service.resolve(normalized_library, [], debug=is_debug_enabled(request.query_params))
+        response = await run_in_threadpool(
+            service.resolve, normalized_library, [], is_debug_enabled(request.query_params)
+        )
         return format_library_response(response, debug=is_debug_enabled(request.query_params))
     except Exception as exc:
         logger.exception("library-intelligence failed")
         return JSONResponse(status_code=500, content={"status": "failed", "error": "library-intelligence failed"})
-

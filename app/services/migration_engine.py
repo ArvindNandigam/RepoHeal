@@ -13,6 +13,7 @@ from app.discovery.regex_extractor import extract_relationships_regex
 from app.discovery.llm_extractor import extract_relationships_groq_batch
 from app.discovery.fallback_extractor import extract_relationships_fallback
 from app.discovery.validation import validate_relationship
+from app.validators.sources import is_approved_source_url
 from app.services.version_resolver import resolve_library_metadata
 
 logger = logging.getLogger(__name__)
@@ -81,11 +82,17 @@ class MigrationEngine:
                     pypi_url=meta.get("pypi_url")
                 )
                 latest_version = meta.get("latest_version")
+                official_docs = meta.get("official_docs")
+                github_repo = meta.get("github_repo")
             else:
                 self.knowledge_repository.upsert_library(library=library)
                 latest_version = None
+                official_docs = None
+                github_repo = None
         else:
             latest_version = library_record.get("latest_version")
+            official_docs = library_record.get("official_docs")
+            github_repo = library_record.get("github_repo")
 
         groq_pending = []
         symbol_data_map = {}
@@ -138,6 +145,10 @@ class MigrationEngine:
             for result in ranked_results:
                 url = result.get("url")
                 if not url: continue
+                if not is_approved_source_url(url):
+                    if debug:
+                        debug_trace["rejected_relationships"].append({"url": url, "reason": "unapproved_source_url"})
+                    continue
                 if debug: debug_trace["urls_fetched"].append(url)
                 
                 page_text = fetch_page(url)
@@ -291,6 +302,8 @@ class MigrationEngine:
         return {
             "library": library,
             "latest_version": latest_version,
+            "official_docs": official_docs,
+            "github_repo": github_repo,
             "intelligence_status": intelligence_status,
             "intelligence_reason": intelligence_reason,
             "results": results

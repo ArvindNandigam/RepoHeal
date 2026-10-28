@@ -6,7 +6,9 @@ from collections.abc import Sequence
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
+from app.config import REQUESTS_PER_MINUTE
 from app.config import MAX_SYMBOLS_PER_REQUEST
 from app.dependencies import get_migration_engine, get_operational_repository
 from app.observability.repository import OperationalRepository
@@ -69,7 +71,7 @@ async def _resolve_symbol_intelligence(
 
     try:
         logger.info("Resolving symbol intelligence via MigrationEngine")
-        response = service.resolve(library, symbols, debug=debug)
+        response = await run_in_threadpool(service.resolve, library, symbols, debug)
     except Exception as exc:
         logger.exception("symbol-intelligence failed")
         if debug:
@@ -85,7 +87,7 @@ async def _resolve_symbol_intelligence(
 
 
 @router.post("/symbol-intelligence")
-@limiter.limit("6000/minute")
+@limiter.limit(f"{REQUESTS_PER_MINUTE}/minute")
 async def symbol_intelligence(
     request: Request,
     service: MigrationEngine = Depends(get_migration_engine),
@@ -107,7 +109,7 @@ async def symbol_intelligence(
 
 
 @router.post("/debug-symbol-intelligence")
-@limiter.limit("6000/minute")
+@limiter.limit(f"{REQUESTS_PER_MINUTE}/minute")
 async def debug_symbol_intelligence(
     request: Request,
     service: MigrationEngine = Depends(get_migration_engine),

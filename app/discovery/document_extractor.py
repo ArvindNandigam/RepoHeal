@@ -4,6 +4,7 @@ import logging
 import httpx
 from html.parser import HTMLParser
 import re
+from app.validators.sources import is_approved_source_url
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +28,11 @@ def _extract_text(content: str) -> str:
     return text or re.sub(r"\s+", " ", content).strip()
 
 def fetch_page(url: str, timeout: float = 10.0) -> str | None:
+    if not is_approved_source_url(url):
+        logger.warning("Rejected fetch for unapproved source URL: %s", url)
+        return None
     try:
-        with httpx.Client(timeout=timeout, follow_redirects=True, verify=False) as client:
+        with httpx.Client(timeout=timeout, follow_redirects=False, verify=True) as client:
             response = client.get(url)
             response.raise_for_status()
             return _extract_text(response.text)

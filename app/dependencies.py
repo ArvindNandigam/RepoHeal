@@ -34,7 +34,11 @@ def get_runtime_repositories() -> tuple[object, object]:
     try:
         mongo_client = get_mongo_client()
         operational_repository = OperationalRepository(mongo_client, settings.mongodb_database)
-        knowledge_repository = KnowledgeRepository(mongo_client, settings.mongodb_database)
+        knowledge_repository = KnowledgeRepository(
+            mongo_client,
+            settings.mongodb_database,
+            cache_expiry_days=settings.cache_expiry_days,
+        )
         knowledge_repository.ensure_indexes()
         operational_repository.ensure_collections()
         operational_repository.mark_service_status("__backend_probe__", "ok")

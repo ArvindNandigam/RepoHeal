@@ -13,9 +13,10 @@ from bson.objectid import ObjectId
 logger = logging.getLogger(__name__)
 
 class KnowledgeRepository:
-    def __init__(self, mongo_client: MongoClient, database_name: str) -> None:
+    def __init__(self, mongo_client: MongoClient, database_name: str, cache_expiry_days: int = 30) -> None:
         self.mongo_client = mongo_client
         self.database: Database = mongo_client[database_name]
+        self.cache_expiry_days = cache_expiry_days
 
     @property
     def symbols(self) -> Collection:
@@ -51,7 +52,7 @@ class KnowledgeRepository:
                 self.evidence.drop_index("retrieved_at_1")
             except pymongo.errors.OperationFailure:
                 pass
-            self.evidence.create_index("retrieved_at", expireAfterSeconds=86400 * 30)
+            self.evidence.create_index("retrieved_at", expireAfterSeconds=86400 * self.cache_expiry_days)
             self.libraries.create_index("library", unique=True)
         except pymongo.errors.PyMongoError as e:
             logger.warning("MongoDB index creation failed: %s", e)

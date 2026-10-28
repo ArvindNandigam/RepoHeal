@@ -191,12 +191,7 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     def startup_event() -> None:
-        background_thread = Thread(
-            target=initialize_runtime,
-            args=(get_operational_repository(), get_knowledge_repository(), settings),
-            daemon=True,
-        )
-        background_thread.start()
+        initialize_runtime(get_operational_repository(), get_knowledge_repository(), settings)
 
         from app.services.scheduler import run_daily_report_scheduler
         scheduler_thread = Thread(
