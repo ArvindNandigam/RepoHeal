@@ -6,6 +6,9 @@ import os
 import sys
 import json
 import logging
+from types import SimpleNamespace
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -13,8 +16,6 @@ logging.basicConfig(level=logging.WARNING)
 
 from app.config import get_settings
 from groq import Groq, BadRequestError, APIStatusError
-
-settings = get_settings()
 
 SYSTEM_PROMPT = """
 You are an evidence extraction engine.
@@ -43,13 +44,14 @@ IMPORTANT: Use the FULL dotted path for both "from" and "to" fields.
 Valid relations: "deprecated_in_favor_of", "deprecated_in", "removed_in", "replaced_by", "renamed_to", "moved_to", "superseded_by".
 """
 
-def test_groq_compatibility(library, symbol, snippets, source_context=None):
+def run_groq_compatibility(library, symbol, snippets, source_context=None):
     """Test Groq API and print detailed results."""
     print(f"\n{'='*70}")
     print(f"LIBRARY: {library}")
     print(f"SYMBOL:  {symbol}")
     print(f"{'='*70}")
 
+    settings = get_settings()
     api_key = settings.groq_api_key
     model = settings.groq_model
 
@@ -72,6 +74,7 @@ def test_groq_compatibility(library, symbol, snippets, source_context=None):
             {"role": "user", "content": user_prompt}
         ],
         "temperature": 0,
+        "max_tokens": 2048,
         "response_format": {"type": "json_object"}
     }
 
@@ -127,16 +130,60 @@ def test_groq_compatibility(library, symbol, snippets, source_context=None):
         return None
 
 
+def test_groq_request_schema(monkeypatch):
+    """Validate the diagnostic request against the current Groq chat API shape."""
+    captured: dict = {}
+
+    class FakeCompletions:
+        def create(self, **body):
+            captured.update(body)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content='{"relationships": []}',
+                        )
+                    )
+                ]
+            )
+
+    class FakeGroq:
+        def __init__(self, api_key):
+            assert api_key == "test-key"
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    monkeypatch.setattr(
+        "test_groq_compatibility.get_settings",
+        lambda: SimpleNamespace(groq_api_key="test-key", groq_model="test-model"),
+    )
+    monkeypatch.setattr("test_groq_compatibility.Groq", FakeGroq)
+
+    relationships = run_groq_compatibility(
+        library="pandas",
+        symbol="pandas.DataFrame.append",
+        snippets=["Use pandas.concat instead."],
+        source_context=[{"title": "pandas docs", "url": "https://pandas.pydata.org/"}],
+    )
+
+    assert relationships == []
+    assert captured["model"] == "test-model"
+    assert captured["temperature"] == 0
+    assert captured["max_tokens"] == 2048
+    assert captured["response_format"] == {"type": "json_object"}
+    assert [message["role"] for message in captured["messages"]] == ["system", "user"]
+
+
 if __name__ == "__main__":
     print("=" * 70)
     print("GROQ API COMPATIBILITY TEST")
     print(f"Groq SDK: groq=={Groq.__module__}")
+    settings = get_settings()
     print(f"Model: {settings.groq_model}")
     print(f"API Key: {'set' if settings.groq_api_key else 'NOT SET'}")
     print("=" * 70)
 
     # Test 1: pandas.DataFrame.append
-    test_groq_compatibility(
+    run_groq_compatibility(
         library="pandas",
         symbol="pandas.DataFrame.append",
         snippets=[
@@ -150,7 +197,7 @@ if __name__ == "__main__":
     )
 
     # Test 2: numpy.ndarray.tolist (no deprecation - should return empty)
-    test_groq_compatibility(
+    run_groq_compatibility(
         library="numpy",
         symbol="numpy.ndarray.tolist",
         snippets=[
@@ -163,7 +210,7 @@ if __name__ == "__main__":
     )
 
     # Test 3: requests.RequestException
-    test_groq_compatibility(
+    run_groq_compatibility(
         library="requests",
         symbol="requests.RequestException",
         snippets=[
@@ -179,7 +226,7 @@ if __name__ == "__main__":
     print(f"\n{'='*70}")
     print("TEST: Token limit edge case (oversized input)")
     print(f"{'='*70}")
-    test_groq_compatibility(
+    run_groq_compatibility(
         library="pandas",
         symbol="pandas.DataFrame.append",
         snippets=["pandas.DataFrame.append was deprecated. Use pandas.concat instead. " * 50000],
