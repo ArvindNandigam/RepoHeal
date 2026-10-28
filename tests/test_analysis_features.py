@@ -35,10 +35,12 @@ from app.models.migration_models import (
     SymbolRelationship,
 )
 from app.routers import graph, webhook
+from app.routers import reports
 from app.visualization import neo4j_graph_api
 from app.visualization.page_renderer import build_graph_page
 from app.worker import task_registry
 from app.routers.reports import _markdown_report
+from app.errors.exceptions import AuthenticationError, AuthorizationError
 
 
 class FakeCollection:
@@ -296,6 +298,53 @@ def test_markdown_report_export_is_safe_and_includes_summary():
     assert "# RepoHeal health report: owner/repo" in markdown
     assert "Health score: 87" in markdown
     assert "Migrate to pkg.new" in markdown
+
+
+def test_reports_reject_unauthorized_repository_access(monkeypatch):
+    monkeypatch.setattr(
+        reports,
+        "get_session_data",
+        lambda user: {"github_token": "token"},
+    )
+    monkeypatch.setattr(
+        reports,
+        "verify_repository_access",
+        lambda **kwargs: (_ for _ in ()).throw(AuthorizationError("Authorization failed")),
+    )
+
+    try:
+        asyncio.run(
+            reports.get_analysis_history(
+                "owner",
+                "repo",
+                branch=None,
+                user={"session_id": "session", "github_login": "user"},
+            )
+        )
+        assert False, "Expected AuthorizationError"
+    except AuthorizationError:
+        pass
+
+
+def test_reports_reject_revoked_session(monkeypatch):
+    monkeypatch.setattr(
+        reports,
+        "get_session_data",
+        lambda user: (_ for _ in ()).throw(AuthenticationError("Session expired")),
+    )
+
+    try:
+        asyncio.run(
+            reports.get_health_report_data(
+                "owner",
+                "repo",
+                analysis_id=None,
+                user={"session_id": "session", "github_login": "user"},
+            )
+        )
+        assert False, "Expected AuthenticationError"
+    except AuthenticationError:
+        pass
 
 
 def test_status_requires_visual_graph_before_completed(monkeypatch):

@@ -1,15 +1,26 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
 from app.auth.jwt_manager import verify_session_token
+from app.auth.authorization import verify_repository_access
 from app.config import settings
 from app.errors.exceptions import AnalysisError
 from app.github.client import RepoHealGitHubClient
 from app.github.metadata_branch import MetadataBranchManager
-from app.routers.dependencies import ensure_repoheal_installed
+from app.routers.dependencies import ensure_repoheal_installed, get_session_data
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+
+def _authorize_reports_access(user: dict, repo_owner: str, repo_name: str) -> dict:
+    session_data = get_session_data(user)
+    verify_repository_access(
+        github_token=session_data["github_token"],
+        repo_owner=repo_owner,
+        repo_name=repo_name,
+    )
+    return ensure_repoheal_installed(repo_owner, repo_name)
 
 def _markdown_report(repository: str, report: dict) -> str:
     summary = report.get("executive_summary", {}) if isinstance(report, dict) else {}
@@ -40,6 +51,7 @@ def get_template(name: str) -> str:
 
 @router.get("/{repo_owner}/{repo_name}/health-page", response_class=HTMLResponse)
 async def health_report_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
+    _authorize_reports_access(user, repo_owner, repo_name)
     return HTMLResponse(get_template("health_report.html"))
 
 @router.get("/{repo_owner}/{repo_name}/health")
@@ -49,7 +61,7 @@ async def get_health_report_data(
     analysis_id: Optional[str] = Query(None),
     user=Depends(verify_session_token)
 ):
-    installation = ensure_repoheal_installed(repo_owner, repo_name)
+    installation = _authorize_reports_access(user, repo_owner, repo_name)
     client = RepoHealGitHubClient(installation["id"])
     repo = client.get_repo(f"{repo_owner}/{repo_name}")
     metadata_manager = MetadataBranchManager(client)
@@ -115,7 +127,7 @@ async def get_migration_doc_data(
     analysis_id: Optional[str] = Query(None),
     user=Depends(verify_session_token)
 ):
-    installation = ensure_repoheal_installed(repo_owner, repo_name)
+    installation = _authorize_reports_access(user, repo_owner, repo_name)
     client = RepoHealGitHubClient(installation["id"])
     repo = client.get_repo(f"{repo_owner}/{repo_name}")
     metadata_manager = MetadataBranchManager(client)
@@ -149,7 +161,7 @@ async def get_analysis_history(
     branch: Optional[str] = Query(None),
     user=Depends(verify_session_token)
 ):  
-    installation = ensure_repoheal_installed(repo_owner, repo_name)
+    installation = _authorize_reports_access(user, repo_owner, repo_name)
     client = RepoHealGitHubClient(installation["id"])
     repo = client.get_repo(f"{repo_owner}/{repo_name}")
     metadata_manager = MetadataBranchManager(client)
@@ -263,17 +275,20 @@ async def compare_reports(
 
 @router.get("/{repo_owner}/{repo_name}/hub", response_class=HTMLResponse)
 async def reports_hub_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
+    _authorize_reports_access(user, repo_owner, repo_name)
     return HTMLResponse(get_template("reports_hub.html"))
 
 @router.get("/{repo_owner}/{repo_name}/history-page", response_class=HTMLResponse)
 async def analysis_history_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
+    _authorize_reports_access(user, repo_owner, repo_name)
     return HTMLResponse(get_template("analysis_history.html"))
 
 @router.get("/{repo_owner}/{repo_name}/migration-reports", response_class=HTMLResponse)
 async def migration_reports_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
+    _authorize_reports_access(user, repo_owner, repo_name)
     return HTMLResponse(get_template("migration_reports.html"))
 
 @router.get("/{repo_owner}/{repo_name}/migration-document", response_class=HTMLResponse)
 async def migration_document_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
+    _authorize_reports_access(user, repo_owner, repo_name)
     return HTMLResponse(get_template("migration_document.html"))
-
