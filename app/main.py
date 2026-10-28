@@ -1,6 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi.middleware import SlowAPIMiddleware
@@ -96,46 +96,9 @@ app.include_router(legal.router)
 async def login_redirect():
     return RedirectResponse(url="/auth/login-page")
 
-import os
-import json
-import smtplib
-from email.mime.text import MIMEText
-
-def send_marketplace_email(payload: dict):
-    try:
-        msg = MIMEText(json.dumps(payload, indent=2))
-
-        msg["Subject"] = (
-            f"RepoHeal Marketplace: "
-            f"{payload.get('action', 'unknown')}"
-        )
-
-        msg["From"] = os.getenv("SMTP_FROM")
-        msg["To"] = os.getenv("REPORT_RECIPIENT")
-
-        with smtplib.SMTP(
-            os.getenv("SMTP_HOST"),
-            int(os.getenv("SMTP_PORT"))
-        ) as server:
-
-            server.starttls()
-
-            server.login(
-                os.getenv("SMTP_USER"),
-                os.getenv("SMTP_PASSWORD")
-            )
-
-            server.send_message(msg)
-
-    except Exception as e:
-        logger.error(f"Marketplace email failed: {e}")
-
-from fastapi import Request, BackgroundTasks
-
 @app.post("/github-marketplace-webhook")
 async def github_marketplace_webhook(
-    request: Request,
-    background_tasks: BackgroundTasks
+    request: Request
 ):
     event = request.headers.get("X-GitHub-Event")
     delivery = request.headers.get("X-GitHub-Delivery")
@@ -151,12 +114,6 @@ async def github_marketplace_webhook(
 
     if event == "ping":
         return {"status": "pong"}
-
-    if os.getenv("EMAIL_ENABLED", "false").lower() == "true":
-        background_tasks.add_task(
-            send_marketplace_email,
-            payload
-        )
 
     return {
         "status": "accepted",

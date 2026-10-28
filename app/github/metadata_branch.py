@@ -42,8 +42,12 @@ class MetadataBranchManager:
         analyzed_at = analyzed_at_dt.isoformat()
         
         source_branch = source_branch or getattr(repo, "default_branch", None) or "main"
-        commit_sha = commit_sha or self._get_branch_commit_sha(repo, source_branch)
-        commit_sha = commit_sha or self._get_default_commit_sha(repo)
+        commit_sha = (
+            commit_sha
+            or self._get_branch_commit_sha(repo, source_branch)
+            or self._get_default_commit_sha(repo)
+            or "unknown"
+        )
         
         analysis_id, snapshot_id, short_commit = self.generate_ids(repo_id, source_branch, commit_sha)
         safe_branch = self._safe_name(source_branch)
@@ -51,7 +55,13 @@ class MetadataBranchManager:
         # Flattened Storage Layout: analyses/{branch}/{short_commit}/analysis.json
         analysis_base = f"{self.base_path}/analyses/{safe_branch}/{short_commit}"
         analysis_record_path = f"{analysis_base}/analysis_{analysis_id}.json"
-        graph_snapshot_path = f"{analysis_base}/dependency_graph_{analysis_id}.json"
+        graph_snapshot_path = (
+            f"{self.base_path}/snapshots/data_{self._safe_name(repo_id)}_"
+            f"{short_commit}_{analysis_id}.json"
+        )
+        analysis_snapshot_path = (
+            f"{self.base_path}/snapshots/analysis_{analysis_id}.json"
+        )
         
         manifest = self._load_manifest(repo)
         
@@ -78,7 +88,12 @@ class MetadataBranchManager:
             "schema_version": max(manifest.get("schema_version", 1), 3),
             "repository": repo_id,
             "default_branch": getattr(repo, "default_branch", "main"),
-            "current_head": self._get_branch_commit_sha(repo, getattr(repo, "default_branch", "main")),
+            "current_head": (
+                self._get_branch_commit_sha(
+                    repo, getattr(repo, "default_branch", "main")
+                )
+                or "unknown"
+            ),
             "last_analyzed_commit": commit_sha,
             "latest_analysis_id": analysis_id,
             "latest_analysis_at": analyzed_at,
@@ -88,6 +103,7 @@ class MetadataBranchManager:
                 "analysis_record": analysis_record_path,
                 "graph": latest_graph_path,
                 "graph_snapshot": graph_snapshot_path,
+                "analysis_snapshot": analysis_snapshot_path,
                 "packages": latest_packages_path,
                 "imports": latest_imports_path,
                 "dependency_risk_report": latest_risk_report_path
@@ -127,6 +143,7 @@ class MetadataBranchManager:
         files_to_commit = {
             f"{self.base_path}/metadata.json": self._json(manifest),
             analysis_record_path: self._json(analysis_payload),
+            analysis_snapshot_path: self._json(analysis_payload),
 
             # Latest analysis pointer
             latest_analysis_path: self._json({
@@ -192,7 +209,12 @@ class MetadataBranchManager:
         self.client.ensure_branch(repo, self.branch_name)
         repo_id = getattr(repo, "full_name", report.repository)
         source_branch = source_branch or analysis.get("branch") or getattr(repo, "default_branch", None) or "main"
-        commit_sha = commit_sha or analysis.get("commit_sha") or self._get_branch_commit_sha(repo, source_branch)
+        commit_sha = (
+            commit_sha
+            or analysis.get("commit_sha")
+            or self._get_branch_commit_sha(repo, source_branch)
+            or "unknown"
+        )
         short_commit = commit_sha[:7]
         safe_branch = self._safe_name(source_branch)
         analysis_base = f"{self.base_path}/analyses/{safe_branch}/{short_commit}"
@@ -261,7 +283,12 @@ class MetadataBranchManager:
         refreshed_at = datetime.now(timezone.utc)
         repo_id = getattr(repo, "full_name", report.repository)
         source_branch = source_branch or analysis.get("branch") or getattr(repo, "default_branch", None) or "main"
-        commit_sha = commit_sha or analysis.get("commit_sha") or self._get_branch_commit_sha(repo, source_branch)
+        commit_sha = (
+            commit_sha
+            or analysis.get("commit_sha")
+            or self._get_branch_commit_sha(repo, source_branch)
+            or "unknown"
+        )
         short_commit = commit_sha[:7]
         safe_branch = self._safe_name(source_branch)
         
@@ -270,6 +297,7 @@ class MetadataBranchManager:
         
         health_report_path = f"{analysis_base}/health_report_{analysis_id}.json"
         migration_report_path = f"{analysis_base}/migration_report_{analysis_id}.md"
+        snapshot_path = f"{self.base_path}/snapshots/analysis_{analysis_id}.json"
         
         legacy_doc_path = f"{self.base_path}/migrations/{document.filename}"
         
@@ -335,8 +363,29 @@ class MetadataBranchManager:
             f"{self.base_path}/metadata.json": self._json(manifest),
             health_report_path: self._json(health_data),
             migration_report_path: document.content,
-            legacy_doc_path: document.content, # Backward compat
+            snapshot_path: self._json({
+                "analysis_id": analysis_id,
+                "repository": repo_id,
+                "branch": source_branch,
+                "commit_sha": commit_sha,
+                "analysis": analysis,
+            }),
         }
+        if self._path_exists(repo, legacy_doc_path):
+            raise ValueError(
+                f"Migration document {legacy_doc_path} is immutable and already exists"
+            )
+        files_to_commit[legacy_doc_path] = document.content
+
+        manifest.setdefault("artifacts", [])
+        manifest["artifacts"].append({
+            "analysis_id": analysis_id,
+            "document": legacy_doc_path,
+            "report": migration_report_path,
+            "snapshot": snapshot_path,
+            "created_at": refreshed_at.isoformat(),
+        })
+        files_to_commit[f"{self.base_path}/metadata.json"] = self._json(manifest)
 
         shims_path = f"{analysis_base}/repoheal_fixes.py"
         shims_content = getattr(report, "compatibility_shims", "")

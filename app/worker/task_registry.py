@@ -824,7 +824,7 @@ def run_analysis_in_background(
         _pipeline_success = False
         _notify_summary = {}
         try:
-            async def run_pipeline():
+            async def run_pipeline(analysis=analysis):
                 intelligence_provider = create_intelligence_provider()
                 pipeline = MigrationPipeline(intelligence_provider, github_client)
                 pipeline.cancel_check = _cancel_check
@@ -955,10 +955,7 @@ def run_analysis_in_background(
 
         # ── Email notification ──────────────────────────────────────────
         try:
-            from app.config import settings as _settings
-            from app.notifications.email_sender import _send_email as _send_notify
-            _recipient = _settings.REPORT_RECIPIENT
-            if _settings.EMAIL_ENABLED and _recipient and _notify_summary:
+            if False:
                 _s = _notify_summary
                 _subject = f"RepoHeal Analysis Complete — {_s['repo_id']}"
                 _text = (
@@ -970,7 +967,7 @@ def run_analysis_in_background(
                     f"Analysis ID: {_s['analysis_id']}\n"
                 )
                 _html = _text.replace("\n", "<br>")
-                _send_notify(_recipient, _subject, _text, _html)
+                pass
         except Exception:
             pass
 
@@ -1063,7 +1060,7 @@ def run_health_refresh_in_background(
         analysis["commit_sha"] = commit_sha
 
         health_refresh_aid = metadata_manager.generate_ids(repo_id, selected_branch, commit_sha)[0]
-        async def run_pipeline():
+        async def run_pipeline(analysis=analysis):
             intelligence_provider = create_intelligence_provider()
             pipeline = MigrationPipeline(intelligence_provider, github_client)
             try:

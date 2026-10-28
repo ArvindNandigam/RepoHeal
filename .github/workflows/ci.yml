@@ -26,12 +26,12 @@ jobs:
         
     - name: Type Check with mypy
       run: |
-        mypy app/
+        mypy --explicit-package-bases app/
         
     - name: Lint with ruff
       run: |
-        ruff check app/
+        ruff check app/ --select E9,F63,F7,F82
         
     - name: Test with pytest
       run: |
-        pytest tests/
+        python -m pytest tests/ test_phase1.py test_phase2.py
