@@ -15,10 +15,27 @@ FRONTEND_DIST = FRONTEND_ROOT / "dist"
 async def dashboard_data(user=Depends(verify_session_token)):
     session_data = get_session_data(user)
     dashboard_repositories = build_dashboard_repositories(session_data["github_token"])
+    analyzed = [repo for repo in dashboard_repositories if repo.get("health_score") is not None]
+    scores = [repo["health_score"] for repo in analyzed]
+    metrics = {
+        "active_repositories": len(dashboard_repositories),
+        "analyzed_repositories": len(analyzed),
+        "average_health_score": round(sum(scores) / len(scores)) if scores else None,
+        "open_issues": sum(repo.get("issue_count", 0) for repo in dashboard_repositories),
+        "critical_issues": sum(repo.get("critical_issue_count", 0) for repo in dashboard_repositories),
+        "active_analyses": sum(
+            repo.get("analysis_status") in {
+                "queued", "running", "analyzing", "generating_graph",
+                "generating_reports", "generating_migrations", "updating_metadata"
+            }
+            for repo in dashboard_repositories
+        ),
+    }
     return {
         "user": user["github_login"],
         "repositories": dashboard_repositories,
-        "timezone": user.get("timezone", "UTC")
+        "timezone": user.get("timezone", "UTC"),
+        "metrics": metrics,
     }
 
 @router.get("", response_class=HTMLResponse)

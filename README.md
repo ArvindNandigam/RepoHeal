@@ -15,6 +15,13 @@ npm run build
 
 The FastAPI application serves `frontend/dist` at `/dashboard` when it exists and falls back to the existing server-rendered dashboard when it does not. Render builds the frontend before starting Uvicorn.
 
+The authenticated dashboard consumes `/dashboard/data` and the repository overview,
+status SSE, graph, report, comparison, and diagnostics endpoints. Repository detail
+views provide live metadata, analysis progress, graph filtering/path highlighting,
+JSON/Markdown/PNG exports, and browser-local issue triage. Missing analysis history,
+Neo4j, or report snapshots are shown as unavailable states rather than replaced with
+preview metrics.
+
 ## Neo4j Aura setup
 
 1. Create a free Neo4j AuraDB instance at https://console.neo4j.io/.
@@ -40,6 +47,12 @@ The dashboard shows installed repositories with:
 - Compare Analyses
 
 Repository cards do not display workspace URLs or internal metadata endpoints.
+
+The JSON dashboard response includes aggregate metrics plus per-repository health
+and analysis fields. Report exports are available at
+`/reports/{owner}/{repo}/export?format=json|markdown`; graph JSON is served by
+`/graph/{owner}/{repo}` and server-rendered PNG export by
+`/visualize/{owner}/{repo}/export.png`.
 
 ## Analysis Workflows
 

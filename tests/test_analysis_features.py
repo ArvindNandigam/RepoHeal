@@ -38,6 +38,7 @@ from app.routers import graph, webhook
 from app.visualization import neo4j_graph_api
 from app.visualization.page_renderer import build_graph_page
 from app.worker import task_registry
+from app.routers.reports import _markdown_report
 
 
 class FakeCollection:
@@ -277,6 +278,24 @@ def test_graph_endpoint_falls_back_to_metadata_branch_when_cache_is_empty(monkey
     assert response["repository"] == "owner/repo"
     assert response["nodes"]
     assert response["statistics"]["metadata_stats"]["source"] == "repoheal.meta"
+
+
+def test_markdown_report_export_is_safe_and_includes_summary():
+    markdown = _markdown_report(
+        "owner/repo",
+        {
+            "executive_summary": {"overall_health_score": 87},
+            "overall_risk_score": 22,
+            "generated_at": "2026-10-28T00:00:00+00:00",
+            "recommended_actions": [
+                {"priority": "high", "symbol": "pkg.old", "description": "Migrate to pkg.new"}
+            ],
+        },
+    )
+
+    assert "# RepoHeal health report: owner/repo" in markdown
+    assert "Health score: 87" in markdown
+    assert "Migrate to pkg.new" in markdown
 
 
 def test_status_requires_visual_graph_before_completed(monkeypatch):

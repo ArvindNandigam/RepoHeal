@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from app.auth.jwt_manager import verify_session_token
 from app.config import settings
 from app.errors.exceptions import AnalysisError
@@ -10,6 +10,28 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+def _markdown_report(repository: str, report: dict) -> str:
+    summary = report.get("executive_summary", {}) if isinstance(report, dict) else {}
+    lines = [
+        f"# RepoHeal health report: {repository}",
+        "",
+        f"- Health score: {summary.get('overall_health_score', report.get('overall_health_score', 'Unavailable'))}",
+        f"- Risk score: {report.get('overall_risk_score', 'Unavailable')}",
+        f"- Generated: {report.get('generated_at', 'Unavailable')}",
+        "",
+        "## Recommended actions",
+    ]
+    actions = report.get("recommended_actions", []) if isinstance(report, dict) else []
+    if not actions:
+        lines.append("- No recommended actions recorded.")
+    else:
+        for action in actions:
+            if isinstance(action, dict):
+                lines.append(f"- **{action.get('priority', 'normal')}** `{action.get('symbol', 'issue')}`: {action.get('description', action.get('recommendation', 'Review finding'))}")
+            else:
+                lines.append(f"- {action}")
+    return "\n".join(lines) + "\n"
 
 def get_template(name: str) -> str:
     template_path = Path(__file__).parent.parent / "visualization" / "templates" / name
@@ -174,6 +196,70 @@ async def get_analysis_history(
         "timeline": timeline
     }
 
+@router.get("/{repo_owner}/{repo_name}/export")
+async def export_report(
+    repo_owner: str,
+    repo_name: str,
+    format: str = Query("json", pattern="^(json|markdown)$"),
+    analysis_id: Optional[str] = Query(None),
+    user=Depends(verify_session_token),
+):
+    report = await get_health_report_data(repo_owner, repo_name, analysis_id, user)
+    repository = f"{repo_owner}/{repo_name}"
+    if format == "markdown":
+        return Response(
+            content=_markdown_report(repository, report),
+            media_type="text/markdown",
+            headers={"Content-Disposition": f'attachment; filename="{repo_name}-health-report.md"'},
+        )
+    return report
+
+@router.get("/{repo_owner}/{repo_name}/compare")
+async def compare_reports(
+    repo_owner: str,
+    repo_name: str,
+    left_analysis_id: Optional[str] = Query(None),
+    right_analysis_id: Optional[str] = Query(None),
+    user=Depends(verify_session_token),
+):
+    history = await get_analysis_history(repo_owner, repo_name, None, user)
+    timeline = history.get("timeline", [])
+    if len(timeline) < 2:
+        return {
+            "repository": f"{repo_owner}/{repo_name}",
+            "available": False,
+            "message": "At least two historical analyses are required for comparison.",
+            "left": None,
+            "right": None,
+            "changes": [],
+        }
+    right = next((item for item in timeline if item.get("analysis_id") == right_analysis_id), None) if right_analysis_id else timeline[0]
+    left = next((item for item in timeline if item.get("analysis_id") == left_analysis_id), None) if left_analysis_id else timeline[1]
+    if not left or not right:
+        raise HTTPException(status_code=404, detail="Requested analysis snapshot was not found")
+    left_score = left.get("health_score")
+    right_score = right.get("health_score")
+    return {
+        "repository": f"{repo_owner}/{repo_name}",
+        "available": True,
+        "left": left,
+        "right": right,
+        "changes": [
+            {
+                "metric": "health_score",
+                "before": left_score,
+                "after": right_score,
+                "delta": (right_score - left_score) if isinstance(left_score, (int, float)) and isinstance(right_score, (int, float)) else None,
+            },
+            {
+                "metric": "commit",
+                "before": left.get("commit"),
+                "after": right.get("commit"),
+                "delta": None,
+            },
+        ],
+    }
+
 
 @router.get("/{repo_owner}/{repo_name}/hub", response_class=HTMLResponse)
 async def reports_hub_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
@@ -190,5 +276,4 @@ async def migration_reports_page(repo_owner: str, repo_name: str, user=Depends(v
 @router.get("/{repo_owner}/{repo_name}/migration-document", response_class=HTMLResponse)
 async def migration_document_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
     return HTMLResponse(get_template("migration_document.html"))
-
 

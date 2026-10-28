@@ -13,6 +13,7 @@
   body { margin: 0; min-width: 320px; min-height: 100vh; background: #f5f6f3; }
   button, input { font: inherit; }
   button { cursor: pointer; }
+  :focus-visible { outline: 3px solid #78b995; outline-offset: 2px; }
 }
 
 .app-shell { min-height: 100vh; display: flex; }
@@ -139,6 +140,37 @@
 .view-all, .text-button { display: flex; align-items: center; justify-content: center; gap: 6px; border: 0; color: #55806a; background: none; font-size: 8px; font-weight: 700; }
 .view-all { width: 100%; height: 41px; }
 .empty-state { padding: 35px 20px; color: #939992; font-size: 10px; text-align: center; }
+.error-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 11px 14px; border: 1px solid #efc9bb; border-radius: 8px; color: #8d4e3b; background: #fff3ef; font-size: 11px; }
+.error-banner button { border: 0; color: inherit; background: transparent; font-size: 10px; font-weight: 700; }
+.loading-state { padding: 80px 20px; color: #7d857d; text-align: center; font-size: 12px; }
+.progress-card { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; margin-bottom: 14px; padding: 14px 16px; border: 1px solid #dfe9e1; border-radius: 10px; color: #4a6654; background: #f6fbf7; font-size: 10px; }
+.progress-card progress { width: 100%; height: 7px; accent-color: #579575; }
+.graph-panel { min-width: 0; }
+.graph-tools { display: flex; align-items: center; gap: 6px; }
+.graph-tools input, .graph-tools select { height: 29px; max-width: 150px; padding: 0 8px; border: 1px solid #e0e2dd; border-radius: 6px; color: #646b64; background: #fff; font-size: 9px; }
+.graph-list { display: flex; flex-wrap: wrap; gap: 7px; max-height: 275px; overflow: auto; padding: 17px; }
+.graph-node { display: inline-flex; align-items: center; padding: 6px 8px; border: 1px solid #dfe5e0; border-radius: 6px; color: #566158; background: #f8faf8; font: 8px 'DM Mono', monospace; }
+.graph-node mark { padding: 0 1px; border-radius: 2px; color: #274c37; background: #c9efd7; }
+.graph-file { border-color: #c9d8f8; color: #4d6fa9; background: #f1f5ff; }
+.graph-package { border-color: #f0caca; color: #a05252; background: #fff3f3; }
+.graph-function { border-color: #c6ead9; color: #3e8567; background: #f0fbf5; }
+.export-actions { display: flex; gap: 8px; padding: 11px 17px; border-top: 1px solid #eef0ec; }
+.export-actions button, .export-actions a { display: inline-flex; align-items: center; gap: 5px; padding: 6px 8px; border: 1px solid #e0e2dd; border-radius: 6px; color: #5a685d; background: #fff; font-size: 9px; text-decoration: none; }
+.export-actions button:disabled, .export-actions a.disabled { cursor: not-allowed; opacity: .45; pointer-events: none; }
+.triage-item { display: flex; align-items: flex-start; gap: 8px; padding: 11px 15px; border-bottom: 1px solid #eef0ec; color: #68716a; font-size: 9px; line-height: 1.4; }
+.triage-item input { margin-top: 2px; accent-color: #579575; }
+.detail-panel { padding: 20px; }
+.compare-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px; }
+.compare-grid > div { display: grid; gap: 6px; padding: 14px; border: 1px solid #e6e9e4; border-radius: 8px; }
+.compare-grid span, .compare-grid small { color: #929991; font-size: 9px; }
+.compare-grid strong { color: #414841; font: 12px 'DM Mono', monospace; }
+.change-row { display: grid; grid-template-columns: 1fr 100px 20px 100px 80px; align-items: center; gap: 9px; padding: 12px 0; border-top: 1px solid #eef0ec; color: #6b736b; font-size: 10px; }
+.change-row b { color: #424a43; font: 10px 'DM Mono', monospace; }
+.change-row em { color: #4b8c68; font-size: 9px; font-style: normal; }
+.diagnostics { margin: 0; color: #617065; font: 11px/1.6 'DM Mono', monospace; white-space: pre-wrap; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
 .side-stack { display: flex; flex-direction: column; gap: 14px; }
 .panel-header.compact { min-height: 64px; }
 .count-badge { min-width: 22px; height: 22px; display: grid; place-items: center; border-radius: 7px; color: #a86543; background: #faeee5; font-size: 8px; font-weight: 700; }

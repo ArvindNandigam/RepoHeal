@@ -359,7 +359,6 @@ async def approve_upgrades(
                 "error": str(e), "branch": branch_name
             })
 
-        # ── Step 5: Email notification for human review ────────────────
     # Trigger re-analysis
     try:
         from app.worker.task_registry import create_job
@@ -592,4 +591,3 @@ async def defer_migration(
         return {"status": "deferred", "migration_id": migration_id}
 
     raise HTTPException(status_code=404, detail="Migration not found")
-

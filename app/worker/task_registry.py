@@ -953,24 +953,6 @@ def run_analysis_in_background(
         except Exception as cache_err:
             logger.warning(f"Cache governance failed: {cache_err}")
 
-        # ── Email notification ──────────────────────────────────────────
-        try:
-            if False:
-                _s = _notify_summary
-                _subject = f"RepoHeal Analysis Complete — {_s['repo_id']}"
-                _text = (
-                    f"RepoHeal has completed a background analysis of {_s['repo_id']}.\n\n"
-                    f"Health Score: {_s['health_score']}/100\n"
-                    f"Migration Risk: {_s['risk_score']}/100\n"
-                    f"Deprecated APIs: {_s['deprecated_count']}\n"
-                    f"Breaking Changes: {_s['breaking_count']}\n"
-                    f"Analysis ID: {_s['analysis_id']}\n"
-                )
-                _html = _text.replace("\n", "<br>")
-                pass
-        except Exception:
-            pass
-
     except Exception as e:
         _elapsed = (dt_mod.now(tz_mod.utc) - _start).total_seconds()
         error_msg = traceback.format_exc()
