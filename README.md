@@ -12,7 +12,7 @@ MONGODB_DATABASE=repoheal
 CACHE_EXPIRY_DAYS=7
 PORT=8000
 INTERNAL_API_KEY=<LONG_RANDOM_SECRET>
-ALLOWED_DOMAINS=pypi.org,github.com,githubusercontent.com,readthedocs.io,readthedocs.com,docs.*
+ALLOWED_DOMAINS=pypi.org,github.com,githubusercontent.com,readthedocs.io,readthedocs.com,docs.python.org,flask.palletsprojects.com,docs.djangoproject.com
 UPSTREAM_TIMEOUT_SECONDS=8
 UPSTREAM_RETRY_COUNT=3
 ```

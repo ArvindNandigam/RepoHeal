@@ -1,6 +1,9 @@
 from unittest.mock import MagicMock
+import socket
+import json
 
 import httpx
+import pytest
 
 from app.config import Settings
 from app.discovery.document_extractor import fetch_page
@@ -44,6 +47,10 @@ def test_bulk_contract_preserves_repoheal_result_shape():
 def test_source_url_must_match_configured_domain(monkeypatch):
     settings = Settings(mongodb_uri="mongodb://example", allowed_domains=("docs.example.com",))
     monkeypatch.setattr("app.validators.sources.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "app.validators.sources.socket.getaddrinfo",
+        lambda *_args, **_kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443))],
+    )
 
     assert is_approved_source_url("https://docs.example.com/guide")
     assert not is_approved_source_url("https://evil.example/guide")
@@ -145,3 +152,70 @@ def test_fetch_page_revalidates_redirect_destination(monkeypatch):
     monkeypatch.setattr(httpx, "Client", client)
 
     assert fetch_page("https://docs.example.com/start") is None
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "127.0.0.1",
+        "10.0.0.8",
+        "169.254.169.254",
+        "::1",
+        "fd00::1",
+        "fe80::1",
+        "2001:db8::1",
+    ],
+)
+def test_source_url_rejects_non_public_resolved_addresses(monkeypatch, address):
+    settings = Settings(mongodb_uri="mongodb://example", allowed_domains=("trusted.example",))
+    monkeypatch.setattr("app.validators.sources.get_settings", lambda: settings)
+    family = socket.AF_INET6 if ":" in address else socket.AF_INET
+    monkeypatch.setattr(
+        "app.validators.sources.socket.getaddrinfo",
+        lambda *_args, **_kwargs: [(family, socket.SOCK_STREAM, 6, "", (address, 443))],
+    )
+
+    assert not is_approved_source_url("https://trusted.example/guide")
+
+
+def test_source_url_rejects_docs_wildcard_and_userinfo(monkeypatch):
+    settings = Settings(mongodb_uri="mongodb://example", allowed_domains=("docs.python.org",))
+    monkeypatch.setattr("app.validators.sources.get_settings", lambda: settings)
+
+    assert not is_approved_source_url("https://docs.attacker.example/guide")
+    assert not is_approved_source_url("https://name@docs.python.org/guide")
+
+
+@pytest.mark.anyio
+async def test_symbol_errors_do_not_return_traceback_or_exception_details():
+    from starlette.requests import Request
+    from app.routes.symbol_intelligence import _resolve_symbol_intelligence
+
+    async def receive():
+        return {"type": "http.request", "body": b"{", "more_body": False}
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/symbol-intelligence",
+            "query_string": b"debug=true",
+            "headers": [],
+        },
+        receive,
+    )
+    request.state.request_id = "req-security"
+
+    response = await _resolve_symbol_intelligence(
+        request,
+        MagicMock(),
+        MagicMock(),
+        debug=True,
+    )
+
+    body = json.loads(response.body)
+    assert body == {
+        "request_id": "req-security",
+        "status": "provider_unavailable",
+        "reason": "failed_to_parse_request",
+    }

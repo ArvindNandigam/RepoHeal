@@ -39,6 +39,9 @@ def fetch_page(url: str, timeout: float | None = None) -> str | None:
     try:
         with httpx.Client(timeout=timeout, follow_redirects=False, verify=True) as client:
             for redirect_count in range(settings.max_redirects + 1):
+                if not is_approved_source_url(current_url):
+                    logger.warning("Rejected fetch for unapproved source URL: %s", current_url)
+                    return None
                 response = client.get(current_url)
                 status_code = response.status_code if isinstance(response.status_code, int) else 200
                 if 300 <= status_code < 400:

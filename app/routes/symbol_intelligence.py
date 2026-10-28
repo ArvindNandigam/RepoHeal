@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import traceback
 from collections.abc import Sequence
 
 from fastapi import APIRouter, Depends, Request
@@ -55,17 +54,14 @@ async def _resolve_symbol_intelligence(
         logger.info("Symbols=%s", symbols)
     except Exception:
         logger.exception("symbol-intelligence failed")
-        if debug:
-            return JSONResponse(
-                status_code=500,
-                content={
-                    "request_id": request.state.request_id,
-                    "status": "provider_unavailable",
-                    "reason": "failed_to_parse_request",
-                    "traceback": traceback.format_exc(),
-                },
-            )
-        raise
+        return JSONResponse(
+            status_code=500,
+            content={
+                "request_id": request.state.request_id,
+                "status": "provider_unavailable",
+                "reason": "failed_to_parse_request",
+            },
+        )
 
     if not symbols:
         return JSONResponse(status_code=400, content={"request_id": request.state.request_id, "status": "degraded", "reason": "invalid_symbols"})
@@ -77,18 +73,8 @@ async def _resolve_symbol_intelligence(
     try:
         logger.info("Resolving symbol intelligence via MigrationEngine")
         response = await run_in_threadpool(service.resolve, library, symbols, debug)
-    except Exception as exc:
+    except Exception:
         logger.exception("symbol-intelligence failed")
-        if debug:
-            return JSONResponse(
-                status_code=500,
-                content={
-                    "request_id": request.state.request_id,
-                    "status": "provider_unavailable",
-                    "reason": "symbol_intelligence_failed",
-                    "traceback": traceback.format_exc(),
-                },
-            )
         return JSONResponse(
             status_code=500,
             content={"request_id": request.state.request_id, "status": "provider_unavailable", "reason": "symbol_intelligence_failed"},
@@ -136,13 +122,13 @@ async def debug_symbol_intelligence(
         if isinstance(response, JSONResponse):
             return response
         return JSONResponse(status_code=200, content=response)
-    except Exception as e:
+    except Exception:
+        logger.exception("debug-symbol-intelligence failed")
         return JSONResponse(
             status_code=500,
             content={
                 "request_id": request.state.request_id,
                 "status": "provider_unavailable",
                 "reason": "debug_symbol_intelligence_failed",
-                "error": str(e),
             },
         )

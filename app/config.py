@@ -18,7 +18,9 @@ DEFAULT_ALLOWED_DOMAINS = (
     "scikit-learn.org",
     "readthedocs.io",
     "readthedocs.com",
-    "docs.*",
+    "docs.python.org",
+    "flask.palletsprojects.com",
+    "docs.djangoproject.com",
 )
 MAX_LIBRARIES_PER_REQUEST = 25
 REQUESTS_PER_MINUTE = 100
