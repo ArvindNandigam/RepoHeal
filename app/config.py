@@ -24,6 +24,15 @@ MAX_LIBRARIES_PER_REQUEST = 25
 REQUESTS_PER_MINUTE = 100
 MAX_BULK_REQUESTS_PER_MINUTE = 10
 MAX_BULK_DEADLINE_SECONDS = 60.0
+MAX_RESPONSE_BYTES = 1_000_000
+MAX_UPSTREAM_RESPONSE_BYTES = 2_000_000
+MAX_REDIRECTS = 3
+DEFAULT_ALLOWED_CONTENT_TYPES = (
+    "text/html",
+    "text/plain",
+    "application/xhtml+xml",
+    "application/json",
+)
 
 
 @dataclass(frozen=True)
@@ -35,6 +44,10 @@ class Settings:
     upstream_timeout_seconds: float = 15.0
     upstream_retry_count: int = 3
     bulk_deadline_seconds: float = MAX_BULK_DEADLINE_SECONDS
+    max_response_bytes: int = MAX_RESPONSE_BYTES
+    max_upstream_response_bytes: int = MAX_UPSTREAM_RESPONSE_BYTES
+    max_redirects: int = MAX_REDIRECTS
+    allowed_content_types: tuple[str, ...] = DEFAULT_ALLOWED_CONTENT_TYPES
     internal_api_key: str | None = None
     allowed_domains: tuple[str, ...] = DEFAULT_ALLOWED_DOMAINS
     service_version: str = SERVICE_VERSION
@@ -81,6 +94,14 @@ class Settings:
         upstream_timeout_seconds = float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "15"))
         upstream_retry_count = int(os.getenv("UPSTREAM_RETRY_COUNT", "3"))
         bulk_deadline_seconds = float(os.getenv("BULK_DEADLINE_SECONDS", str(MAX_BULK_DEADLINE_SECONDS)))
+        max_response_bytes = int(os.getenv("MAX_RESPONSE_BYTES", str(MAX_RESPONSE_BYTES)))
+        max_upstream_response_bytes = int(os.getenv("MAX_UPSTREAM_RESPONSE_BYTES", str(MAX_UPSTREAM_RESPONSE_BYTES)))
+        max_redirects = int(os.getenv("MAX_REDIRECTS", str(MAX_REDIRECTS)))
+        allowed_content_types = tuple(
+            value.strip().lower()
+            for value in os.getenv("ALLOWED_CONTENT_TYPES", ",".join(DEFAULT_ALLOWED_CONTENT_TYPES)).split(",")
+            if value.strip()
+        )
         internal_api_key = os.getenv("INTERNAL_API_KEY", "").strip() or None
         allowed_domains_env = os.getenv("ALLOWED_DOMAINS", "").strip()
         allowed_domains = tuple(
@@ -123,6 +144,10 @@ class Settings:
             upstream_timeout_seconds=upstream_timeout_seconds,
             upstream_retry_count=upstream_retry_count,
             bulk_deadline_seconds=bulk_deadline_seconds,
+            max_response_bytes=max_response_bytes,
+            max_upstream_response_bytes=max_upstream_response_bytes,
+            max_redirects=max_redirects,
+            allowed_content_types=allowed_content_types or DEFAULT_ALLOWED_CONTENT_TYPES,
             internal_api_key=internal_api_key,
             allowed_domains=allowed_domains,
             gemini_api_key=gemini_api_key,

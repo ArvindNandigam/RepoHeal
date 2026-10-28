@@ -50,7 +50,7 @@ async def _resolve_symbol_intelligence(
         library = normalize_library_name(str(body.get("library", "")))
         symbols = _extract_symbols(body)
         if len(symbols) > MAX_SYMBOLS_PER_REQUEST:
-            return JSONResponse(status_code=400, content={"status": "failed", "reason": "too_many_symbols"})
+            return JSONResponse(status_code=400, content={"request_id": request.state.request_id, "status": "degraded", "reason": "too_many_symbols"})
         logger.info("Library=%s", library)
         logger.info("Symbols=%s", symbols)
     except Exception:
@@ -58,12 +58,17 @@ async def _resolve_symbol_intelligence(
         if debug:
             return JSONResponse(
                 status_code=500,
-                content={"status": "failed", "error": "failed to parse request", "traceback": traceback.format_exc()},
+                content={
+                    "request_id": request.state.request_id,
+                    "status": "provider_unavailable",
+                    "reason": "failed_to_parse_request",
+                    "traceback": traceback.format_exc(),
+                },
             )
         raise
 
     if not symbols:
-        return JSONResponse(status_code=400, content={"status": "failed", "reason": "failed"})
+        return JSONResponse(status_code=400, content={"request_id": request.state.request_id, "status": "degraded", "reason": "invalid_symbols"})
 
     request.state.library = library
     request.state.symbols = symbols
@@ -77,13 +82,21 @@ async def _resolve_symbol_intelligence(
         if debug:
             return JSONResponse(
                 status_code=500,
-                content={"status": "failed", "error": "symbol-intelligence failed", "traceback": traceback.format_exc()},
+                content={
+                    "request_id": request.state.request_id,
+                    "status": "provider_unavailable",
+                    "reason": "symbol_intelligence_failed",
+                    "traceback": traceback.format_exc(),
+                },
             )
-        return JSONResponse(status_code=500, content={"status": "failed", "error": "symbol-intelligence failed"})
+        return JSONResponse(
+            status_code=500,
+            content={"request_id": request.state.request_id, "status": "provider_unavailable", "reason": "symbol_intelligence_failed"},
+        )
 
-    request.state.cache_hit = False
+    request.state.cache_hit = response.get("status") == "cached"
 
-    return format_symbol_response(response, debug=debug)
+    return format_symbol_response(response, debug=debug, request_id=request.state.request_id)
 
 
 @router.post("/symbol-intelligence")
@@ -105,7 +118,10 @@ async def symbol_intelligence(
         return response
     except Exception:
         logger.exception("symbol-intelligence failed")
-        return JSONResponse(status_code=500, content={"status": "failed", "error": "symbol-intelligence failed"})
+        return JSONResponse(
+            status_code=500,
+            content={"request_id": request.state.request_id, "status": "provider_unavailable", "reason": "symbol_intelligence_failed"},
+        )
 
 
 @router.post("/debug-symbol-intelligence")
@@ -121,4 +137,12 @@ async def debug_symbol_intelligence(
             return response
         return JSONResponse(status_code=200, content=response)
     except Exception as e:
-        return JSONResponse(status_code=200, content={"status": "ok", "step": "error", "error": str(e)})
+        return JSONResponse(
+            status_code=500,
+            content={
+                "request_id": request.state.request_id,
+                "status": "provider_unavailable",
+                "reason": "debug_symbol_intelligence_failed",
+                "error": str(e),
+            },
+        )

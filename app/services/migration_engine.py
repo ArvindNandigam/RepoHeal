@@ -15,6 +15,8 @@ from app.discovery.fallback_extractor import extract_relationships_fallback
 from app.discovery.validation import validate_relationship
 from app.validators.sources import is_approved_source_url
 from app.services.version_resolver import resolve_library_metadata
+from app.services.cache import IntelligenceCache
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,11 @@ def _deduplicate_relationships(rels: list[dict]) -> list[dict]:
 class MigrationEngine:
     def __init__(self, knowledge_repository: KnowledgeRepository) -> None:
         self.knowledge_repository = knowledge_repository
+        settings = get_settings()
+        self.cache = IntelligenceCache(
+            positive_ttl_seconds=settings.cache_expiry_days * 86400,
+            negative_ttl_seconds=max(300, settings.cache_expiry_days * 86400 // 7),
+        )
 
     def _store_relationship(self, rel: dict, url: str, snippets: list[str], known_relationships: list[dict], library: str, debug_trace: dict | None) -> None:
         existing_rel = next((r for r in known_relationships if r["to"] == rel.get("to") and r["relation"] == rel.get("relation")), None)
@@ -65,6 +72,12 @@ class MigrationEngine:
         Main entry point for discovery.
         """
         logger.info("Resolving %d symbols for %s", len(symbols), library)
+        cached, cache_kind = self.cache.get(library, symbols)
+        if cached is not None:
+            cached["status"] = "cached"
+            cached["intelligence_reason"] = "positive_cache" if cache_kind == "positive" else "negative_cache"
+            cached["_cache_kind"] = cache_kind
+            return cached
 
         _overall_budget_exhausted = False
         results: list[dict] = []
@@ -296,10 +309,18 @@ class MigrationEngine:
                 "_debug": debug_trace
             })
             
-        intelligence_status = "degraded" if _overall_budget_exhausted else "ok"
-        intelligence_reason = "budget_exhausted" if _overall_budget_exhausted else None
-
-        return {
+        has_relationships = any(item.get("relationships") for item in results)
+        provider_unavailable = bool(symbols) and not any(
+            item.get("relationships") for item in results
+        ) and (not groq_pending or not groq_results)
+        status = "degraded" if _overall_budget_exhausted or provider_unavailable else "success"
+        intelligence_reason = (
+            "budget_exhausted" if _overall_budget_exhausted
+            else "provider_unavailable" if provider_unavailable
+            else None
+        )
+        response = {
+            "status": status,
             "library": library,
             "latest_version": latest_version,
             "official_docs": official_docs,
@@ -308,3 +329,6 @@ class MigrationEngine:
             "intelligence_reason": intelligence_reason,
             "results": results
         }
+        response["_cache_kind"] = "positive" if has_relationships or not symbols else "negative"
+        self.cache.put(library, symbols, response, positive=response["_cache_kind"] == "positive")
+        return response

@@ -3,6 +3,8 @@ from __future__ import annotations
 import httpx
 import logging
 
+from app.registry.local_library_registry import get_local_library_metadata
+
 logger = logging.getLogger(__name__)
 
 def resolve_latest_version(library: str) -> str | None:
@@ -59,5 +61,5 @@ def resolve_library_metadata(library: str) -> dict:
             return metadata
             
     except Exception as e:
-        logger.warning(f"Failed to resolve library metadata for {library} from PyPI: {e}")
-        return metadata
+        logger.warning("Failed to resolve library metadata for %s from PyPI: %s", library, e)
+        return get_local_library_metadata(library) or metadata

@@ -41,7 +41,7 @@ def serper_search(queries: list[str]) -> list[dict[str, str]]:
         "Content-Type": "application/json"
     }
 
-    with httpx.Client(timeout=10.0) as client:
+    with httpx.Client(timeout=settings.upstream_timeout_seconds) as client:
         for query in queries:
             if len(all_results) >= max_results:
                 break

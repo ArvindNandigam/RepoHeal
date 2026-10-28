@@ -18,6 +18,7 @@ from app.observability.repository import OperationalRepository
 from app.rate_limit import limiter
 from app.startup import initialize_runtime
 from app.routes.health import router as health_router
+from app.routes.provider_health import router as provider_health_router
 from app.routes.bulk_library_intelligence import router as bulk_library_router
 from app.routes.library_intelligence import router as library_router
 from app.routes.symbol_intelligence import router as symbol_router
@@ -27,8 +28,11 @@ from app.routes.daily_report import router as report_router
 logger = logging.getLogger(__name__)
 
 
-def _failure_response(reason: str, status_code: int) -> JSONResponse:
-    return JSONResponse(status_code=status_code, content={"status": "failed", "reason": reason})
+def _failure_response(reason: str, status_code: int, request_id: str | None = None, status: str = "provider_unavailable") -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={"request_id": request_id, "status": status, "reason": reason},
+    )
 
 
 def _extract_bearer_token(request: Request) -> str | None:
@@ -46,6 +50,7 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_middleware(SlowAPIMiddleware)
     app.include_router(health_router)
+    app.include_router(provider_health_router)
     app.include_router(library_router)
     app.include_router(bulk_library_router)
     app.include_router(symbol_router)
@@ -64,10 +69,10 @@ def create_app() -> FastAPI:
         operational_repository = get_operational_repository()
         start = perf_counter()
 
-        if request.url.path != "/health" and request.url.path != "/healthz":
+        if request.url.path not in {"/health", "/healthz", "/health/providers"}:
             raw_token = _extract_bearer_token(request)
             if raw_token is None:
-                response = _failure_response("unauthorized", 401)
+                response = _failure_response("unauthorized", 401, request_id, "provider_unavailable")
                 response.headers["X-Request-ID"] = request_id
                 response.headers["X-Service-Version"] = settings.service_version
                 operational_repository.log_audit_event(
@@ -91,7 +96,7 @@ def create_app() -> FastAPI:
 
             authorized, api_key_name, api_key_hash = operational_repository.find_matching_api_key(raw_token)
             if not authorized:
-                response = _failure_response("unauthorized", 401)
+                response = _failure_response("unauthorized", 401, request_id, "provider_unavailable")
                 response.headers["X-Request-ID"] = request_id
                 response.headers["X-Service-Version"] = settings.service_version
                 operational_repository.log_audit_event(
@@ -121,9 +126,13 @@ def create_app() -> FastAPI:
         except Exception as exc:
             logger.exception("Unhandled request exception", exc_info=(type(exc), exc, exc.__traceback__))
             operational_repository.log_error(request_id, request.url.path, exc.__class__.__name__, str(exc))
-            response = _failure_response("internal_error", 500)
+            response = _failure_response("internal_error", 500, request_id)
             response.headers["X-Request-ID"] = request_id
             response.headers["X-Service-Version"] = settings.service_version
+            if len(getattr(response, "body", b"")) > settings.max_response_bytes:
+                response = _failure_response("response_too_large", 500, request_id, "degraded")
+                response.headers["X-Request-ID"] = request_id
+                response.headers["X-Service-Version"] = settings.service_version
             operational_repository.log_request(
                 request_id=request_id,
                 endpoint=request.url.path,
@@ -138,6 +147,10 @@ def create_app() -> FastAPI:
             return response
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Service-Version"] = settings.service_version
+        if len(getattr(response, "body", b"")) > settings.max_response_bytes:
+            response = _failure_response("response_too_large", 500, request_id, "degraded")
+            response.headers["X-Request-ID"] = request_id
+            response.headers["X-Service-Version"] = settings.service_version
 
         operational_repository.log_request(
             request_id=request_id,
@@ -160,7 +173,10 @@ def create_app() -> FastAPI:
         request_id = getattr(request.state, "request_id", str(uuid4()))
         operational_repository = get_operational_repository()
         operational_repository.log_error(request_id, request.url.path, exc.__class__.__name__, str(exc))
-        return _failure_response("contract_validation_failed", 400)
+        response = _failure_response("contract_validation_failed", 400, request_id, "degraded")
+        response.headers["X-Request-ID"] = request_id
+        response.headers["X-Service-Version"] = settings.service_version
+        return response
 
     @app.exception_handler(Exception)
     def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -168,7 +184,7 @@ def create_app() -> FastAPI:
         operational_repository = get_operational_repository()
         operational_repository.log_error(request_id, request.url.path, exc.__class__.__name__, str(exc))
         logger.error("Unhandled application exception", exc_info=(type(exc), exc, exc.__traceback__))
-        response = _failure_response("internal_error", 500)
+        response = _failure_response("internal_error", 500, request_id)
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Service-Version"] = settings.service_version
         return response
@@ -183,7 +199,7 @@ def create_app() -> FastAPI:
             request_id=request_id,
             library=getattr(request.state, "library", None),
         )
-        response = _failure_response("rate_limit_exceeded", 429)
+        response = _failure_response("rate_limit_exceeded", 429, request_id, "rate_limited")
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Service-Version"] = settings.service_version
         response.headers["Retry-After"] = "10"

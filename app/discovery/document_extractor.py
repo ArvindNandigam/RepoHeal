@@ -4,7 +4,9 @@ import logging
 import httpx
 from html.parser import HTMLParser
 import re
+from urllib.parse import urljoin
 from app.validators.sources import is_approved_source_url
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -27,15 +29,50 @@ def _extract_text(content: str) -> str:
     text = extractor.text()
     return text or re.sub(r"\s+", " ", content).strip()
 
-def fetch_page(url: str, timeout: float = 10.0) -> str | None:
+def fetch_page(url: str, timeout: float | None = None) -> str | None:
     if not is_approved_source_url(url):
         logger.warning("Rejected fetch for unapproved source URL: %s", url)
         return None
+    settings = get_settings()
+    timeout = timeout if timeout is not None else settings.upstream_timeout_seconds
+    current_url = url
     try:
         with httpx.Client(timeout=timeout, follow_redirects=False, verify=True) as client:
-            response = client.get(url)
-            response.raise_for_status()
-            return _extract_text(response.text)
+            for redirect_count in range(settings.max_redirects + 1):
+                response = client.get(current_url)
+                status_code = response.status_code if isinstance(response.status_code, int) else 200
+                if 300 <= status_code < 400:
+                    location = response.headers.get("location")
+                    if not location or redirect_count >= settings.max_redirects:
+                        return None
+                    current_url = urljoin(current_url, location)
+                    if not is_approved_source_url(current_url):
+                        logger.warning("Rejected redirect to unapproved source URL: %s", current_url)
+                        return None
+                    continue
+
+                response.raise_for_status()
+                content_type_header = response.headers.get("content-type", "")
+                content_type = content_type_header.split(";", 1)[0].strip().lower() if isinstance(content_type_header, str) else ""
+                if content_type and content_type not in settings.allowed_content_types:
+                    logger.warning("Rejected unsupported content type %s for %s", content_type, current_url)
+                    return None
+                content_length = response.headers.get("content-length")
+                if isinstance(content_length, str) and content_length and int(content_length) > settings.max_upstream_response_bytes:
+                    logger.warning("Rejected oversized response for %s", current_url)
+                    return None
+                content = response.content
+                if not isinstance(content, bytes):
+                    content = response.text.encode("utf-8")
+                if len(content) > settings.max_upstream_response_bytes:
+                    logger.warning("Rejected oversized response for %s", current_url)
+                    return None
+                encoding = response.encoding if isinstance(response.encoding, str) else "utf-8"
+                return _extract_text(content.decode(encoding or "utf-8", errors="replace"))
+            return None
+    except (ValueError, UnicodeError) as e:
+        logger.debug("Failed to validate page %s: %s", url, e)
+        return None
     except Exception as e:
         logger.debug("Failed to fetch page %s: %s", url, e)
         return None

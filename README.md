@@ -35,6 +35,11 @@ The service rate limits normal intelligence endpoints to 100 requests per minute
 Bulk requests are limited to 10 requests per minute per API key and have a 60-second overall deadline.
 Bulk requests are capped at 25 libraries per request.
 
+Responses use a shared envelope with `request_id`, `status`, and endpoint data.
+The status is one of `success`, `cached`, `degraded`, `rate_limited`,
+`provider_unavailable`, or `timeout`. Bulk responses retain the `results` array,
+and each item uses the same status and request ID fields.
+
 RepoHeal should use `POST /bulk-library-intelligence` and configure the same
 `INTERNAL_API_KEY` value in both Render services.
 
@@ -63,6 +68,7 @@ On boot the service pings MongoDB, creates required collections and indexes, val
 ## API
 
 * `GET /health`
+* `GET /health/providers`
 * `GET /library-intelligence/{library}`
 * `POST /bulk-library-intelligence`
 * `POST /symbol-intelligence`
@@ -70,4 +76,7 @@ On boot the service pings MongoDB, creates required collections and indexes, val
 `GET /library-intelligence/{library}` returns library metadata with `library`, `latest_version`,
 `intelligence_status`, `intelligence_reason`, `official_docs`, and `github_repo`.
 `POST /bulk-library-intelligence` accepts `{"libraries": [{"library": "pandas", "symbols": ["pandas.DataFrame"]}]}`
-and returns `{"results": [...]}`. Each result contains the library metadata and symbol relationship results.
+and returns `{"request_id": "...", "status": "success", "results": [...]}`. Each result contains
+the library metadata, status, and symbol relationship results. `/health/providers` reports
+provider state only; it never returns API keys or other secrets. Upstream responses are
+restricted by content type and size, and redirects are revalidated against `ALLOWED_DOMAINS`.

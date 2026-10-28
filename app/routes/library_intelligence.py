@@ -35,7 +35,15 @@ async def library_intelligence(
         response = await run_in_threadpool(
             service.resolve, normalized_library, [], is_debug_enabled(request.query_params)
         )
-        return format_library_response(response, debug=is_debug_enabled(request.query_params))
+        request.state.cache_hit = response.get("status") == "cached"
+        return format_library_response(
+            response,
+            debug=is_debug_enabled(request.query_params),
+            request_id=request.state.request_id,
+        )
     except Exception as exc:
         logger.exception("library-intelligence failed")
-        return JSONResponse(status_code=500, content={"status": "failed", "error": "library-intelligence failed"})
+        return JSONResponse(
+            status_code=500,
+            content={"request_id": request.state.request_id, "status": "provider_unavailable", "reason": "library_intelligence_failed"},
+        )

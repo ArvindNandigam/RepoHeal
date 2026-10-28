@@ -33,7 +33,7 @@ async def bulk_library_intelligence(
         if not isinstance(libraries_payload, list):
             libraries_payload = []
         if len(libraries_payload) > MAX_LIBRARIES_PER_REQUEST:
-            return JSONResponse(status_code=400, content={"status": "failed", "reason": "too_many_libraries"})
+            return JSONResponse(status_code=400, content={"request_id": request.state.request_id, "status": "degraded", "reason": "too_many_libraries"})
 
         normalized_items: list[dict[str, list[str] | str]] = []
         for item in libraries_payload:
@@ -46,7 +46,7 @@ async def bulk_library_intelligence(
                 }
             )
     except Exception:
-        return JSONResponse(status_code=400, content={"status": "failed", "reason": "failed"})
+        return JSONResponse(status_code=400, content={"request_id": request.state.request_id, "status": "degraded", "reason": "invalid_request"})
 
     request.state.library = "bulk"
     request.state.libraries = [item["library"] for item in normalized_items]
@@ -59,7 +59,7 @@ async def bulk_library_intelligence(
         for item in normalized_items:
             remaining = deadline - monotonic()
             if remaining <= 0:
-                return JSONResponse(status_code=504, content={"status": "failed", "reason": "bulk_deadline_exceeded"})
+                return JSONResponse(status_code=504, content={"request_id": request.state.request_id, "status": "timeout", "reason": "bulk_deadline_exceeded"})
             try:
                 result = await asyncio.wait_for(
                     run_in_threadpool(service.resolve, item["library"], item["symbols"], debug=debug),
@@ -68,14 +68,14 @@ async def bulk_library_intelligence(
                 results.append(
                     {
                         "library": item["library"],
-                        "status": "success",
+                        "status": result.get("status", "success"),
                         "result": result,
                     }
                 )
             except asyncio.TimeoutError:
                 return JSONResponse(
                     status_code=504,
-                    content={"status": "failed", "reason": "bulk_deadline_exceeded"},
+                    content={"request_id": request.state.request_id, "status": "timeout", "reason": "bulk_deadline_exceeded"},
                 )
             except Exception as exc:
                 operational_repository.log_error(
@@ -87,8 +87,8 @@ async def bulk_library_intelligence(
                 results.append(
                     {
                         "library": item["library"],
-                        "status": "failed",
-                        "reason": "failed",
+                        "status": "provider_unavailable",
+                        "reason": "library_resolution_failed",
                     }
                 )
     except Exception as exc:
@@ -98,6 +98,10 @@ async def bulk_library_intelligence(
             error_type=exc.__class__.__name__,
             error_message=str(exc),
         )
-        return JSONResponse(status_code=500, content={"status": "failed", "error": str(exc)})
+        return JSONResponse(
+            status_code=500,
+            content={"request_id": request.state.request_id, "status": "provider_unavailable", "reason": "bulk_resolution_failed"},
+        )
 
-    return format_bulk_response(results)
+    request.state.cache_hit = bool(results) and all(item.get("status") == "cached" for item in results)
+    return format_bulk_response(results, request_id=request.state.request_id)

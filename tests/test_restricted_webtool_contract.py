@@ -6,6 +6,9 @@ from app.config import Settings
 from app.discovery.document_extractor import fetch_page
 from app.knowledge.repository import KnowledgeRepository
 from app.routes.response_formatters import format_bulk_response
+from app.routes.response_formatters import format_symbol_response
+from app.services.cache import IntelligenceCache
+from app.services.version_resolver import resolve_library_metadata
 from app.validators.sources import is_approved_source_url
 
 
@@ -81,3 +84,64 @@ def test_mongodb_evidence_ttl_uses_configured_retention():
         call.args == ("retrieved_at",) and call.kwargs["expireAfterSeconds"] == 7 * 86400
         for call in evidence_calls
     )
+
+
+def test_single_and_bulk_responses_share_status_and_request_id_contract():
+    payload = {
+        "library": "pandas",
+        "latest_version": "2.2.0",
+        "status": "cached",
+        "intelligence_status": "ok",
+        "results": [],
+    }
+
+    single = format_symbol_response(payload, request_id="req-1")
+    bulk = format_bulk_response(
+        [{"library": "pandas", "status": "cached", "result": payload}],
+        request_id="req-1",
+    )
+
+    assert single["request_id"] == bulk["request_id"] == "req-1"
+    assert single["status"] == bulk["status"] == "cached"
+    assert bulk["results"][0]["status"] == "cached"
+
+
+def test_positive_and_negative_cache_entries_are_separate_and_expire():
+    cache = IntelligenceCache(positive_ttl_seconds=60, negative_ttl_seconds=60)
+    cache.put("pandas", ["pandas.DataFrame"], {"value": "positive"}, positive=True)
+    cache.put("pandas", ["pandas.Series"], {"value": "negative"}, positive=False)
+
+    assert cache.get("pandas", ["pandas.DataFrame"]) == ({"value": "positive"}, "positive")
+    assert cache.get("pandas", ["pandas.Series"]) == ({"value": "negative"}, "negative")
+
+
+def test_local_registry_is_used_when_pypi_is_unavailable(monkeypatch):
+    class FailedClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, *_args, **_kwargs):
+            raise httpx.ConnectError("offline")
+
+    monkeypatch.setattr(httpx, "Client", lambda **_kwargs: FailedClient())
+
+    metadata = resolve_library_metadata("pandas")
+
+    assert metadata["official_docs"] == "https://pandas.pydata.org/docs/"
+    assert metadata["github_repo"] == "https://github.com/pandas-dev/pandas"
+
+
+def test_fetch_page_revalidates_redirect_destination(monkeypatch):
+    monkeypatch.setattr(
+        "app.discovery.document_extractor.is_approved_source_url",
+        lambda url: url.startswith("https://docs.example.com"),
+    )
+    redirect = MagicMock(status_code=302, headers={"location": "https://evil.example/final"})
+    client = MagicMock()
+    client.return_value.__enter__.return_value.get.return_value = redirect
+    monkeypatch.setattr(httpx, "Client", client)
+
+    assert fetch_page("https://docs.example.com/start") is None
