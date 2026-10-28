@@ -824,7 +824,7 @@ def run_analysis_in_background(
         _pipeline_success = False
         _notify_summary = {}
         try:
-            async def run_pipeline():
+            async def run_pipeline(analysis=analysis):
                 intelligence_provider = create_intelligence_provider()
                 pipeline = MigrationPipeline(intelligence_provider, github_client)
                 pipeline.cancel_check = _cancel_check
@@ -953,27 +953,6 @@ def run_analysis_in_background(
         except Exception as cache_err:
             logger.warning(f"Cache governance failed: {cache_err}")
 
-        # ── Email notification ──────────────────────────────────────────
-        try:
-            from app.config import settings as _settings
-            from app.notifications.email_sender import _send_email as _send_notify
-            _recipient = _settings.REPORT_RECIPIENT
-            if _settings.EMAIL_ENABLED and _recipient and _notify_summary:
-                _s = _notify_summary
-                _subject = f"RepoHeal Analysis Complete — {_s['repo_id']}"
-                _text = (
-                    f"RepoHeal has completed a background analysis of {_s['repo_id']}.\n\n"
-                    f"Health Score: {_s['health_score']}/100\n"
-                    f"Migration Risk: {_s['risk_score']}/100\n"
-                    f"Deprecated APIs: {_s['deprecated_count']}\n"
-                    f"Breaking Changes: {_s['breaking_count']}\n"
-                    f"Analysis ID: {_s['analysis_id']}\n"
-                )
-                _html = _text.replace("\n", "<br>")
-                _send_notify(_recipient, _subject, _text, _html)
-        except Exception:
-            pass
-
     except Exception as e:
         _elapsed = (dt_mod.now(tz_mod.utc) - _start).total_seconds()
         error_msg = traceback.format_exc()
@@ -1063,7 +1042,7 @@ def run_health_refresh_in_background(
         analysis["commit_sha"] = commit_sha
 
         health_refresh_aid = metadata_manager.generate_ids(repo_id, selected_branch, commit_sha)[0]
-        async def run_pipeline():
+        async def run_pipeline(analysis=analysis):
             intelligence_provider = create_intelligence_provider()
             pipeline = MigrationPipeline(intelligence_provider, github_client)
             try:

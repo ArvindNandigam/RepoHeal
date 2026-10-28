@@ -6,6 +6,7 @@ from app.github.installations import get_repository_installation
 from app.storage.metadata_store import MetadataStore
 from app.github.user_repositories import fetch_user_repositories
 from app.github.installed_repositories import get_installed_repositories
+from app.worker.task_registry import get_repository_status
 
 REPO_CACHE_ROOT = Path(".repoheal_cache")
 
@@ -59,6 +60,23 @@ def build_dashboard_repositories(github_token: str):
         repo_private = repo.get("private", False)
         if not owner_login or not repo_name or not repo_full_name or repo_full_name not in installed_repositories:
             continue
+        status = get_repository_status(owner_login, repo_name) or {}
+        health_score = None
+        issue_count = 0
+        critical_issue_count = 0
+        try:
+            analysis = load_cached_analysis(owner_login, repo_name)
+            report = analysis.get("report", {}) if isinstance(analysis, dict) else {}
+            summary = report.get("executive_summary", {}) if isinstance(report, dict) else {}
+            health_score = summary.get("overall_health_score", report.get("overall_health_score"))
+            issues = analysis.get("issues", {}) if isinstance(analysis, dict) else {}
+            issue_count = int(issues.get("total", issues.get("count", 0)) or 0)
+            critical_issue_count = int(issues.get("critical", issues.get("high", 0)) or 0)
+        except (TypeError, ValueError):
+            pass
+        current_head = status.get("current_head")
+        last_commit = status.get("last_commit_analyzed") or status.get("target_commit_sha")
+        score = int(health_score) if isinstance(health_score, (int, float)) else None
         dashboard_repositories.append({
             "name": repo_full_name,
             "owner": owner_login,
@@ -72,5 +90,18 @@ def build_dashboard_repositories(github_token: str):
             "reports_url": f"/reports/{owner_login}/{repo_name}",
             "reports_hub_url": f"/reports/{owner_login}/{repo_name}/hub",
             "history_url": f"/reports/{owner_login}/{repo_name}/history-page",
+            "description": repo.get("description"),
+            "language": repo.get("language"),
+            "default_branch": repo.get("default_branch"),
+            "updated_at": repo.get("updated_at"),
+            "health_score": score,
+            "issue_count": issue_count,
+            "critical_issue_count": critical_issue_count,
+            "analysis_status": status.get("status", "not_analyzed"),
+            "analysis_progress": status.get("progress", 0),
+            "last_analysis": status.get("last_analysis"),
+            "last_commit_analyzed": last_commit,
+            "current_head": current_head,
+            "trend": [],
         })
     return dashboard_repositories

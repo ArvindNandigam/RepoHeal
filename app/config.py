@@ -8,7 +8,7 @@ load_dotenv()
 class Settings:
     ENVIRONMENT = os.getenv(
         "ENVIRONMENT",
-        "production"
+        "development"
     )
 
     GITHUB_OAUTH_CLIENT_ID = os.getenv("GITHUB_OAUTH_CLIENT_ID")
@@ -71,19 +71,10 @@ class Settings:
     # Feedback
     FEEDBACK_LINK = os.getenv("FEEDBACK_LINK", "")
 
-    # Email / Notifications
-    EMAIL_ENABLED = os.getenv("EMAIL_ENABLED", "false").lower() in ("1", "true", "yes")
-    SMTP_HOST = os.getenv("SMTP_HOST", "")
-    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-    SMTP_USER = os.getenv("SMTP_USER", "")
-    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-    EMAIL_FROM = os.getenv("EMAIL_FROM") or os.getenv("SMTP_FROM", "repoheal@noreply.local")
-    REPORT_RECIPIENT = os.getenv("REPORT_RECIPIENT", "")
-
 settings = Settings()
 
 
-if not settings.JWT_SECRET_KEY:
+if settings.ENVIRONMENT == "production" and not settings.JWT_SECRET_KEY:
     raise ValueError("JWT_SECRET_KEY missing")
 
 if settings.ENVIRONMENT == "production" and not settings.GITHUB_TOKEN_ENCRYPTION_KEY:

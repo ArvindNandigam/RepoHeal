@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class AnalysisTargetMetadata(BaseModel):
     analysis_id: str
@@ -49,12 +49,26 @@ class RepositoryConfig(BaseModel):
     reports_url: str
     reports_hub_url: str = ""
     history_url: str = ""
+    description: Optional[str] = None
+    language: Optional[str] = None
+    default_branch: Optional[str] = None
+    updated_at: Optional[str] = None
+    health_score: Optional[int] = None
+    issue_count: int = 0
+    critical_issue_count: int = 0
+    analysis_status: str = "not_analyzed"
+    analysis_progress: int = 0
+    last_analysis: Optional[str] = None
+    last_commit_analyzed: Optional[str] = None
+    current_head: Optional[str] = None
+    trend: List[int] = Field(default_factory=list)
 
 
 class DashboardResponse(BaseModel):
     user: str
     repositories: List[RepositoryConfig]
     timezone: Optional[str] = "UTC"
+    metrics: Dict[str, Any] = Field(default_factory=dict)
 
 class WorkspaceResponse(BaseModel):
     repo_owner: str

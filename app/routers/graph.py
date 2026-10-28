@@ -26,7 +26,14 @@ router = APIRouter(tags=["graph"])
 
 
 def _is_stale_finalizing_status(status: dict) -> bool:
-    if status.get("status") not in {"generating_graph", "generating_reports", "generating_migrations", "updating_metadata"} or status.get("progress", 0) < 80:
+    if status.get("status") not in {
+        "running",
+        "analyzing",
+        "generating_graph",
+        "generating_reports",
+        "generating_migrations",
+        "updating_metadata",
+    } or status.get("progress", 0) < 80:
         return False
 
     updated_at = status.get("updated_at")
@@ -277,6 +284,20 @@ async def get_repository_status(
 
         file_count = len(analysis.get("imports", {}).get("files", {})) if analysis else 0
         package_count = len(analysis.get("dependency_graph", {})) if analysis else 0
+        if not file_count and not package_count:
+            try:
+                with neo4j_connection.get_session() as neo4j_session:
+                    counts = neo4j_session.run(
+                        "MATCH (n) WHERE n.repository = $repo_id "
+                        "RETURN count(CASE WHEN n.type = 'file' THEN 1 END) AS file_count, "
+                        "count(CASE WHEN n.type = 'package' THEN 1 END) AS package_count",
+                        repo_id=repo_id,
+                    ).single()
+                if counts:
+                    file_count = counts.get("file_count", 0)
+                    package_count = counts.get("package_count", 0)
+            except Exception as exc:
+                logger.warning(f"Could not load graph counts for {repo_id}: {exc}")
 
         if not visual_graph:
             return {

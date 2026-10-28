@@ -4,6 +4,7 @@ import os
 import httpx
 from typing import Dict, List, Any, Callable, Optional
 from collections import defaultdict
+from app.config import settings
 from app.cache.cache_manager import CacheManager
 from app.utils.logger import get_logger
 
@@ -127,7 +128,12 @@ class WebtoolClient:
             raise JobCancelledException("Job was cancelled during request")
 
     async def _request_uncached(self, method: str, endpoint: str, **kwargs):
-        delays = [2, 4, 8, 16, 32, 60]
+        delays = [2, 4, 8, 16, 32, 60, 90, 120, 120, 120]
+        recovery_window = max(
+            1,
+            int(getattr(settings, "JOB_ORPHAN_TIMEOUT_MINUTES", 15) * 60),
+        )
+        deadline = asyncio.get_event_loop().time() + recovery_window
 
         for attempt in range(len(delays) + 1):
             self._check_cancelled()
@@ -140,16 +146,21 @@ class WebtoolClient:
                 return response.json()
                 
             except (httpx.RequestError, httpx.HTTPStatusError) as e:
-                if (
+                is_429 = (
                     isinstance(e, httpx.HTTPStatusError)
-                    and e.response.status_code == 429
-                    and attempt < len(delays)
-                ):
+                    and (e.response.status_code == 429 or "429" in str(e))
+                )
+                if is_429 and attempt < len(delays):
                     retry_after = e.response.headers.get("Retry-After")
                     try:
                         delay = max(float(retry_after), delays[attempt])
                     except (TypeError, ValueError):
                         delay = delays[attempt]
+                    delay = min(delay, max(0, deadline - asyncio.get_event_loop().time()))
+                    if delay <= 0:
+                        raise TimeoutError(
+                            f"Retry budget exhausted for Restricted Webtool request {endpoint}"
+                        ) from e
                     logger.warning(
                         f"Rate limited on {endpoint}; retrying in {delay}s"
                     )
@@ -167,7 +178,14 @@ class WebtoolClient:
                     logger.error(f"Max retries reached for {endpoint}: {e}")
                     raise
                     
-                delay = delays[attempt]
+                delay = min(
+                    delays[attempt],
+                    max(0, deadline - asyncio.get_event_loop().time()),
+                )
+                if delay <= 0:
+                    raise TimeoutError(
+                        f"Retry budget exhausted for Restricted Webtool request {endpoint}"
+                    ) from e
                 logger.warning(f"Request failed, retrying in {delay}s: {e}")
                 await self._sleep_with_cancel(delay)
 
@@ -199,7 +217,7 @@ class WebtoolClient:
                 
             payload = {
                 "libraries": [
-                    {"name": lib, "symbols": list(set(symbols))}
+                    {"library": lib, "symbols": sorted(set(symbols))}
                     for lib, symbols in self._batch_queue.items()
                 ]
             }

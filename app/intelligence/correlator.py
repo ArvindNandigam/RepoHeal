@@ -102,20 +102,23 @@ class MigrationCorrelator:
             total_symbols += len(symbols)
 
         libraries_checked = len(requests)
-        for offset in range(0, len(requests), 25):
-            batch = requests[offset:offset + 25]
+        if requests:
             try:
-                response = await self._fetch_batch_intelligence(batch)
+                response = await self._fetch_batch_intelligence(requests)
             except Exception as e:
-                batch_names = ", ".join(item["library"] for item in batch)
                 error_msg = str(e)
                 if hasattr(e, "response") and hasattr(e.response, "text"):
                     error_msg += f" - Response: {e.response.text}"
-                logger.error(f"Error fetching bulk intelligence for {batch_names}: {error_msg}")
-                errors.append(f"{batch_names}: {error_msg}")
-                continue
+                logger.error(f"Error fetching bulk intelligence: {error_msg}")
+                errors.extend(
+                    f"{item['library']}: {error_msg}" for item in requests
+                )
+                response = {"results": []}
+        else:
+            response = {"results": []}
 
-            for library_response in response.get("results", []):
+        seen_assessments = set()
+        for library_response in response.get("results", []):
                 library = library_response.get("library")
                 if not library or library_response.get("status") == "failed":
                     errors.append(
@@ -162,6 +165,10 @@ class MigrationCorrelator:
                         relationships,
                         installed_version
                     )
+                    assessment_key = (library, symbol_name)
+                    if assessment_key in seen_assessments:
+                        continue
+                    seen_assessments.add(assessment_key)
                     assessments.append(
                         SymbolAssessment(
                             symbol=symbol_name,
@@ -198,7 +205,9 @@ class MigrationCorrelator:
             [a.model_dump() for a in assessments],
         )
         for loc in local_assessments:
-            assessments.append(SymbolAssessment(**loc))
+            key = (loc.get("library"), loc.get("symbol"))
+            if key not in {(a.library, a.symbol) for a in assessments}:
+                assessments.append(SymbolAssessment(**loc))
 
         return CorrelationResult(
             repository=repo_id,
@@ -217,6 +226,11 @@ class MigrationCorrelator:
                     return response
             except Exception as e:
                 logger.warning(f"Bulk intelligence request failed: {e}")
+                if "429" in str(e) or (hasattr(e, "response") and e.response.status_code == 429):
+                    raise
+                # Only fallback for specific errors like 404 (Not Found) if the endpoint is missing
+                if hasattr(e, "response") and e.response.status_code != 404:
+                    raise
 
         if not hasattr(self.client, "get_symbol_intelligence"):
             return {"results": []}
@@ -247,6 +261,8 @@ class MigrationCorrelator:
         assessed_symbols = {(a.library, a.symbol) for a in assessments}
 
         for library, fp_data in fingerprint_data.items():
+            if any(a.library == library for a in assessments):
+                continue
             dep = dependency_graph.get(library, {})
             installed_version = fp_data.get("version") or dep.get("version", "unknown")
             latest_version = dep.get("latest_version", "unknown")

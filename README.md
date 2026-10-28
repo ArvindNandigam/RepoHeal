@@ -2,6 +2,37 @@
 
 RepoHeal analyzes installed GitHub repositories, builds dependency graphs, and generates health reports without exposing internal workspace URLs in the user dashboard.
 Link : https://repoheal.onrender.com/ (Note the render instance takes time to turn on and neo4j instances also run on free tier and might be asleep)
+
+## Local frontend
+
+The redesigned dashboard lives in `frontend/` and is built with Vite. Run:
+
+```text
+cd frontend
+npm install
+npm run build
+```
+
+The FastAPI application serves `frontend/dist` at `/dashboard` when it exists and falls back to the existing server-rendered dashboard when it does not. Render builds the frontend before starting Uvicorn.
+
+The authenticated dashboard consumes `/dashboard/data` and the repository overview,
+status SSE, graph, report, comparison, and diagnostics endpoints. Repository detail
+views provide live metadata, analysis progress, graph filtering/path highlighting,
+JSON/Markdown/PNG exports, and browser-local issue triage. Missing analysis history,
+Neo4j, or report snapshots are shown as unavailable states rather than replaced with
+preview metrics.
+
+## Neo4j Aura setup
+
+1. Create a free Neo4j AuraDB instance at https://console.neo4j.io/.
+2. Create or select a database, then copy its connection URI, username, and generated password.
+3. Add these Render environment variables to the RepoHeal service:
+   - `NEO4J_URI`: the Aura URI, usually `neo4j+s://...`
+   - `NEO4J_USERNAME`: usually `neo4j`
+   - `NEO4J_PASSWORD`: the generated database password
+4. Restart or redeploy the service. Check `/healthz`; the response should report Neo4j as available.
+
+Aura free instances may pause when idle. Start or resume the instance in the Aura console before testing graph visualization. Never commit the Aura password or URI to the repository.
 ## Dashboard
 
 The dashboard shows installed repositories with:
@@ -16,6 +47,12 @@ The dashboard shows installed repositories with:
 - Compare Analyses
 
 Repository cards do not display workspace URLs or internal metadata endpoints.
+
+The JSON dashboard response includes aggregate metrics plus per-repository health
+and analysis fields. Report exports are available at
+`/reports/{owner}/{repo}/export?format=json|markdown`; graph JSON is served by
+`/graph/{owner}/{repo}` and server-rendered PNG export by
+`/visualize/{owner}/{repo}/export.png`.
 
 ## Analysis Workflows
 

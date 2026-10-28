@@ -359,24 +359,6 @@ async def approve_upgrades(
                 "error": str(e), "branch": branch_name
             })
 
-        # ── Step 5: Email notification for human review ────────────────
-        if has_human_needed:
-            try:
-                from app.notifications.email_sender import _send_email
-                user_email = session_data.get("github_email") or session_data.get("email", "")
-                if user_email:
-                    subject = f"[RepoHeal] Manual review needed for {repo_id}"
-                    text = (
-                        f"RepoHeal could not fully auto-patch {lib} in {repo_id}.\n\n"
-                        f"PR #{pr.number}: {pr.html_url}\n\n"
-                        f"The following symbols require manual attention:\n"
-                        + "\n".join(f"  - {i['symbol']} in {i['file']}" for i in local_human_review)
-                        + "\n\nPlease review and fix manually."
-                    )
-                    _send_email(user_email, subject, text, text.replace("\n", "<br>"))
-            except Exception:
-                pass
-
     # Trigger re-analysis
     try:
         from app.worker.task_registry import create_job
@@ -609,5 +591,3 @@ async def defer_migration(
         return {"status": "deferred", "migration_id": migration_id}
 
     raise HTTPException(status_code=404, detail="Migration not found")
-
-
