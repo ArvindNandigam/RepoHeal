@@ -2,6 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi.middleware import SlowAPIMiddleware
 from app.auth.session_store import session_store
 from app.graph.connection import neo4j_connection
@@ -61,6 +62,10 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down RepoHeal backend")
 
 app = FastAPI(lifespan=lifespan)
+
+frontend_assets = dashboard.FRONTEND_DIST / "assets"
+if frontend_assets.is_dir():
+    app.mount("/dashboard/assets", StaticFiles(directory=frontend_assets), name="dashboard-assets")
 
 # Middleware
 app.state.limiter = limiter
