@@ -4,6 +4,7 @@ import sys
 import types
 import asyncio
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import MagicMock
 
 os.environ.setdefault("ENVIRONMENT", "development")
@@ -37,6 +38,7 @@ from app.models.migration_models import (
 from app.routers import graph, webhook, health
 from app.routers import reports
 from app.graph.connection import Neo4jConnection
+from app.config import _environment_name
 from app.visualization import neo4j_graph_api
 from app.visualization.page_renderer import build_graph_page
 from app.worker import task_registry
@@ -306,6 +308,28 @@ def test_root_redirects_to_login():
 
     assert response.status_code == 307
     assert response.headers["location"] == "/auth/login-page"
+
+
+def test_render_defaults_to_production_when_environment_is_unset():
+    assert _environment_name({"RENDER_SERVICE_ID": "srv-example"}) == "production"
+    assert _environment_name({"RENDER": "true"}) == "production"
+
+
+def test_explicit_nonproduction_environment_is_preserved_on_render():
+    assert _environment_name({
+        "RENDER_SERVICE_ID": "srv-example",
+        "ENVIRONMENT": "staging",
+    }) == "staging"
+
+
+def test_render_start_command_uses_platform_port():
+    render_config = (
+        Path(__file__).resolve().parents[1] / "render.yaml"
+    ).read_text(encoding="utf-8")
+
+    assert "startCommand:" in render_config
+    assert "--host 0.0.0.0 --port $PORT" in render_config
+    assert "--port 8000" not in render_config
 
 
 def test_healthz_reports_live_dependency_statuses(monkeypatch):

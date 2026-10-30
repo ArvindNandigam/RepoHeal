@@ -5,11 +5,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _is_render_environment(environ=None):
+    environ = os.environ if environ is None else environ
+    return environ.get("RENDER") == "true" or bool(environ.get("RENDER_SERVICE_ID"))
+
+
+def _environment_name(environ=None):
+    environ = os.environ if environ is None else environ
+    configured = environ.get("ENVIRONMENT")
+    if configured:
+        return configured
+    return "production" if _is_render_environment(environ) else "development"
+
+
 class Settings:
-    ENVIRONMENT = os.getenv(
-        "ENVIRONMENT",
-        "development"
-    )
+    ENVIRONMENT = _environment_name()
 
     GITHUB_OAUTH_CLIENT_ID = os.getenv("GITHUB_OAUTH_CLIENT_ID")
     GITHUB_OAUTH_CLIENT_SECRET = os.getenv("GITHUB_OAUTH_CLIENT_SECRET")
@@ -80,10 +90,7 @@ if settings.ENVIRONMENT == "production" and not settings.JWT_SECRET_KEY:
 if settings.ENVIRONMENT == "production" and not settings.GITHUB_TOKEN_ENCRYPTION_KEY:
     raise ValueError("GITHUB_TOKEN_ENCRYPTION_KEY missing")
 
-if (
-    os.getenv("RENDER") == "true"
-    or os.getenv("RENDER_SERVICE_ID")
-):
+if _is_render_environment():
     if settings.ENVIRONMENT != "production":
         raise ValueError(
             "ENVIRONMENT must be set to 'production' on Render"

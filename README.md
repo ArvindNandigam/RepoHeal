@@ -12,6 +12,12 @@ are connected, otherwise returning `degraded` with the affected dependency
 reported as `unavailable`. Dependency URLs and credentials are never included
 in the response.
 
+On Render, an unset `ENVIRONMENT` defaults to `production`; an explicitly
+configured non-production value is rejected so deployment misconfiguration
+remains visible. Render starts Uvicorn with `--port $PORT`, as required by the
+platform. Required production secrets remain deployment-provided and are not
+stored in the repository.
+
 ## Local frontend
 
 The redesigned dashboard lives in `frontend/` and is built with Vite. Run:
