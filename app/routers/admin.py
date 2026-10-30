@@ -7,6 +7,8 @@ from app.auth.jwt_manager import verify_session_token
 from app.worker.metrics import get_all_metrics
 from app.db.database import get_mongo_db
 from app.worker.task_registry import get_active_jobs
+from app.db.database import check_mongo_health
+from app.graph.connection import neo4j_connection
 
 router = APIRouter(tags=["admin"])
 
@@ -22,7 +24,78 @@ def require_admin(user=Depends(verify_session_token)):
 
 @router.get("/admin/metrics")
 async def admin_metrics_json(user=Depends(require_admin)):
-    return get_all_metrics()
+    return {
+        **get_all_metrics(),
+        "dependency_status": _dependency_status(),
+        "metrics_status": _platform_metrics_status(),
+    }
+
+
+def _dependency_status() -> dict:
+    checked_at = datetime.now(timezone.utc).isoformat()
+    mongodb = "connected" if check_mongo_health() else "unavailable"
+    neo4j = "connected" if neo4j_connection.is_available() else "unavailable"
+    return {
+        "mongodb": mongodb,
+        "neo4j": neo4j,
+        "status": "healthy" if mongodb == "connected" and neo4j == "connected" else "degraded",
+        "checked_at": checked_at,
+    }
+
+
+def _platform_metrics_status() -> dict:
+    expected_metrics = {
+        "repositories_analyzed",
+        "analyses_performed",
+        "commits_analyzed",
+        "branches_analyzed",
+        "installations",
+        "code_scale",
+        "graph_scale",
+        "dependency_intelligence",
+        "impact_analysis",
+        "migration_metrics",
+        "remediation",
+        "monitoring",
+        "performance",
+        "failure_reasons",
+    }
+    try:
+        documents = list(
+            get_mongo_db().platform_metrics.find(
+                {}, {"_id": 0, "metric": 1, "updated_at": 1}
+            )
+        )
+    except Exception:
+        return {"state": "unavailable", "message": "Platform metrics could not be read"}
+    updated_at = max(
+        (doc.get("updated_at") for doc in documents if doc.get("updated_at")),
+        default=None,
+    )
+    collected_metrics = {doc.get("metric") for doc in documents}
+    missing_metrics = sorted(expected_metrics - collected_metrics)
+    state = (
+        "not_collected"
+        if not documents
+        else "collected"
+        if not missing_metrics
+        else "partial"
+    )
+    return {
+        "state": state,
+        "metric_count": len(documents),
+        "missing_metrics": missing_metrics,
+        "updated_at": updated_at.isoformat() if hasattr(updated_at, "isoformat") else updated_at,
+        "message": (
+            "Values are persisted platform metrics"
+            if state == "collected"
+            else (
+                "No platform metrics have been collected"
+                if state == "not_collected"
+                else "Some platform metrics have not been collected"
+            )
+        ),
+    }
 
 
 @router.get("/admin/observability")
@@ -30,6 +103,7 @@ async def admin_observability(user=Depends(require_admin)):
     """Phase 9: Observability metrics — memory, storage, performance, reliability."""
     db = get_mongo_db()
     metrics = get_all_metrics()
+    metrics_status = _platform_metrics_status()
 
     # Active jobs
     active_jobs = get_active_jobs()
@@ -93,6 +167,8 @@ async def admin_observability(user=Depends(require_admin)):
         "total_analyses": total_analyses,
         "limits": limits,
         "platform_metrics": metrics,
+        "dependency_status": _dependency_status(),
+        "metrics_status": metrics_status,
     }
 
 

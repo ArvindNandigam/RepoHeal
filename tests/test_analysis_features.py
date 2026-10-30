@@ -6,6 +6,8 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
+import pytest
+from fastapi import HTTPException
 
 os.environ.setdefault("ENVIRONMENT", "development")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
@@ -37,6 +39,8 @@ from app.models.migration_models import (
 )
 from app.routers import graph, webhook, health
 from app.routers import reports
+from app.routers import admin, dashboard
+from app.routers.dependencies import build_dashboard_repositories
 from app.graph.connection import Neo4jConnection
 from app.config import _environment_name
 from app.visualization import neo4j_graph_api
@@ -330,6 +334,82 @@ def test_render_start_command_uses_platform_port():
     assert "startCommand:" in render_config
     assert "--host 0.0.0.0 --port $PORT" in render_config
     assert "--port 8000" not in render_config
+
+
+def test_dashboard_uses_authenticated_repositories_when_neo4j_has_no_installation_nodes(monkeypatch):
+    repositories = [{
+        "id": 42,
+        "full_name": "ArvindNandigam/example",
+        "name": "example",
+        "owner": {"login": "ArvindNandigam"},
+        "private": True,
+        "language": "Python",
+    }]
+    monkeypatch.setattr(
+        "app.routers.dependencies.fetch_user_repositories",
+        lambda token: repositories,
+    )
+    monkeypatch.setattr(
+        "app.routers.dependencies.get_installed_repositories",
+        lambda: set(),
+    )
+    monkeypatch.setattr(
+        "app.routers.dependencies.get_repository_installation",
+        lambda owner, repo: {"id": 123},
+    )
+    monkeypatch.setattr(
+        "app.routers.dependencies.get_repository_status",
+        lambda owner, repo: {},
+    )
+    monkeypatch.setattr(
+        "app.routers.dependencies.load_cached_analysis",
+        lambda owner, repo: {},
+    )
+
+    dashboard_repositories = build_dashboard_repositories("oauth-token")
+
+    assert [repo["name"] for repo in dashboard_repositories] == [
+        "ArvindNandigam/example"
+    ]
+
+
+def test_admin_is_restricted_to_arvind_nandigam():
+    with pytest.raises(HTTPException) as error:
+        admin.require_admin({"github_login": "other-user"})
+
+    assert error.value.status_code == 403
+
+
+def test_admin_metrics_exposes_live_dependency_status(monkeypatch):
+    monkeypatch.setattr(admin, "get_all_metrics", lambda: {"analysis_count": 0})
+    monkeypatch.setattr(
+        admin,
+        "_platform_metrics_status",
+        lambda: {"state": "not_collected", "message": "No platform metrics have been collected"},
+    )
+    monkeypatch.setattr(admin, "check_mongo_health", lambda: True)
+    monkeypatch.setattr(admin.neo4j_connection, "is_available", lambda: False)
+
+    metrics = asyncio.run(
+        admin.admin_metrics_json({"github_login": "ArvindNandigam"})
+    )
+
+    assert metrics["dependency_status"]["mongodb"] == "connected"
+    assert metrics["dependency_status"]["neo4j"] == "unavailable"
+    assert metrics["dependency_status"]["status"] == "degraded"
+    assert metrics["dependency_status"]["checked_at"]
+
+
+def test_dashboard_route_serves_built_frontend_when_dist_exists(monkeypatch, tmp_path):
+    index = tmp_path / "index.html"
+    index.write_text("<html>latest frontend</html>", encoding="utf-8")
+    monkeypatch.setattr(dashboard, "FRONTEND_DIST", tmp_path)
+
+    response = asyncio.run(
+        dashboard.dashboard({"github_login": "ArvindNandigam"})
+    )
+
+    assert Path(response.path) == index
 
 
 def test_healthz_reports_live_dependency_statuses(monkeypatch):

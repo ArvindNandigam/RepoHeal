@@ -60,6 +60,24 @@ async function load() {
 }
 
 function render(d, o) {
+  const dependencies = d.dependency_status || {};
+  const dependencyHtml = `
+<div class="section">
+  <h2>🔌 Live dependencies <small>Checked when this page loads</small></h2>
+  <div class="grid">
+    <div class="card"><div class="label">MongoDB</div><div class="value">${dependencies.mongodb || 'unknown'}</div><div class="sub">${dependencies.status || 'unknown'} · ${dependencies.checked_at || 'not checked'}</div></div>
+    <div class="card"><div class="label">Neo4j</div><div class="value">${dependencies.neo4j || 'unknown'}</div><div class="sub">${dependencies.status || 'unknown'} · ${dependencies.checked_at || 'not checked'}</div></div>
+    <div class="card"><div class="label">Platform metrics</div><div class="value">${(d.metrics_status || {}).state || 'unavailable'}</div><div class="sub">${(d.metrics_status || {}).message || ''}</div></div>
+  </div>
+</div>`;
+  const metricStatus = d.metrics_status || {};
+  if (metricStatus.state !== 'collected') {
+    const missing = metricStatus.missing_metrics && metricStatus.missing_metrics.length
+      ? ` Missing: ${metricStatus.missing_metrics.join(', ')}.`
+      : '';
+    document.getElementById('app').innerHTML = `${dependencyHtml}<div class="error">${metricStatus.message || 'Platform metrics unavailable'}.${missing}</div>`;
+    return;
+  }
   const obsHtml = o ? `
 <div class="section">
   <h2>⚡ Observability <small>Active Jobs · Cache · Orphans</small></h2>
@@ -76,7 +94,7 @@ function render(d, o) {
 </div>
 ` : '';
 
-  const html = `${obsHtml}
+  const html = `${dependencyHtml}${obsHtml}
 <div class="section">
   <h2>🏢 Repository Scale</h2>
   <div class="grid">

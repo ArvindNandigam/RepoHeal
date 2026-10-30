@@ -7,8 +7,10 @@ from app.storage.metadata_store import MetadataStore
 from app.github.user_repositories import fetch_user_repositories
 from app.github.installed_repositories import get_installed_repositories
 from app.worker.task_registry import get_repository_status
+from app.utils.logger import get_logger
 
 REPO_CACHE_ROOT = Path(".repoheal_cache")
+logger = get_logger(__name__)
 
 def sanitize_repo_component(value: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_.-]", "_", value)
@@ -51,15 +53,46 @@ def get_session_data(user: dict):
 
 def build_dashboard_repositories(github_token: str):
     repositories = fetch_user_repositories(github_token)
-    installed_repositories = get_installed_repositories()
+    try:
+        installed_repositories = get_installed_repositories()
+    except Exception as exc:
+        logger.warning(
+            "Installed repository lookup unavailable; using authenticated GitHub repositories: %s",
+            exc,
+        )
+        installed_repositories = set()
+    use_authenticated_fallback = not installed_repositories
+    if use_authenticated_fallback:
+        logger.warning(
+            "No InstalledRepository records found; using authenticated GitHub repositories for dashboard discovery"
+        )
     dashboard_repositories = []
     for repo in repositories:
         owner_login = repo.get("owner", {}).get("login")
         repo_name = repo.get("name")
         repo_full_name = repo.get("full_name")
         repo_private = repo.get("private", False)
-        if not owner_login or not repo_name or not repo_full_name or repo_full_name not in installed_repositories:
+        if (
+            not owner_login
+            or not repo_name
+            or not repo_full_name
+            or (
+                not use_authenticated_fallback
+                and repo_full_name not in installed_repositories
+            )
+        ):
             continue
+        if use_authenticated_fallback:
+            try:
+                if not get_repository_installation(owner_login, repo_name):
+                    continue
+            except Exception as exc:
+                logger.warning(
+                    "Could not verify RepoHeal installation for %s: %s",
+                    repo_full_name,
+                    exc,
+                )
+                continue
         status = get_repository_status(owner_login, repo_name) or {}
         health_score = None
         issue_count = 0

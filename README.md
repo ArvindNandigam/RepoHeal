@@ -69,6 +69,12 @@ and analysis fields. Report exports are available at
 `/graph/{owner}/{repo}` and server-rendered PNG export by
 `/visualize/{owner}/{repo}/export.png`.
 
+The `/admin` page is restricted to `ArvindNandigam`. It reports live MongoDB and
+Neo4j status with a check timestamp. Platform statistics are read-only persisted
+metrics; when none have been collected, the page says so instead of presenting
+synthetic zero values. Repository analysis data is never deleted or reset by
+the admin page.
+
 ## Analysis Workflows
 
 Analyze supports three modes:
