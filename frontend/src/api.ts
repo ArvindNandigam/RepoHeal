@@ -1,4 +1,4 @@
-export type Repository = {
+﻿export type Repository = {
   name: string
   owner: string
   repo: string
@@ -57,6 +57,8 @@ export const api = {
   graph: (owner: string, repo: string) => request<Graph>(`/graph/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),
   compare: (owner: string, repo: string) => request<Record<string, any>>(`/reports/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/compare`),
   health: (owner: string, repo: string) => request<Record<string, any>>(`/reports/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/health`),
+  history: (owner: string, repo: string) => request<Record<string, any>>(`/reports/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/history`),
+  monitoring: (owner: string, repo: string) => request<Record<string, any>>(`/monitor/dashboard/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),
   startAnalysis: (owner: string, repo: string) => request<Record<string, any>>(`/analyze/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),
   diagnostics: () => request<Record<string, any>>('/healthz'),
 }
