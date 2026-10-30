@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from app.config import settings
 from fastapi import APIRouter, Depends, Request, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from app.auth.jwt_manager import verify_session_token
 from app.worker.metrics import get_all_metrics
 from app.db.database import get_mongo_db
@@ -174,12 +174,4 @@ async def admin_observability(user=Depends(require_admin)):
 
 @router.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard_page(user=Depends(require_admin)):
-    import os
-    html_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "visualization", "templates", "admin_metrics.html")
-    if not os.path.exists(html_path):
-        html_path = __file__.replace("routers\\admin.py", "visualization\\templates\\admin_metrics.html")
-    with open(html_path, encoding="utf-8") as f:
-        html = f.read()
-    html = html.replace("{{ github_user }}", user.get("github_login", ""))
-    html = html.replace("{{ feedback_link }}", settings.FEEDBACK_LINK)
-    return html
+    return RedirectResponse(url="/dashboard?view=admin", status_code=307)

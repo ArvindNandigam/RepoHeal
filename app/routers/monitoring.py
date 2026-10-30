@@ -3,7 +3,7 @@ from typing import List, Optional
 from pathlib import Path
 from app.config import settings
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from app.auth.jwt_manager import verify_session_token
 from app.auth.authorization import verify_repository_access
 from app.routers.dependencies import get_session_data, ensure_repoheal_installed
@@ -333,9 +333,7 @@ async def monitoring_dashboard_view(
     repo_name: str,
     user=Depends(verify_session_token),
 ):
-    html = (
-        Path(__file__).resolve().parent.parent
-        / "visualization" / "templates" / "monitoring_dashboard.html"
-    ).read_text(encoding="utf-8")
-    html = html.replace("{{ feedback_link }}", settings.FEEDBACK_LINK)
-    return HTMLResponse(html)
+    return RedirectResponse(
+        url=f"/dashboard?view=monitoring&owner={repo_owner}&repo={repo_name}",
+        status_code=307,
+    )

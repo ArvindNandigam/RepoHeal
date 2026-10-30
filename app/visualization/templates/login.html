@@ -3,38 +3,51 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>RepoHeal</title>
+  <title>Sign in · RepoHeal</title>
   <style>
-    :root { color-scheme: dark; --bg: #101214; --surface: #181a1d; --text: #e8eaed; --muted: #9aa0a6; --accent: #42d6a4; --border: rgba(255,255,255,0.06); }
-    *, *::before, *::after { box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-    .card { padding: 40px; border-radius: 12px; background: rgba(30,33,36,0.96); border: 1px solid var(--border); text-align: center; max-width: 400px; width: 90%; }
-    h1 { font-size: 28px; font-weight: 700; margin: 0 0 8px; }
-    .sub { color: var(--muted); font-size: 14px; margin: 0 0 28px; line-height: 1.5; }
-    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 28px; border-radius: 8px; font-size: 15px; font-weight: 600; border: 1px solid transparent; background: var(--accent); color: #06121c; cursor: pointer; text-decoration: none; }
-    .btn:hover { background: #3bc494; }
-    .btn.secondary { background: transparent; border-color: var(--border); color: var(--muted); }
-    .btn.secondary:hover { color: var(--text); background: rgba(255,255,255,0.04); }
-    .links { margin-top: 20px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-    .links a { color: var(--muted); font-size: 13px; text-decoration: none; }
-    .links a:hover { color: var(--accent); }
-    .divider { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
-    .badge { display: inline-flex; padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 600; margin-bottom: 20px; }
-    .badge.success { background: rgba(66,214,164,0.15); color: var(--accent); border: 1px solid rgba(66,214,164,0.3); }
-    .badge.warning { background: rgba(244,201,93,0.15); color: var(--accent-2); border: 1px solid rgba(244,201,93,0.3); }
+    :root { font-family: Manrope, Inter, system-ui, sans-serif; color: #e7eee8; background: #191c19; }
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; display: grid; place-items: center; margin: 0; padding: 24px; background: radial-gradient(circle at 15% 10%, #2d4035 0, transparent 34%), #191c19; }
+    .layout { width: min(940px, 100%); display: grid; grid-template-columns: 1.15fr .85fr; overflow: hidden; border: 1px solid #38433b; border-radius: 18px; background: #202520; box-shadow: 0 24px 80px rgba(0,0,0,.3); }
+    .intro { padding: 54px; background: linear-gradient(145deg, #26352b, #202520 70%); }
+    .brand { display: flex; align-items: center; gap: 10px; color: #f4faf5; font-size: 19px; font-weight: 800; }
+    .mark { width: 32px; height: 32px; display: grid; place-items: center; color: #17231d; background: #a7e4c2; border-radius: 9px 9px 9px 3px; font-size: 18px; }
+    .intro h1 { max-width: 430px; margin: 88px 0 14px; color: #f5faf6; font-size: clamp(30px, 5vw, 52px); line-height: 1.03; letter-spacing: -2px; }
+    .intro p { max-width: 430px; color: #aab8ad; font-size: 14px; line-height: 1.7; }
+    .signals { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 30px; }
+    .signal { padding: 7px 10px; border: 1px solid #415247; border-radius: 999px; color: #b6d8c0; background: #2b3a30; font-size: 10px; }
+    .auth { display: flex; flex-direction: column; justify-content: center; padding: 48px; background: #f5f6f3; color: #293029; }
+    .badge { width: fit-content; margin-bottom: 20px; padding: 6px 10px; border-radius: 999px; color: #3d8968; background: #e5f4eb; font-size: 10px; font-weight: 700; }
+    .badge.warning { color: #a86644; background: #fbefe6; }
+    .auth h2 { margin: 0; font-size: 25px; letter-spacing: -1px; }
+    .sub { margin: 9px 0 26px; color: #7d867d; font-size: 12px; line-height: 1.6; }
+    .btn { display: flex; align-items: center; justify-content: center; gap: 9px; height: 43px; border-radius: 8px; color: #f6f8f5; background: #242824; font-size: 11px; font-weight: 700; text-decoration: none; }
+    .btn:hover { background: #343a34; }
+    .links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+    .links a { color: #668271; font-size: 10px; text-decoration: none; }
+    .links a:hover { color: #327554; }
+    .divider { height: 1px; margin: 25px 0; border: 0; background: #e2e5df; }
+    .legal { color: #9aa099; font-size: 9px; line-height: 1.5; }
+    @media (max-width: 720px) { .layout { grid-template-columns: 1fr; } .intro { padding: 34px; } .intro h1 { margin-top: 55px; } .auth { padding: 34px; } }
   </style>
 </head>
 <body>
-  <div class="card">
-    <div class="badge {{ status_class }}">{{ status_badge }}</div>
-    <h1>RepoHeal</h1>
-    <p class="sub">{{ status_message }}</p>
-    <a class="btn" href="/auth/github/login">Sign in with GitHub</a>
-    <hr class="divider">
-    <div class="links">
-      <a href="/auth/github/login?force_login=true">Use a different GitHub account</a>
-      <a href="/dashboard">Back to Dashboard</a>
-    </div>
-  </div>
+  <main class="layout">
+    <section class="intro">
+      <div class="brand"><span class="mark">♥</span><span>RepoHeal</span></div>
+      <h1>Know what your repositories need next.</h1>
+      <p>Analyze repository health, dependencies, code relationships, and migration risk from one authenticated workspace.</p>
+      <div class="signals"><span class="signal">Health analysis</span><span class="signal">Dependency graph</span><span class="signal">Migration reports</span></div>
+    </section>
+    <section class="auth">
+      <div class="badge {{ status_class }}">{{ status_badge }}</div>
+      <h2>Sign in to your workspace</h2>
+      <p class="sub">{{ status_message }}</p>
+      <a class="btn" href="/auth/github/login">Continue with GitHub</a>
+      <hr class="divider">
+      <div class="links"><a href="/auth/github/login?force_login=true">Use a different account</a><a href="/privacy">Privacy</a><a href="/terms-of-service">Terms</a></div>
+      <p class="legal">RepoHeal requests GitHub access only to read and analyze repositories you are authorized to use.</p>
+    </section>
+  </main>
 </body>
 </html>

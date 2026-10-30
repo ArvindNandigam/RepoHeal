@@ -65,6 +65,8 @@ function App() {
   const [compare, setCompare] = useState<Record<string, any> | null>(null)
   const [history, setHistory] = useState<Record<string, any> | null>(null)
   const [monitoring, setMonitoring] = useState<Record<string, any> | null>(null)
+  const [adminMetrics, setAdminMetrics] = useState<Record<string, any> | null>(null)
+  const [adminObservability, setAdminObservability] = useState<Record<string, any> | null>(null)
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -78,7 +80,15 @@ function App() {
     setLoading(true); setError('')
     try { setDashboard(await api.dashboard()) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to load dashboard') } finally { setLoading(false) }
   }
-  useEffect(() => { void loadDashboard() }, [])
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const view = params.get('view')
+    if (view === 'repository') setPage('Repository')
+    if (view === 'reports') setPage('Reports')
+    if (view === 'monitoring') setPage('Monitoring')
+    if (view === 'admin') setPage('Admin')
+    void loadDashboard()
+  }, [])
 
   const openRepository = async (repo: Repository) => {
     setSelected(repo); setPage('Repository'); setOverview(null); setGraph(null); setCompare(null); setHistory(null); setMonitoring(null); setStatus(null)
@@ -141,12 +151,38 @@ function App() {
     } finally {
       setRefreshing(false)
     }
+
+    const loadAdmin = async () => {
+      setRefreshing(true)
+      try {
+        const [metrics, observability] = await Promise.all([api.adminMetrics(), api.adminObservability()])
+        setAdminMetrics(metrics)
+        setAdminObservability(observability)
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : 'Admin data is unavailable')
+      } finally {
+        setRefreshing(false)
+      }
+    }
   }
 
   useEffect(() => {
     if (page === 'Reports') void loadReports()
     if (page === 'Monitoring') void loadMonitoring()
+    if (page === 'Admin') {
+      void loadAdmin()
+    }
   }, [page, dashboard])
+
+  useEffect(() => {
+    if (!dashboard) return
+    const params = new URLSearchParams(window.location.search)
+    const owner = params.get('owner')
+    const repoName = params.get('repo')
+    if (!owner || !repoName || selected) return
+    const match = dashboard.repositories.find((repo) => repo.owner === owner && repo.repo === repoName)
+    if (match) void openRepository(match)
+  }, [dashboard])
 
   const title = page === 'Overview' ? `Good morning, ${dashboard?.user || 'there'}.` : page
   const metrics = dashboard?.metrics
@@ -158,7 +194,9 @@ function App() {
       <nav className="main-nav" aria-label="Primary navigation">
         <p className="nav-label">Workspace</p>
         {[['Overview', 'dashboard'], ['Repositories', 'code'], ['Reports', 'report'], ['Monitoring', 'monitor']].map(([label, icon]) => <button key={label} className={`nav-item ${page === label ? 'active' : ''}`} onClick={() => setPage(label)}><Icon name={icon as IconName} size={18} /><span>{label}</span></button>)}
-        <p className="nav-label secondary">Manage</p><button className={`nav-item ${page === 'Diagnostics' ? 'active' : ''}`} onClick={() => setPage('Diagnostics')}><Icon name="settings" size={18} /><span>Diagnostics</span></button>
+        <p className="nav-label secondary">Manage</p>
+        <button className={`nav-item ${page === 'Diagnostics' ? 'active' : ''}`} onClick={() => setPage('Diagnostics')}><Icon name="settings" size={18} /><span>Diagnostics</span></button>
+        {dashboard?.user === 'ArvindNandigam' && <button className={`nav-item ${page === 'Admin' ? 'active' : ''}`} onClick={() => setPage('Admin')}><Icon name="shield" size={18} /><span>Admin</span></button>}
       </nav>
       <div className="sidebar-insight"><span className="insight-icon"><Icon name="spark" size={16} /></span><strong>Local triage</strong><p>Keep issue decisions in this browser without changing GitHub state.</p></div>
       <div className="profile"><div className="avatar">{(dashboard?.user || '?').slice(0, 2).toUpperCase()}</div><div><strong>{dashboard?.user || 'Authenticated user'}</strong><span>@{dashboard?.user || 'unknown'}</span></div></div>
@@ -172,7 +210,7 @@ function App() {
           {status && status.status !== 'completed' && <div className="progress-card"><strong>Analysis {status.status}</strong><span>{status.message}</span><progress value={status.progress || 0} max="100" /><b>{status.progress || 0}%</b></div>}
           <div className="metrics-grid"><article className="metric-card featured"><span className="metric-icon mint"><Icon name="heart" size={18} /></span><div className="metric-value-row"><strong>{overview?.health?.score ?? '—'}</strong><span className="score-unit">/100</span></div><p>Health score</p></article><article className="metric-card"><span className="metric-icon violet"><Icon name="code" size={18} /></span><div className="metric-value-row"><strong>{overview?.graph?.files ?? '—'}</strong></div><p>Files analyzed</p></article><article className="metric-card"><span className="metric-icon amber"><Icon name="alert" size={18} /></span><div className="metric-value-row"><strong>{overview?.health?.risk_score ?? '—'}</strong></div><p>Migration risk</p></article><article className="metric-card"><span className="metric-icon blue"><Icon name="branch" size={18} /></span><div className="metric-value-row"><strong>{status?.code_state_status || overview?.status?.code_state_status || 'unknown'}</strong></div><p>Code state</p></article></div>
           <div className="dashboard-grid"><div className="panel graph-panel"><div className="panel-header"><div><h2>Dependency graph</h2><p>{graph?.nodes?.length ? `${visibleNodes.length} of ${graph.nodes.length} nodes` : 'Graph data is unavailable until an analysis completes.'}</p></div><div className="graph-tools"><input value={graphQuery} onChange={(event) => setGraphQuery(event.target.value)} placeholder="Find path or symbol" aria-label="Filter graph nodes" /><select value={graphType} onChange={(event) => setGraphType(event.target.value)} aria-label="Filter graph node type"><option value="all">All types</option><option value="file">Files</option><option value="package">Packages</option><option value="function">Functions</option></select></div></div>{graph?.nodes?.length ? <div className="graph-list">{visibleNodes.slice(0, 120).map((node) => { const label = String(node.data.label || node.data.path || node.data.id); const match = graphQuery ? label.toLowerCase().indexOf(graphQuery.toLowerCase()) : -1; return <span key={String(node.data.id)} className={`graph-node graph-${String(node.data.type)}`}>{match >= 0 ? <>{label.slice(0, match)}<mark>{label.slice(match, match + graphQuery.length)}</mark>{label.slice(match + graphQuery.length)}</> : label}</span> })}</div> : <div className="empty-state">No graph snapshot is available. Run an analysis, or check diagnostics if Neo4j is unavailable.</div>}<div className="export-actions"><button onClick={() => graph && download(`${selected.repo}-graph.json`, JSON.stringify(graph, null, 2), 'application/json')} disabled={!graph?.nodes?.length}><Icon name="download" size={14} /> JSON</button><button onClick={() => graph && download(`${selected.repo}-graph.md`, `# ${selected.owner}/${selected.repo} graph\n\nNodes: ${graph.nodes.length}\nEdges: ${graph.edges.length}\n`, 'text/markdown')} disabled={!graph?.nodes?.length}><Icon name="download" size={14} /> Markdown</button><a href={`/visualize/${selected.owner}/${selected.repo}/export.png`} target="_blank" rel="noreferrer" className={!graph?.nodes?.length ? 'disabled' : ''}><Icon name="download" size={14} /> PNG</a></div></div><aside className="side-stack"><div className="panel"><div className="panel-header compact"><div><h2>Issue triage</h2><p>Local-only decisions</p></div></div>{Array.isArray(issues) && issues.slice(0, 5).map((issue: any, index: number) => { const key = String(issue.id || issue.symbol || issue.title || index); return <label className="triage-item" key={key}><input type="checkbox" checked={triaged.includes(key)} onChange={() => toggleTriage(key)} /><span>{issue.title || issue.symbol || issue.message || 'Finding'}</span></label> })}{(!Array.isArray(issues) || issues.length === 0) && <div className="empty-state">No historical issue list is available.</div>}</div><div className="panel monitoring-card"><div className="monitoring-heading"><span className="live-icon"><Icon name="compare" size={17} /></span><div><h2>Comparison</h2><p>Compare saved analyses</p></div></div><button className="text-button" onClick={async () => { try { setCompare(await api.compare(selected.owner, selected.repo)); setPage('Compare') } catch (reason) { setError(reason instanceof Error ? reason.message : 'Comparison unavailable') } }}>Open comparison <Icon name="arrow" size={14} /> </button></div></aside></div>
-        </section> : page === 'Compare' ? <section><div className="page-heading"><div><p className="eyebrow">Historical snapshots</p><h1>Comparison</h1><p>Review health changes between the two latest available analyses.</p></div></div><div className="panel detail-panel">{compare?.available ? <><div className="compare-grid"><div><span>Before</span><strong>{compare.left.commit || '—'}</strong><small>{compare.left.health_score ?? '—'} health</small></div><div><span>After</span><strong>{compare.right.commit || '—'}</strong><small>{compare.right.health_score ?? '—'} health</small></div></div>{compare.changes.map((change: any) => <div className="change-row" key={change.metric}><span>{change.metric}</span><b>{change.before ?? '—'}</b><Icon name="arrow" size={14} /><b>{change.after ?? '—'}</b><em>{change.delta == null ? 'changed' : `${change.delta > 0 ? '+' : ''}${change.delta}`}</em></div>)}</> : <div className="empty-state">{compare?.message || 'No comparison data available.'}</div>}</div></section> : page === 'Reports' ? <ReportsPage history={history} health={overview?.health} refreshing={refreshing} onRefresh={loadReports} onOpenRepository={() => selected && void openRepository(selected)} /> : page === 'Monitoring' ? <MonitoringPage data={monitoring} refreshing={refreshing} onRefresh={loadMonitoring} /> : page === 'Diagnostics' ? <Diagnostics /> : <section><div className="page-heading"><div><p className="eyebrow">Authenticated workspace</p><h1>{title}</h1><p>{page === 'Overview' ? 'Live repository health from RepoHeal analysis and GitHub metadata.' : 'Repositories connected to your GitHub workspace.'}</p></div><div className="heading-actions"><button className="button secondary-button" onClick={() => { setRefreshing(true); void loadDashboard().finally(() => setRefreshing(false)) }}><Icon name="refresh" className={refreshing ? 'spin' : ''} size={16} /> Refresh</button></div></div><section className="metrics-grid"><article className="metric-card featured"><span className="metric-icon mint"><Icon name="heart" size={18} /></span><div className="metric-value-row"><strong>{metrics?.average_health_score ?? '—'}</strong><span className="score-unit">/100</span></div><p>Average health score</p></article><article className="metric-card"><span className="metric-icon violet"><Icon name="code" size={18} /></span><div className="metric-value-row"><strong>{metrics?.active_repositories ?? 0}</strong></div><p>Active repositories</p></article><article className="metric-card"><span className="metric-icon amber"><Icon name="alert" size={18} /></span><div className="metric-value-row"><strong>{metrics?.open_issues ?? 0}</strong></div><p>Open issues · {metrics?.critical_issues ?? 0} critical</p></article><article className="metric-card"><span className="metric-icon blue"><Icon name="activity" size={18} /></span><div className="metric-value-row"><strong>{metrics?.active_analyses ?? 0}</strong></div><p>Analyses in progress</p></article></section><div className="panel repositories-panel"><div className="panel-header"><div><h2>Repositories</h2><p>Live metadata and analysis state</p></div></div><div className="repo-table"><div className="table-head"><span>Repository</span><span>Health score</span><span>Last analysis</span><span>Status</span><span /></div>{repos.map((repo) => <RepositoryRow key={repo.name} repo={repo} onOpen={() => void openRepository(repo)} />)}{repos.length === 0 && <div className="empty-state">{dashboard?.repositories.length ? 'No repositories match your search.' : 'No installed repositories are available.'}</div>}</div></div></section>}
+        </section> : page === 'Compare' ? <section><div className="page-heading"><div><p className="eyebrow">Historical snapshots</p><h1>Comparison</h1><p>Review health changes between the two latest available analyses.</p></div></div><div className="panel detail-panel">{compare?.available ? <><div className="compare-grid"><div><span>Before</span><strong>{compare.left.commit || '—'}</strong><small>{compare.left.health_score ?? '—'} health</small></div><div><span>After</span><strong>{compare.right.commit || '—'}</strong><small>{compare.right.health_score ?? '—'} health</small></div></div>{compare.changes.map((change: any) => <div className="change-row" key={change.metric}><span>{change.metric}</span><b>{change.before ?? '—'}</b><Icon name="arrow" size={14} /><b>{change.after ?? '—'}</b><em>{change.delta == null ? 'changed' : `${change.delta > 0 ? '+' : ''}${change.delta}`}</em></div>)}</> : <div className="empty-state">{compare?.message || 'No comparison data available.'}</div>}</div></section> : page === 'Reports' ? <ReportsPage history={history} health={overview?.health} refreshing={refreshing} onRefresh={loadReports} onOpenRepository={() => selected && void openRepository(selected)} /> : page === 'Monitoring' ? <MonitoringPage data={monitoring} refreshing={refreshing} onRefresh={loadMonitoring} /> : page === 'Admin' ? <AdminPage metrics={adminMetrics} observability={adminObservability} refreshing={refreshing} onRefresh={loadAdmin} /> : page === 'Diagnostics' ? <Diagnostics /> : <section><div className="page-heading"><div><p className="eyebrow">Authenticated workspace</p><h1>{title}</h1><p>{page === 'Overview' ? 'Live repository health from RepoHeal analysis and GitHub metadata.' : 'Repositories connected to your GitHub workspace.'}</p></div><div className="heading-actions"><button className="button secondary-button" onClick={() => { setRefreshing(true); void loadDashboard().finally(() => setRefreshing(false)) }}><Icon name="refresh" className={refreshing ? 'spin' : ''} size={16} /> Refresh</button></div></div><section className="metrics-grid"><article className="metric-card featured"><span className="metric-icon mint"><Icon name="heart" size={18} /></span><div className="metric-value-row"><strong>{metrics?.average_health_score ?? '—'}</strong><span className="score-unit">/100</span></div><p>Average health score</p></article><article className="metric-card"><span className="metric-icon violet"><Icon name="code" size={18} /></span><div className="metric-value-row"><strong>{metrics?.active_repositories ?? 0}</strong></div><p>Active repositories</p></article><article className="metric-card"><span className="metric-icon amber"><Icon name="alert" size={18} /></span><div className="metric-value-row"><strong>{metrics?.open_issues ?? 0}</strong></div><p>Open issues · {metrics?.critical_issues ?? 0} critical</p></article><article className="metric-card"><span className="metric-icon blue"><Icon name="activity" size={18} /></span><div className="metric-value-row"><strong>{metrics?.active_analyses ?? 0}</strong></div><p>Analyses in progress</p></article></section><div className="panel repositories-panel"><div className="panel-header"><div><h2>Repositories</h2><p>Live metadata and analysis state</p></div></div><div className="repo-table"><div className="table-head"><span>Repository</span><span>Health score</span><span>Last analysis</span><span>Status</span><span /></div>{repos.map((repo) => <RepositoryRow key={repo.name} repo={repo} onOpen={() => void openRepository(repo)} />)}{repos.length === 0 && <div className="empty-state">{dashboard?.repositories.length ? 'No repositories match your search.' : 'No installed repositories are available.'}</div>}</div></div></section>}
       </div>
     </main>
   </div>
@@ -227,6 +265,37 @@ function MonitoringPage({ data, refreshing, onRefresh }: { data: Record<string, 
     <div className="dashboard-grid">
       <div className="panel repositories-panel"><div className="panel-header"><div><h2>Active alerts</h2><p>Only persisted, undismissed alerts are shown.</p></div></div>{alerts.length ? alerts.slice(0, 10).map((alert: any) => <div className="risk-item" key={alert.id || alert.created_at}><span className="risk-severity critical"><Icon name="alert" size={15} /></span><div><strong>{alert.title || alert.category || 'Alert'}</strong><p>{alert.message || alert.description || 'No description available.'}</p><span>{alert.severity || 'unknown'} · {alert.created_at ? new Date(alert.created_at).toLocaleString() : 'Unknown time'}</span></div></div>) : <div className="empty-state">No active alerts are recorded.</div>}</div>
       <aside className="side-stack"><div className="panel"><div className="panel-header compact"><div><h2>Dependency watchlist</h2><p>Persisted packages under observation</p></div></div>{watchlist.length ? watchlist.slice(0, 8).map((item: any) => <div className="risk-item" key={item.package_name}><span className="risk-severity moderate"><Icon name="code" size={15} /></span><div><strong>{item.package_name || 'Dependency'}</strong><p>{item.current_version || 'Current version unknown'}</p><span>{item.risk_level || 'unclassified'}</span></div></div>) : <div className="empty-state">No dependencies are being watched.</div>}</div><div className="panel monitoring-card"><div className="monitoring-heading"><span className="live-icon"><Icon name="monitor" size={17} /></span><div><h2>Schedule</h2><p>Configured monitoring cadence</p></div></div><div className="monitoring-stats"><div><span>Frequency</span><strong>{data?.schedule?.frequency || '—'}</strong></div><div><span>Next run</span><strong>{data?.schedule?.next_run ? new Date(data.schedule.next_run).toLocaleString() : 'Not scheduled'}</strong></div></div></div></aside>
+    </div>
+  </section>
+}
+
+function AdminPage({ metrics, observability, refreshing, onRefresh }: { metrics: Record<string, any> | null; observability: Record<string, any> | null; refreshing: boolean; onRefresh: () => void }) {
+  const dependencies = metrics?.dependency_status || {}
+  const metricStatus = metrics?.metrics_status || {}
+  const platform = metrics || {}
+  const cards = [
+    ['Repositories analyzed', platform.repositories_analyzed],
+    ['Analyses performed', platform.analyses_performed],
+    ['Commits analyzed', platform.commits_analyzed],
+    ['Graph nodes', platform.total_nodes],
+    ['Graph relationships', platform.total_edges],
+    ['Dependencies detected', platform.dependencies_detected],
+    ['Active jobs', observability?.active_jobs_count],
+    ['Total analyses', observability?.total_analyses],
+  ]
+  return <section>
+    <div className="page-heading">
+      <div><p className="eyebrow">Owner-only operational view</p><h1>Admin</h1><p>Live service health and persisted platform metrics. Nothing is estimated or fabricated.</p></div>
+      <div className="heading-actions"><button className="button secondary-button" onClick={onRefresh}><Icon name="refresh" className={refreshing ? 'spin' : ''} size={16} /> Refresh</button></div>
+    </div>
+    <div className="panel admin-status-panel">
+      <div className="panel-header"><div><h2>Dependency status</h2><p>Checked live when this page loads</p></div><span className={`status-pill ${dependencies.status === 'healthy' ? 'healthy' : 'attention'}`}><i />{dependencies.status || 'unknown'}</span></div>
+      <div className="admin-status-grid"><div><span>MongoDB</span><strong>{dependencies.mongodb || 'unknown'}</strong></div><div><span>Neo4j</span><strong>{dependencies.neo4j || 'unknown'}</strong></div><div><span>Checked at</span><strong>{dependencies.checked_at ? new Date(dependencies.checked_at).toLocaleString() : 'unknown'}</strong></div></div>
+    </div>
+    <section className="metrics-grid admin-metrics-grid">{cards.map(([label, value]) => <article className="metric-card" key={label}><span className="metric-icon violet"><Icon name="activity" size={18} /></span><div className="metric-value-row"><strong>{value == null ? '—' : typeof value === 'number' ? value.toLocaleString() : value}</strong></div><p>{label}</p></article>)}</section>
+    <div className="dashboard-grid">
+      <div className="panel detail-panel"><div className="panel-header"><div><h2>Metric collection</h2><p>Whether persisted platform metrics are complete</p></div></div><div className="admin-metric-state"><strong>{metricStatus.state || 'unknown'}</strong><span>{metricStatus.message || 'No collection status available.'}</span>{Array.isArray(metricStatus.missing_metrics) && metricStatus.missing_metrics.length > 0 && <small>Missing: {metricStatus.missing_metrics.join(', ')}</small>}</div></div>
+      <aside className="side-stack"><div className="panel monitoring-card"><div className="monitoring-heading"><span className="live-icon"><Icon name="monitor" size={17} /></span><div><h2>Runtime</h2><p>Current worker state</p></div></div><div className="monitoring-stats"><div><span>Success rate</span><strong>{observability?.success_rate_pct == null ? '—' : `${observability.success_rate_pct}%`}</strong></div><div><span>Cache size</span><strong>{observability?.cache_size_mb == null ? '—' : `${observability.cache_size_mb} MB`}</strong></div></div></div><div className="panel monitoring-card"><div className="monitoring-heading"><span className="live-icon"><Icon name="shield" size={17} /></span><div><h2>Access</h2><p>Restricted administrator view</p></div></div><p className="admin-access-note">Visible only to ArvindNandigam.</p></div></aside>
     </div>
   </section>
 }

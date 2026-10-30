@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, RedirectResponse
 from app.auth.jwt_manager import verify_session_token
 from app.auth.authorization import verify_repository_access
 from app.config import settings
@@ -52,7 +52,10 @@ def get_template(name: str) -> str:
 @router.get("/{repo_owner}/{repo_name}/health-page", response_class=HTMLResponse)
 async def health_report_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
     _authorize_reports_access(user, repo_owner, repo_name)
-    return HTMLResponse(get_template("health_report.html"))
+    return RedirectResponse(
+        url=f"/dashboard?view=reports&owner={repo_owner}&repo={repo_name}",
+        status_code=307,
+    )
 
 @router.get("/{repo_owner}/{repo_name}/health")
 async def get_health_report_data(
@@ -276,19 +279,31 @@ async def compare_reports(
 @router.get("/{repo_owner}/{repo_name}/hub", response_class=HTMLResponse)
 async def reports_hub_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
     _authorize_reports_access(user, repo_owner, repo_name)
-    return HTMLResponse(get_template("reports_hub.html"))
+    return RedirectResponse(
+        url=f"/dashboard?view=reports&owner={repo_owner}&repo={repo_name}",
+        status_code=307,
+    )
 
 @router.get("/{repo_owner}/{repo_name}/history-page", response_class=HTMLResponse)
 async def analysis_history_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
     _authorize_reports_access(user, repo_owner, repo_name)
-    return HTMLResponse(get_template("analysis_history.html"))
+    return RedirectResponse(
+        url=f"/dashboard?view=reports&owner={repo_owner}&repo={repo_name}",
+        status_code=307,
+    )
 
 @router.get("/{repo_owner}/{repo_name}/migration-reports", response_class=HTMLResponse)
 async def migration_reports_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
     _authorize_reports_access(user, repo_owner, repo_name)
-    return HTMLResponse(get_template("migration_reports.html"))
+    return RedirectResponse(
+        url=f"/dashboard?view=reports&owner={repo_owner}&repo={repo_name}",
+        status_code=307,
+    )
 
 @router.get("/{repo_owner}/{repo_name}/migration-document", response_class=HTMLResponse)
 async def migration_document_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
     _authorize_reports_access(user, repo_owner, repo_name)
-    return HTMLResponse(get_template("migration_document.html"))
+    return RedirectResponse(
+        url=f"/dashboard?view=reports&owner={repo_owner}&repo={repo_name}",
+        status_code=307,
+    )

@@ -1,6 +1,6 @@
 from pathlib import Path
 from fastapi import APIRouter, Depends
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from app.auth.jwt_manager import verify_session_token
 from app.config import settings
 from app.auth.authorization import verify_repository_access
@@ -68,10 +68,7 @@ async def repo_overview(repo_owner: str, repo_name: str, user=Depends(verify_ses
 
 @router.get("/{repo_owner}/{repo_name}", response_class=HTMLResponse)
 async def repo_detail_page(repo_owner: str, repo_name: str, user=Depends(verify_session_token)):
-    template = (
-        Path(__file__).resolve().parent.parent
-        / "visualization" / "templates" / "repo_detail.html"
-    ).read_text(encoding="utf-8")
-    html = template.replace("{{ owner }}", repo_owner).replace("{{ repo }}", repo_name)
-    html = html.replace("{{ feedback_link }}", settings.FEEDBACK_LINK)
-    return HTMLResponse(html)
+    return RedirectResponse(
+        url=f"/dashboard?view=repository&owner={repo_owner}&repo={repo_name}",
+        status_code=307,
+    )

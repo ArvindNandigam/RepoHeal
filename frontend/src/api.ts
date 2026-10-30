@@ -59,6 +59,8 @@ export const api = {
   health: (owner: string, repo: string) => request<Record<string, any>>(`/reports/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/health`),
   history: (owner: string, repo: string) => request<Record<string, any>>(`/reports/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/history`),
   monitoring: (owner: string, repo: string) => request<Record<string, any>>(`/monitor/dashboard/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),
+  adminMetrics: () => request<Record<string, any>>('/admin/metrics'),
+  adminObservability: () => request<Record<string, any>>('/admin/observability'),
   startAnalysis: (owner: string, repo: string) => request<Record<string, any>>(`/analyze/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),
   diagnostics: () => request<Record<string, any>>('/healthz'),
 }
