@@ -3,11 +3,14 @@
 RepoHeal analyzes installed GitHub repositories, builds dependency graphs, and generates health reports without exposing internal workspace URLs in the user dashboard.
 Link : https://repoheal.onrender.com/ (Note the render instance takes time to turn on and neo4j instances also run on free tier and might be asleep)
 
-The public `/` route redirects browsers to `/auth/login-page`. Monitoring should
-use `/healthz`, which performs live dependency checks and returns `healthy` only
-when both MongoDB and Neo4j are connected; otherwise it returns `degraded` with
-the affected dependency reported as `unavailable`. Dependency URLs and
-credentials are never included in the response.
+The public `/` route redirects browsers to `/auth/login-page`. Configure
+UptimeRobot's free monitor to use **HEAD** on `/healthz`: it returns HTTP 200
+when the web service is reachable and does not fail solely because Neo4j or
+MongoDB is unavailable. Use **GET** `/healthz` for diagnostics; it performs
+live dependency checks and returns `healthy` only when both MongoDB and Neo4j
+are connected, otherwise returning `degraded` with the affected dependency
+reported as `unavailable`. Dependency URLs and credentials are never included
+in the response.
 
 ## Local frontend
 

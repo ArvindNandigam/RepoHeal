@@ -321,6 +321,17 @@ def test_healthz_reports_live_dependency_statuses(monkeypatch):
     }
 
 
+def test_healthz_head_is_live_when_neo4j_is_unavailable(monkeypatch):
+    def fail_if_checked():
+        raise AssertionError("HEAD liveness must not probe Neo4j")
+
+    monkeypatch.setattr(health.neo4j_connection, "is_available", fail_if_checked)
+
+    response = health.healthz_head()
+
+    assert response.status_code == 200
+
+
 def test_neo4j_connection_does_not_claim_initialized_when_dns_fails(monkeypatch):
     connection = Neo4jConnection()
     connection.uri = "neo4j+s://stale-host"
