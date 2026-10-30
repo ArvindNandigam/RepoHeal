@@ -27,7 +27,7 @@ class WebtoolClient:
     cancel_check = None  # Optional callable, checked during retry sleeps
 
     def __init__(self, base_url: str = None, api_key: str = None):
-        self.base_url = base_url or os.getenv("WEBTOOL_API_URL", "https://restrictedwebtool.onrender.com")
+        self.base_url = base_url or os.getenv("WEBTOOL_API_URL", "https://restrictedwebtool-ueji.onrender.com")
         self.api_key = api_key or os.getenv("INTERNAL_API_KEY", "vT5X3du/efIgYBGtXSC1B++jlF/7vszfSl6EtcE/wzLIQgjLZ7qyvtamNE7ZhqxI")
         
         # Connection pooling config
