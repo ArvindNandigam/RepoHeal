@@ -57,6 +57,7 @@ export const api = {
   graph: (owner: string, repo: string) => request<Graph>(`/graph/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),
   compare: (owner: string, repo: string) => request<Record<string, any>>(`/reports/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/compare`),
   health: (owner: string, repo: string) => request<Record<string, any>>(`/reports/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/health`),
+  migration: (owner: string, repo: string, analysisId?: string) => request<Record<string, any>>(`/reports/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/migration${analysisId ? `?analysis_id=${encodeURIComponent(analysisId)}` : ''}`),
   history: (owner: string, repo: string) => request<Record<string, any>>(`/reports/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/history`),
   monitoring: (owner: string, repo: string) => request<Record<string, any>>(`/monitor/dashboard/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),
   adminMetrics: () => request<Record<string, any>>('/admin/metrics'),
