@@ -19,19 +19,33 @@ class Neo4jConnection:
         self.password = os.getenv("NEO4J_PASSWORD")
 
         self.driver = None
+        self._last_error = None
 
     def connect(self):
 
         if not self.driver:
+            if not self.uri or not self.username or not self.password:
+                self._last_error = "Neo4j configuration is incomplete"
+                raise RuntimeError(self._last_error)
 
-            self.driver = GraphDatabase.driver(
-                self.uri,
-                auth=(self.username, self.password)
-            )
-
-            logger.info("Neo4j connection initialized")
-
-            self._ensure_schema()
+            driver = None
+            try:
+                driver = GraphDatabase.driver(
+                    self.uri,
+                    auth=(self.username, self.password)
+                )
+                with driver.session() as session:
+                    session.run("RETURN 1").consume()
+                self.driver = driver
+                self._ensure_schema()
+                logger.info("Neo4j connection verified")
+            except Exception as error:
+                if driver:
+                    driver.close()
+                self.driver = None
+                self._last_error = str(error)
+                logger.warning("Neo4j connection unavailable: %s", error)
+                raise
 
         return self.driver
 
@@ -72,6 +86,7 @@ class Neo4jConnection:
         if self.driver:
 
             self.driver.close()
+            self.driver = None
 
             logger.info("Neo4j connection closed")
 

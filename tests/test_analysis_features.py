@@ -34,8 +34,9 @@ from app.models.migration_models import (
     SymbolAssessment,
     SymbolRelationship,
 )
-from app.routers import graph, webhook
+from app.routers import graph, webhook, health
 from app.routers import reports
+from app.graph.connection import Neo4jConnection
 from app.visualization import neo4j_graph_api
 from app.visualization.page_renderer import build_graph_page
 from app.worker import task_registry
@@ -298,6 +299,48 @@ def test_markdown_report_export_is_safe_and_includes_summary():
     assert "# RepoHeal health report: owner/repo" in markdown
     assert "Health score: 87" in markdown
     assert "Migrate to pkg.new" in markdown
+
+
+def test_root_redirects_to_login():
+    response = health.root()
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "/auth/login-page"
+
+
+def test_healthz_reports_live_dependency_statuses(monkeypatch):
+    monkeypatch.setattr(health, "check_mongo_health", lambda: True)
+    monkeypatch.setattr(health.neo4j_connection, "is_available", lambda: False)
+
+    response = health.healthz()
+
+    assert response == {
+        "status": "degraded",
+        "mongodb": "connected",
+        "neo4j": "unavailable",
+    }
+
+
+def test_neo4j_connection_does_not_claim_initialized_when_dns_fails(monkeypatch):
+    connection = Neo4jConnection()
+    connection.uri = "neo4j+s://stale-host"
+    connection.username = "neo4j"
+    connection.password = "password"
+
+    class FailingDriver:
+        def session(self):
+            raise OSError("name resolution failed")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "app.graph.connection.GraphDatabase.driver",
+        lambda *args, **kwargs: FailingDriver(),
+    )
+
+    assert connection.is_available() is False
+    assert connection.driver is None
 
 
 def test_reports_reject_unauthorized_repository_access(monkeypatch):

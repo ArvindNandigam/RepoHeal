@@ -16,7 +16,10 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting RepoHeal backend")
-    neo4j_connection.connect()
+    try:
+        neo4j_connection.connect()
+    except Exception as neo4j_error:
+        logger.warning("Neo4j unavailable during startup; graph features will be limited: %s", neo4j_error)
     session_store.cleanup_expired_sessions()
 
     # Phase 1/2: Recover orphaned jobs from previous crashes/restarts
