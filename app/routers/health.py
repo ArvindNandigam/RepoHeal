@@ -1,5 +1,7 @@
-from fastapi import APIRouter
+import jwt
+from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+from app.config import settings
 from app.models.schemas import HealthResponse
 from app.db.database import check_mongo_health
 from app.graph.connection import neo4j_connection
@@ -7,8 +9,16 @@ from app.graph.connection import neo4j_connection
 router = APIRouter(tags=["health"])
 
 @router.get("/")
-def root():
-    return RedirectResponse(url="/auth/login-page", status_code=307)
+def root(request: Request = None):
+    destination = "/auth/login-page"
+    token = request.cookies.get("repoheal_session") if request else None
+    if token:
+        try:
+            jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256"])
+            destination = "/dashboard"
+        except jwt.PyJWTError:
+            pass
+    return RedirectResponse(url=destination, status_code=307)
 
 @router.get("/healthz", response_model=HealthResponse)
 def healthz():

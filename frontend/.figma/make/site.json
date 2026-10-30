@@ -1,4 +1,5 @@
 {
+  "title": "RepoHeal",
   "description": "Monitor GitHub repository health, track analysis history, and review risks, migration guidance, and alerts to help teams maintain and improve their codebases.",
   "robots": {
     "index": false
