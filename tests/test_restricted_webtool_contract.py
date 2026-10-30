@@ -7,6 +7,7 @@ import pytest
 
 from app.config import Settings
 from app.discovery.document_extractor import fetch_page
+from app.routes.health import health, health_head
 from app.knowledge.repository import KnowledgeRepository
 from app.routes.response_formatters import format_bulk_response
 from app.routes.response_formatters import format_symbol_response
@@ -152,6 +153,29 @@ def test_fetch_page_revalidates_redirect_destination(monkeypatch):
     monkeypatch.setattr(httpx, "Client", client)
 
     assert fetch_page("https://docs.example.com/start") is None
+
+
+def test_health_head_matches_get_status_for_healthy_and_degraded(monkeypatch):
+    settings = Settings(mongodb_uri="mongodb://example", service_version="test")
+    monkeypatch.setattr("app.routes.health.get_settings", lambda: settings)
+    request = MagicMock()
+    request.app.state.start_time = None
+    request.state.now = None
+
+    repository = MagicMock(is_mongo_connected=True)
+    repository.ping.return_value = True
+    monkeypatch.setattr("app.routes.health.get_operational_repository", lambda: repository)
+
+    healthy_get = health(request)
+    healthy_head = health_head(request)
+    assert healthy_get.status_code == healthy_head.status_code == 200
+    assert json.loads(healthy_get.body)["status"] == "healthy"
+
+    repository.is_mongo_connected = False
+    degraded_get = health(request)
+    degraded_head = health_head(request)
+    assert degraded_get.status_code == degraded_head.status_code == 503
+    assert json.loads(degraded_get.body)["status"] == "degraded"
 
 
 @pytest.mark.parametrize(

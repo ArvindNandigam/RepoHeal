@@ -25,7 +25,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ## Security
 
-Every endpoint except `GET /health` requires:
+Every endpoint except `GET /health`, `HEAD /health`, and `HEAD /healthz` requires:
 
 ```http
 Authorization: Bearer <INTERNAL_API_KEY>
@@ -68,6 +68,7 @@ On boot the service pings MongoDB, creates required collections and indexes, val
 ## API
 
 * `GET /health`
+* `HEAD /health`
 * `GET /health/providers`
 * `GET /library-intelligence/{library}`
 * `POST /bulk-library-intelligence`
@@ -80,3 +81,5 @@ and returns `{"request_id": "...", "status": "success", "results": [...]}`. Each
 the library metadata, status, and symbol relationship results. `/health/providers` reports
 provider state only; it never returns API keys or other secrets. Upstream responses are
 restricted by content type and size, and redirects are revalidated against `ALLOWED_DOMAINS`.
+UptimeRobot can use `HEAD /health`; it returns `200` when MongoDB is reachable and `503`
+with a `degraded` health status from the GET endpoint when MongoDB is unavailable.
