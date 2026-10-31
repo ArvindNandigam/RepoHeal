@@ -59,10 +59,15 @@ def _is_analysis_incomplete(status: dict) -> bool:
 
 
 def _neo4j_info() -> dict:
-    ok, msg = neo4j_connection.storage_ok()
+    available = neo4j_connection.is_available()
+    warning = ""
+    if available:
+        ok, msg = neo4j_connection.storage_ok()
+        if not ok:
+            warning = msg
     return {
-        "neo4j_available": neo4j_connection.is_available(),
-        "neo4j_warning": msg if not ok else "",
+        "neo4j_available": available,
+        "neo4j_warning": warning,
     }
 
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { api, type Dashboard, type Graph, type Repository, subscribeToStatus } from './api'
 
 type IconName =
@@ -13,6 +13,7 @@ type IconName =
   | 'dashboard'
   | 'download'
   | 'heart'
+  | 'logout'
   | 'monitor'
   | 'refresh'
   | 'report'
@@ -21,6 +22,7 @@ type IconName =
   | 'shield'
   | 'spark'
   | 'trend'
+  | 'users'
 
 const icons: Record<IconName, React.ReactNode> = {
   activity: <path d="M3 12h3l2.2-6 4 12 2.6-7H21" />,
@@ -65,6 +67,13 @@ const icons: Record<IconName, React.ReactNode> = {
     </>
   ),
   heart: <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z" />,
+  logout: (
+    <>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </>
+  ),
   monitor: (
     <>
       <rect x="3" y="4" width="18" height="13" rx="2" />
@@ -108,6 +117,14 @@ const icons: Record<IconName, React.ReactNode> = {
     <>
       <path d="m3 17 6-6 4 4 8-9" />
       <path d="M15 6h6v6" />
+    </>
+  ),
+  users: (
+    <>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
     </>
   ),
 }
@@ -204,16 +221,20 @@ function App() {
 
   // Routing helper that syncs with browser history
   const navigate = useCallback((targetPage: string, repo?: Repository | null, extra?: Record<string, string>) => {
-    setPage(targetPage)
+    let resolvedPage = targetPage
+    if (resolvedPage === 'Admin' && dashboardRef.current?.user !== 'ArvindNandigam') {
+      resolvedPage = 'Overview'
+    }
+    setPage(resolvedPage)
     const params = new URLSearchParams()
-    if (targetPage === 'Overview') params.set('view', 'overview')
-    else if (targetPage === 'Repositories') params.set('view', 'repositories')
-    else if (targetPage === 'Repository') params.set('view', 'repository')
-    else if (targetPage === 'Reports') params.set('view', 'reports')
-    else if (targetPage === 'Monitoring') params.set('view', 'monitoring')
-    else if (targetPage === 'Admin') params.set('view', 'admin')
-    else if (targetPage === 'Diagnostics') params.set('view', 'diagnostics')
-    else if (targetPage === 'Compare') params.set('view', 'compare')
+    if (resolvedPage === 'Overview') params.set('view', 'overview')
+    else if (resolvedPage === 'Repositories') params.set('view', 'repositories')
+    else if (resolvedPage === 'Repository') params.set('view', 'repository')
+    else if (resolvedPage === 'Reports') params.set('view', 'reports')
+    else if (resolvedPage === 'Monitoring') params.set('view', 'monitoring')
+    else if (resolvedPage === 'Admin') params.set('view', 'admin')
+    else if (resolvedPage === 'Diagnostics') params.set('view', 'diagnostics')
+    else if (resolvedPage === 'Compare') params.set('view', 'compare')
 
     const currentRepo = repo !== undefined ? repo : selected
     if (currentRepo) {
@@ -224,7 +245,7 @@ function App() {
       Object.entries(extra).forEach(([k, v]) => params.set(k, v))
     }
     const newUrl = `${window.location.pathname}?${params.toString()}`
-    window.history.pushState({ page: targetPage, owner: currentRepo?.owner, repo: currentRepo?.repo }, '', newUrl)
+    window.history.pushState({ page: resolvedPage, owner: currentRepo?.owner, repo: currentRepo?.repo }, '', newUrl)
   }, [selected])
 
   const loadDashboard = async () => {
@@ -274,6 +295,7 @@ function App() {
   }
 
   const loadAdmin = async () => {
+    if (dashboardRef.current?.user && dashboardRef.current.user !== 'ArvindNandigam') return
     setRefreshing(true)
     try {
       const [metrics, observability] = await Promise.all([api.adminMetrics(), api.adminObservability()])
@@ -344,9 +366,12 @@ function App() {
     }
   }
 
+  const dashboardRef = useRef<Dashboard | null>(null)
+  dashboardRef.current = dashboard
+
   // Handle URL change on initial load & popstate (browser back/forward)
   const syncFromUrl = useCallback(
-    (reposList: Repository[]) => {
+    (reposList: Repository[], currentUser?: string) => {
       const params = new URLSearchParams(window.location.search)
       const view = params.get('view') || 'overview'
       const owner = params.get('owner')
@@ -361,6 +386,8 @@ function App() {
         targetRepo = reposList[0]
       }
 
+      const activeUser = currentUser || dashboardRef.current?.user
+
       if (view === 'repositories') setPage('Repositories')
       else if (view === 'repository') {
         setPage('Repository')
@@ -372,8 +399,12 @@ function App() {
         setPage('Monitoring')
         if (targetRepo) void loadMonitoring(targetRepo)
       } else if (view === 'admin') {
-        setPage('Admin')
-        void loadAdmin()
+        if (activeUser === 'ArvindNandigam') {
+          setPage('Admin')
+          void loadAdmin()
+        } else {
+          setPage('Overview')
+        }
       } else if (view === 'diagnostics') setPage('Diagnostics')
       else if (view === 'compare') {
         setPage('Compare')
@@ -388,14 +419,17 @@ function App() {
 
   useEffect(() => {
     void loadDashboard().then((d) => {
-      if (d) syncFromUrl(d.repositories)
+      if (d) syncFromUrl(d.repositories, d.user)
     })
+  }, [syncFromUrl])
+
+  useEffect(() => {
     const handlePopState = () => {
-      if (dashboard) syncFromUrl(dashboard.repositories)
+      if (dashboardRef.current) syncFromUrl(dashboardRef.current.repositories, dashboardRef.current.user)
     }
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
-  }, [syncFromUrl, dashboard])
+  }, [syncFromUrl])
 
   useEffect(() => {
     if (!selected) return
@@ -516,9 +550,17 @@ function App() {
         </div>
         <div className="profile">
           <div className="avatar">{(dashboard?.user || '?').slice(0, 2).toUpperCase()}</div>
-          <div>
+          <div className="profile-info">
             <strong>{dashboard?.user || 'Authenticated user'}</strong>
             <span>@{dashboard?.user || 'unknown'}</span>
+          </div>
+          <div className="profile-quick-actions">
+            <a href="/auth/switch-account" className="profile-btn" title="Change GitHub account" aria-label="Change GitHub account">
+              <Icon name="users" size={14} />
+            </a>
+            <a href="/auth/logout" className="profile-btn logout" title="Log out" aria-label="Log out">
+              <Icon name="logout" size={14} />
+            </a>
           </div>
         </div>
       </aside>
@@ -535,6 +577,14 @@ function App() {
           </div>
           <div className="top-actions">
             <span className="sync-status"><span /> Authenticated workspace</span>
+            <a className="button secondary-button top-action-btn" href="/auth/switch-account" title="Change GitHub account">
+              <Icon name="users" size={13} />
+              <span>Change account</span>
+            </a>
+            <a className="button secondary-button top-action-btn logout-btn" href="/auth/logout" title="Log out of RepoHeal">
+              <Icon name="logout" size={13} />
+              <span>Log out</span>
+            </a>
           </div>
         </header>
 
@@ -940,7 +990,7 @@ function App() {
             />
           ) : page === 'Monitoring' ? (
             <MonitoringPage data={monitoring} refreshing={refreshing} onRefresh={() => void loadMonitoring(selected)} />
-          ) : page === 'Admin' ? (
+          ) : page === 'Admin' && dashboard?.user === 'ArvindNandigam' ? (
             <AdminPage metrics={adminMetrics} observability={adminObservability} refreshing={refreshing} onRefresh={loadAdmin} />
           ) : page === 'Diagnostics' ? (
             <Diagnostics />

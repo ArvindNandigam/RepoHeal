@@ -66,14 +66,24 @@ async def switch_account(request: Request):
                 session_store.delete_session(session_id)
         except Exception:
             pass
+    import secrets
+    state = secrets.token_hex(16)
     response = RedirectResponse(
         url=f"https://github.com/login/oauth/authorize"
-             f"?client_id={settings.GITHUB_OAUTH_CLIENT_ID}"
-             f"&scope=repo%20read:user%20read:org"
-             f"&redirect_uri=https://repoheal.onrender.com/auth/github/callback"
-             f"&force_login=true"
+            f"?client_id={settings.GITHUB_OAUTH_CLIENT_ID}"
+            f"&scope=repo%20read:user%20read:org"
+            f"&state={state}"
+            f"&prompt=login"
     )
     response.delete_cookie("repoheal_session")
+    response.set_cookie(
+        key="repoheal_oauth_state",
+        value=state,
+        httponly=True,
+        secure=(settings.ENVIRONMENT == "production"),
+        samesite="lax",
+        max_age=300,
+    )
     logger.info("User switching account")
     return response
 
