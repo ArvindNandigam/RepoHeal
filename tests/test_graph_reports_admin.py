@@ -272,7 +272,7 @@ def test_admin_metrics_collection_and_status():
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc)
         mock_docs = [
-            {"metric": m, "updated_at": now}
+            {"metric": m, "updated_at": now, "count": 1 if m == "analyses_performed" else 0}
             for m in [
                 "repositories_analyzed", "analyses_performed", "commits_analyzed",
                 "branches_analyzed", "installations", "code_scale", "graph_scale",

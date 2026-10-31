@@ -40,6 +40,7 @@ from app.models.migration_models import (
 from app.routers import graph, webhook, health
 from app.routers import reports
 from app.routers import admin, dashboard
+from app.analysis import repository_analyzer
 from app.routers.dependencies import build_dashboard_repositories
 from app.graph.connection import Neo4jConnection
 from app.config import _environment_name
@@ -141,6 +142,71 @@ def test_create_job_persists_status_and_skips_recent(monkeypatch):
         "repo",
         skip_if_recent=True
     ) is None
+
+
+def test_specific_commit_target_uses_exact_sha_for_archive():
+    class Branch:
+        commit = types.SimpleNamespace(sha="branch-head-sha")
+
+    class Repo:
+        default_branch = "main"
+        full_name = "owner/repo"
+
+        def get_branch(self, name):
+            assert name == "release"
+            return Branch()
+
+    target = task_registry.resolve_repository_target(Repo(), "release", "abcdef1234567890")
+
+    assert target["selected_branch"] == "release"
+    assert target["commit_sha"] == "abcdef1234567890"
+    assert target["archive_ref"] == "abcdef1234567890"
+
+
+def test_stale_repository_job_is_marked_orphaned(monkeypatch):
+    database = FakeDatabase()
+    database.repository_analysis_status.insert_one({
+        "repo_owner": "owner",
+        "repo_name": "repo",
+        "status": task_registry.JobStatus.RUNNING.value,
+        "progress": 82,
+        "job_id": "stale-job",
+        "updated_at": datetime.now(timezone.utc) - timedelta(minutes=20),
+    })
+    monkeypatch.setattr(task_registry, "get_mongo_db", lambda: database)
+
+    status = task_registry.get_repository_status("owner", "repo")
+
+    assert status["status"] == task_registry.JobStatus.ORPHANED.value
+    assert "stopped responding" in status["message"]
+    assert database.repository_analysis_status.documents[0]["status"] == task_registry.JobStatus.ORPHANED.value
+
+
+def test_local_analyzer_scans_python_and_manifest_without_network(monkeypatch):
+    monkeypatch.setattr(repository_analyzer, "get_latest_pypi_versions", lambda packages: {"requests": "2.32.0"})
+
+    analysis = repository_analyzer.analyze_repository(
+        "fixture/repo",
+        file_contents={
+            "src/app.py": "import requests\n\ndef fetch(url):\n    return requests.get(url)\n",
+            "requirements.txt": "requests==2.31.0\n",
+        },
+    )
+
+    assert analysis["dependencies"]["declared"]["requests"]["version"] == "2.31.0"
+    assert "requests" in analysis["dependency_graph"]
+    assert analysis["dependency_graph"]["requests"]["latest_version"] == "2.32.0"
+    assert analysis["imports"]["files"]
+
+
+def test_cached_graph_can_render_saved_dependency_graph_without_imports():
+    graph_payload = graph._build_cached_graph(
+        "owner/repo",
+        {"dependency_graph": {"requests": {"version": "2.31.0", "type": "third-party"}}},
+    )
+
+    assert graph_payload is not None
+    assert any(node["data"].get("label") == "requests" for node in graph_payload["nodes"])
 
 
 def test_webhook_queue_adds_only_new_analysis(monkeypatch):

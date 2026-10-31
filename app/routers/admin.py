@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.auth.jwt_manager import verify_session_token
 from app.worker.metrics import get_all_metrics
-from app.worker.metrics import ensure_platform_metrics_initialized
 from app.db.database import get_mongo_db
 from app.worker.task_registry import get_active_jobs
 from app.db.database import check_mongo_health
@@ -25,7 +24,6 @@ def require_admin(user=Depends(verify_session_token)):
 
 @router.get("/admin/metrics")
 async def admin_metrics_json(user=Depends(require_admin)):
-    ensure_platform_metrics_initialized()
     return {
         **get_all_metrics(),
         "dependency_status": _dependency_status(),
@@ -105,7 +103,6 @@ def _platform_metrics_status() -> dict:
 async def admin_observability(user=Depends(require_admin)):
     """Phase 9: Observability metrics — memory, storage, performance, reliability."""
     db = get_mongo_db()
-    ensure_platform_metrics_initialized()
     metrics = get_all_metrics()
     metrics_status = _platform_metrics_status()
 

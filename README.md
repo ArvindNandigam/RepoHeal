@@ -33,6 +33,9 @@ The analysis is advisory. A clean report means the configured checks found no ac
 | Deployment | Render |
 
 See [Architecture](docs/ARCHITECTURE.md) for data flow, storage boundaries, and API surfaces.
+See [Testing and demo workflow](docs/TESTING.md) for local verification, staging checks, and a recording checklist.
+
+GitHub Actions runs the backend checks and frontend typecheck/production build on pushes and pull requests targeting `main`.
 
 ## Analysis workflow
 
