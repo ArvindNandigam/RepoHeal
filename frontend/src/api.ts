@@ -39,6 +39,7 @@ export type Graph = {
   edges: Array<{ data: Record<string, unknown> }>
   statistics?: Record<string, unknown>
   status?: string
+  progress?: number
   message?: string
   neo4j_available?: boolean
   neo4j_warning?: string

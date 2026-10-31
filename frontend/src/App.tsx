@@ -289,18 +289,15 @@ function App() {
       params.set('repo', repo.repo)
       window.history.pushState({ page: 'Repository', owner: repo.owner, repo: repo.repo }, '', `${window.location.pathname}?${params.toString()}`)
     }
-    try {
-      const [nextOverview, nextGraph] = await Promise.all([
+    const [overviewResult, graphResult] = await Promise.allSettled([
         api.overview(repo.owner, repo.repo),
         api.graph(repo.owner, repo.repo),
       ])
       if (requestId !== repositoryRequest.current) return
-      setOverview(nextOverview)
-      setGraph(nextGraph)
-    } catch (reason) {
-      if (requestId !== repositoryRequest.current) return
-      setError(reason instanceof Error ? reason.message : 'Repository data is unavailable')
-    }
+      if (overviewResult.status === 'fulfilled') setOverview(overviewResult.value)
+      else setError(overviewResult.reason instanceof Error ? overviewResult.reason.message : 'Repository data is unavailable')
+      if (graphResult.status === 'fulfilled') setGraph(graphResult.value)
+    else setGraph({ repository: `${repo.owner}/${repo.repo}`, status: 'error', message: graphResult.reason instanceof Error ? graphResult.reason.message : 'Graph data is unavailable', nodes: [], edges: [] })
   }
 
   const loadAdmin = async () => {
@@ -711,9 +708,11 @@ function App() {
                       <p>
                         {graph?.nodes?.length
                           ? `${visibleNodes.length} of ${graph.nodes.length} nodes · ${graph.edges?.length || 0} relationships`
+                          : graph?.status === 'building'
+                          ? `Analysis is building the graph (${graph.progress || 0}%). ${graph.message || ''}`
                           : isGraphUnstarted
                           ? 'Run analysis first to view graph.'
-                          : 'No graph data found.'}
+                          : graph?.message || 'No graph data found.'}
                       </p>
                     </div>
                     <div className="graph-tools">
@@ -758,10 +757,16 @@ function App() {
                       <strong>No analysis snapshot available</strong>
                       <p>Click "Run analysis now" above to build the dependency graph for {selected.repo}.</p>
                     </div>
+                  ) : graph?.status === 'building' ? (
+                    <div className="empty-state">
+                      <strong>Graph is being built</strong>
+                      <p>{graph.message || 'The analysis is still running. This view will refresh when graph data is ready.'}</p>
+                      <progress value={graph.progress || 0} max="100" />
+                    </div>
                   ) : isGraphEmpty ? (
                     <div className="empty-state">
                       <strong>Empty graph</strong>
-                      <p>Analysis completed, but no dependencies, files, or relationships were found.</p>
+                      <p>{graph?.message || 'Analysis completed, but no dependencies, files, or relationships were found.'}</p>
                     </div>
                   ) : graph?.nodes?.length ? (
                     graphViewMode === 'topology' ? (
@@ -864,8 +869,16 @@ function App() {
                         })}
                       </div>
                     )
-                  ) : (
+                  ) : graph?.nodes?.length ? (
                     <div className="empty-state">No graph nodes match your filter.</div>
+                  ) : (
+                    <div className="empty-state">
+                      <strong>{graph?.status === 'error' ? 'Graph could not be loaded' : 'No graph data available'}</strong>
+                      <p>{graph?.message || 'The analysis snapshot did not contain graph nodes.'}</p>
+                      <button className="button secondary-button" onClick={() => selected && void openRepository(selected, false, false)}>
+                        <Icon name="refresh" size={14} /> Reload graph
+                      </button>
+                    </div>
                   )}
 
                   {inspectedNode && (
@@ -1142,10 +1155,11 @@ function ReportsPage({
   const deprecatedApis = Array.isArray(healthReport?.deprecated_apis) ? healthReport.deprecated_apis : []
   const warnings = Array.isArray(healthReport?.intelligence_warnings) ? healthReport.intelligence_warnings : []
 
-  // Check state: "no report", "generation failed", "report available"
+  // Report persistence and external intelligence availability are independent.
   const hasHistory = timeline.length > 0
   const isReportAvailable = Boolean(healthReport && (healthReport.overall_health_score !== undefined || healthReport.generated_at))
-  const isFailed = healthReport?.migration_intelligence_status === 'failed' || (!isReportAvailable && hasHistory && selectedRepo?.analysis_status === 'completed')
+  const reportGenerationFailed = !isReportAvailable && hasHistory && selectedRepo?.analysis_status === 'completed'
+  const intelligenceUnavailable = isReportAvailable && healthReport?.migration_intelligence_status === 'failed'
 
   return (
     <section>
@@ -1208,17 +1222,26 @@ function ReportsPage({
             Go to repository
           </button>
         </div>
-      ) : isFailed ? (
+      ) : reportGenerationFailed ? (
         <div className="callout-card warning">
           <div className="callout-content">
             <h3>Report generation incomplete or failed</h3>
-            <p>The analysis finished but the migration intelligence pipeline reported an issue. Review warnings or rerun the analysis.</p>
+            <p>The analysis finished, but no health report was saved. Review analysis status or rerun the analysis.</p>
           </div>
           <button className="button secondary-button" onClick={onRetry}>
             Rerun analysis
           </button>
         </div>
       ) : null}
+
+      {intelligenceUnavailable && (
+        <div className="callout-card warning">
+          <div className="callout-content">
+            <h3>External migration intelligence unavailable</h3>
+            <p>The health report was generated and saved. Restricted Webtool returned no symbol intelligence; local version-gap and pattern checks were used where possible. A clean result means no issues were detected by those checks, not that external symbol intelligence verified every API.</p>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="report-tabs">

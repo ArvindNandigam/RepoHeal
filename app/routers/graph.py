@@ -112,7 +112,16 @@ def _code_state_metadata(repo_id: str, installation_id: int, status: dict) -> di
 
 
 def _build_cached_graph(repo_id: str, analysis: dict | None) -> dict | None:
-    if not analysis or not analysis.get("imports", {}).get("files"):
+    if not analysis:
+        return None
+
+    # The dependency graph is persisted independently from the full analysis
+    # snapshot. Use it even when import details are unavailable so saved
+    # package nodes are still visible instead of silently returning an empty graph.
+    import_files = analysis.get("imports", {}).get("files", {})
+    dependency_graph = analysis.get("dependency_graph", {})
+    semantic_files = analysis.get("semantic_graph", {}).get("files", {})
+    if not import_files and not dependency_graph and not semantic_files:
         return None
 
     visualizer = GraphVisualizer(analysis)
