@@ -113,8 +113,12 @@ Most repository endpoints require an authenticated session and repository access
 | `GET /repos/{owner}/{repo}/commits?branch={branch}` | Recent commits for a branch |
 | `GET /analyze/{owner}/{repo}?mode=branch&branch={branch}` | Queue analysis for a branch head |
 | `GET /analyze/{owner}/{repo}?mode=commit&branch={branch}&commit_sha={sha}` | Queue analysis for a specific commit |
+| `POST /health-refresh/{owner}/{repo}` | Rebuild health and migration reports from a saved analysis without rescanning source files |
+| `POST /reanalyze/{owner}/{repo}` | Queue a forced full analysis run |
 | `GET /graph/{owner}/{repo}` | Latest dependency/code graph |
+| `GET /visualize/{owner}/{repo}/export.png` | Export the latest graph as a PNG image |
 | `GET /sse/status/{owner}/{repo}` | Server-Sent Events analysis progress stream |
+| `GET /status/{owner}/{repo}` | Current job progress and code-state status |
 | `GET /reports/{owner}/{repo}/health` | Latest saved health report |
 | `GET /reports/{owner}/{repo}/migration` | Latest saved migration document |
 | `GET /reports/{owner}/{repo}/history` | Saved analysis history |

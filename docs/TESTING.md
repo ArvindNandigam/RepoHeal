@@ -26,8 +26,8 @@ You can run each step independently. The backend tests use fake collections, moc
 - Job creation, deduplication, and repository status behavior.
 - Branch and exact commit target resolution.
 - Offline Python AST/dependency analysis with a deterministic in-memory fixture and mocked PyPI versions.
-- Local health scoring without external intelligence, bounded concurrent Webtool batches, and analysis progress recovery.
-- Graph generation from analysis data, including the saved dependency-only fallback, package-type promotion, and PNG rendering of orphaned nodes.
+- Local health scoring without external intelligence, bounded concurrent Webtool batches, and graph-page status polling.
+- Graph generation from analysis data, including the saved dependency-only fallback and package-type promotion.
 - Report generation, migration artifact persistence, comparison, Markdown export, and repository authorization.
 - Dashboard/admin/health route behavior and configuration checks.
 
@@ -42,7 +42,7 @@ Use a disposable GitHub repository with no sensitive source and a staging deploy
 3. Paste a known commit SHA and run another analysis. Verify the new report/history entry uses that exact SHA.
 4. While external intelligence is pending, open Reports. Verify the preliminary health score appears before the lookup finishes and the active task message and percentage are visible. Confirm the final enriched report reloads when the task completes.
 5. Use **Refresh health & migration**. Verify that the task is labeled as a health/migration refresh, displays its progress percentage and worker message, and completes without rescanning source files. Confirm it is disabled before any analysis exists.
-6. Open the graph. Confirm the API returns nodes/edges and the UI shows the same counts. Check that package and class filters include their matching nodes, including saved package nodes. Repeat with Neo4j unavailable to confirm the saved-analysis fallback works when cache/artifacts are available. Export a PNG and confirm nodes with missing parent links still render.
+6. Open the graph. Confirm the API returns nodes/edges and the UI shows the same counts. Check that package and class filters include their matching nodes, including saved package nodes. Repeat with Neo4j unavailable to confirm the saved-analysis fallback works when cache/artifacts are available. Manually export a PNG and confirm nodes with missing parent links still render.
 7. Open the health report and migration document. Confirm the analysis ID and commit match the run, and check that external intelligence availability is clearly reported.
 8. Open analysis history and compare two saved runs.
 9. Check the service logs and MongoDB job record for failures; confirm the source branch has not been modified. Analysis artifacts are written to the `repoheal.meta` metadata branch.
