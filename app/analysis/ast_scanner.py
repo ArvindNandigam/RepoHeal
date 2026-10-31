@@ -802,6 +802,7 @@ def scan_repository(repo_path, file_contents: dict | None = None):
             source,
             module_index=module_index
         )
+        imports["line_count"] = len(source.splitlines()) if source else 0
 
         fp_key = py_file if file_contents else str(py_file)
         imports_by_file[fp_key] = imports
@@ -826,12 +827,14 @@ def scan_repository(repo_path, file_contents: dict | None = None):
                 local_import
                 for file_imports in imports_by_file.values()
                 for local_import in file_imports.get("local", [])
-            })
+            }),
+            "total_lines": sum(f.get("line_count", 0) for f in imports_by_file.values())
         }
     }
 
     semantic_summary = {
         "total_files": len(semantic_by_file),
+        "total_lines": sum(f.get("line_count", 0) for f in imports_by_file.values()),
         "total_functions": sum(
             len(file_semantics.get("functions", []))
             for file_semantics in semantic_by_file.values()

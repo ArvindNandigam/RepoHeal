@@ -76,6 +76,7 @@ export const api = {
   adminMetrics: () => request<Record<string, any>>('/admin/metrics'),
   adminObservability: () => request<Record<string, any>>('/admin/observability'),
   startAnalysis: (owner: string, repo: string) => request<Record<string, any>>(`/analyze/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),
+  reanalyze: (owner: string, repo: string) => request<Record<string, any>>(`/reanalyze/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, { method: 'POST' }),
   diagnostics: () => request<Record<string, any>>('/healthz'),
 }
 

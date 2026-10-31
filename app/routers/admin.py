@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.auth.jwt_manager import verify_session_token
 from app.worker.metrics import get_all_metrics
+from app.worker.metrics import ensure_platform_metrics_initialized
 from app.db.database import get_mongo_db
 from app.worker.task_registry import get_active_jobs
 from app.db.database import check_mongo_health
@@ -24,6 +25,7 @@ def require_admin(user=Depends(verify_session_token)):
 
 @router.get("/admin/metrics")
 async def admin_metrics_json(user=Depends(require_admin)):
+    ensure_platform_metrics_initialized()
     return {
         **get_all_metrics(),
         "dependency_status": _dependency_status(),
@@ -48,8 +50,6 @@ def _platform_metrics_status() -> dict:
         "repositories_analyzed",
         "analyses_performed",
         "commits_analyzed",
-        "branches_analyzed",
-        "installations",
         "code_scale",
         "graph_scale",
         "dependency_intelligence",
@@ -76,13 +76,14 @@ def _platform_metrics_status() -> dict:
     )
     collected_metrics = {doc.get("metric") for doc in documents}
     missing_metrics = sorted(expected_metrics - collected_metrics)
-    state = (
-        "not_collected"
-        if not documents
-        else "collected"
-        if not missing_metrics
-        else "partial"
+    # Initialization creates zero-valued documents. A zero is a real collected
+    # value only after at least one completed analysis has recorded platform
+    # metrics; otherwise describe the collection as not yet observed.
+    analyses = next(
+        (doc.get("count", 0) for doc in documents if doc.get("metric") == "analyses_performed"),
+        0,
     )
+    state = "not_collected" if analyses == 0 else "collected" if not missing_metrics else "partial"
     return {
         "state": state,
         "metric_count": len(documents),
@@ -104,6 +105,7 @@ def _platform_metrics_status() -> dict:
 async def admin_observability(user=Depends(require_admin)):
     """Phase 9: Observability metrics — memory, storage, performance, reliability."""
     db = get_mongo_db()
+    ensure_platform_metrics_initialized()
     metrics = get_all_metrics()
     metrics_status = _platform_metrics_status()
 

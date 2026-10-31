@@ -217,18 +217,21 @@ function App() {
   const [graphViewMode, setGraphViewMode] = useState<'topology' | 'explorer'>('topology')
   const [inspectedNode, setInspectedNode] = useState<Record<string, any> | null>(null)
   const [status, setStatus] = useState<Record<string, any> | null>(null)
+  const repositoryRequest = useRef(0)
   const [triaged, setTriaged] = useState<string[]>(() => JSON.parse(localStorage.getItem('repoheal-triage') || '[]'))
 
   // Routing helper that syncs with browser history
   const navigate = useCallback((targetPage: string, repo?: Repository | null, extra?: Record<string, string>) => {
     let resolvedPage = targetPage
+    if (resolvedPage === 'Repositories') {
+      resolvedPage = 'Overview'
+    }
     if (resolvedPage === 'Admin' && dashboardRef.current?.user !== 'ArvindNandigam') {
       resolvedPage = 'Overview'
     }
     setPage(resolvedPage)
     const params = new URLSearchParams()
     if (resolvedPage === 'Overview') params.set('view', 'overview')
-    else if (resolvedPage === 'Repositories') params.set('view', 'repositories')
     else if (resolvedPage === 'Repository') params.set('view', 'repository')
     else if (resolvedPage === 'Reports') params.set('view', 'reports')
     else if (resolvedPage === 'Monitoring') params.set('view', 'monitoring')
@@ -263,18 +266,22 @@ function App() {
     }
   }
 
-  const openRepository = async (repo: Repository, pushUrl = true) => {
+  const openRepository = async (repo: Repository, pushUrl = true, clearExisting = true) => {
+    const requestId = ++repositoryRequest.current
+    const isDifferentRepo = !selected || selected.owner !== repo.owner || selected.repo !== repo.repo
     setSelected(repo)
     setPage('Repository')
-    setOverview(null)
-    setGraph(null)
-    setCompare(null)
-    setHistory(null)
-    setHealthReport(null)
-    setMigrationDoc(null)
-    setMonitoring(null)
-    setStatus(null)
-    setInspectedNode(null)
+    if (clearExisting || isDifferentRepo) {
+      setOverview(null)
+      setGraph(null)
+      setCompare(null)
+      setHistory(null)
+      setHealthReport(null)
+      setMigrationDoc(null)
+      setMonitoring(null)
+      setStatus(null)
+      setInspectedNode(null)
+    }
     if (pushUrl) {
       const params = new URLSearchParams(window.location.search)
       params.set('view', 'repository')
@@ -287,9 +294,11 @@ function App() {
         api.overview(repo.owner, repo.repo),
         api.graph(repo.owner, repo.repo),
       ])
+      if (requestId !== repositoryRequest.current) return
       setOverview(nextOverview)
       setGraph(nextGraph)
     } catch (reason) {
+      if (requestId !== repositoryRequest.current) return
       setError(reason instanceof Error ? reason.message : 'Repository data is unavailable')
     }
   }
@@ -388,7 +397,7 @@ function App() {
 
       const activeUser = currentUser || dashboardRef.current?.user
 
-      if (view === 'repositories') setPage('Repositories')
+      if (view === 'repositories') setPage('Overview')
       else if (view === 'repository') {
         setPage('Repository')
         if (targetRepo) void openRepository(targetRepo, false)
@@ -433,13 +442,19 @@ function App() {
 
   useEffect(() => {
     if (!selected) return
+    let hadActiveAnalysis = ['queued', 'running', 'analyzing', 'generating_graph', 'generating_reports', 'generating_migrations', 'updating_metadata'].includes(selected.analysis_status)
+
     return subscribeToStatus(selected.owner, selected.repo, (next) => {
       setStatus(next)
-      if (next.status === 'completed') {
-        void openRepository(selected, false)
+      const isActive = ['queued', 'running', 'analyzing', 'generating_graph', 'generating_reports', 'generating_migrations', 'updating_metadata'].includes(next.status)
+      if (isActive) {
+        hadActiveAnalysis = true
+      } else if (next.status === 'completed' && hadActiveAnalysis) {
+        hadActiveAnalysis = false
+        void openRepository(selected, false, false)
       }
     })
-  }, [selected])
+  }, [selected?.owner, selected?.repo])
 
   const repos = useMemo(
     () =>
@@ -483,6 +498,19 @@ function App() {
     }
   }
 
+  const rerunAnalysis = async () => {
+    if (!selected) return
+    setRefreshing(true)
+    try {
+      await api.reanalyze(selected.owner, selected.repo)
+      setStatus({ status: 'queued', progress: 0, message: 'Full reanalysis queued' })
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not rerun analysis')
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   const title = page === 'Overview' ? `Good morning, ${dashboard?.user || 'there'}.` : page
   const metrics = dashboard?.metrics
   const issues = overview?.health?.issues?.items || overview?.health?.issues?.findings || []
@@ -507,8 +535,7 @@ function App() {
         <nav className="main-nav" aria-label="Primary navigation">
           <p className="nav-label">Workspace</p>
           {[
-            ['Overview', 'dashboard'],
-            ['Repositories', 'code'],
+            ['Repositories', 'dashboard'],
             ['Reports', 'report'],
             ['Monitoring', 'monitor'],
           ].map(([label, icon]) => (
@@ -985,6 +1012,7 @@ function App() {
               migrationDoc={migrationDoc}
               refreshing={refreshing}
               onRefresh={() => void loadReports(selected)}
+              onRetry={() => void rerunAnalysis()}
               onOpenRepository={() => selected && void openRepository(selected)}
               onSelectAnalysis={(aid) => void loadReports(selected, aid)}
             />
@@ -1001,9 +1029,7 @@ function App() {
                   <p className="eyebrow">Authenticated workspace</p>
                   <h1>{title}</h1>
                   <p>
-                    {page === 'Overview'
-                      ? 'Live repository health from RepoHeal analysis and GitHub metadata.'
-                      : 'Repositories connected to your GitHub workspace.'}
+                    Repositories connected to your GitHub workspace. Health and analysis status are based on the latest saved repository data.
                   </p>
                 </div>
                 <div className="heading-actions">
@@ -1093,6 +1119,7 @@ function ReportsPage({
   migrationDoc,
   refreshing,
   onRefresh,
+  onRetry,
   onOpenRepository,
   onSelectAnalysis,
 }: {
@@ -1102,6 +1129,7 @@ function ReportsPage({
   migrationDoc: string | null
   refreshing: boolean
   onRefresh: () => void
+  onRetry: () => void
   onOpenRepository: () => void
   onSelectAnalysis: (analysisId: string) => void
 }) {
@@ -1186,8 +1214,8 @@ function ReportsPage({
             <h3>Report generation incomplete or failed</h3>
             <p>The analysis finished but the migration intelligence pipeline reported an issue. Review warnings or rerun the analysis.</p>
           </div>
-          <button className="button secondary-button" onClick={onRefresh}>
-            Retry report
+          <button className="button secondary-button" onClick={onRetry}>
+            Rerun analysis
           </button>
         </div>
       ) : null}
@@ -1539,7 +1567,7 @@ function AdminPage({
         <div className="panel-header">
           <div>
             <h2>Dependency status</h2>
-            <p>Checked live when this page loads</p>
+            <p>Last checked during page load or refresh</p>
           </div>
           <span className={`status-pill ${dependencies.status === 'healthy' ? 'healthy' : 'attention'}`}>
             <i />{dependencies.status || 'unknown'}
@@ -1598,7 +1626,7 @@ function AdminPage({
             </div>
             <div className="monitoring-stats">
               <div>
-                <span>Success rate</span>
+                <span>Historical analysis success rate</span>
                 <strong>{observability?.success_rate_pct == null ? '—' : `${observability.success_rate_pct}%`}</strong>
               </div>
               <div>
