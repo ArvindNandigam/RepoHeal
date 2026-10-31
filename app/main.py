@@ -38,6 +38,13 @@ async def lifespan(app: FastAPI):
     except Exception as cache_err:
         logger.warning(f"Cache governance error on startup: {cache_err}")
 
+    # Initialize platform metrics baseline
+    try:
+        from app.worker.metrics import ensure_platform_metrics_initialized
+        ensure_platform_metrics_initialized()
+    except Exception as metrics_err:
+        logger.warning(f"Metrics initialization skipped (non-fatal): {metrics_err}")
+
     # Start the auto-analysis scheduler loop
     scheduler_task = None
     try:

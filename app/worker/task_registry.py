@@ -720,7 +720,11 @@ def run_analysis_in_background(
         funcs = summary.get("total_functions", 0)
         classes = summary.get("total_classes", 0)
         apis = summary.get("total_api_calls", 0)
-        record_code_scale(py_files, nb_files, funcs, classes, apis, 0)
+        files_dict = analysis.get("imports", {}).get("files", {}) or {}
+        scanned_lines = sum(f.get("line_count", f.get("lines", 0)) for f in files_dict.values() if isinstance(f, dict))
+        if not scanned_lines:
+            scanned_lines = imp_summary.get("total_lines", summary.get("total_lines", 0))
+        record_code_scale(py_files, nb_files, funcs, classes, apis, scanned_lines)
 
         deps_count = len(dep_graph)
         unique_pkgs = len(set(p.lower() for p in dep_graph.keys()))
@@ -944,6 +948,12 @@ def run_analysis_in_background(
                 alert_count = generate_alerts_from_report(repo_id, report, prev_score)
                 if alert_count:
                     logger.info(f"Generated {alert_count} alerts for {repo_id}")
+                from app.worker.metrics import record_monitoring_metrics
+                curr_score = report.get("overall_health_score") if isinstance(report, dict) else None
+                degrad = 1 if prev_score is not None and curr_score is not None and curr_score < prev_score else 0
+                wl_doc = db_mongo.monitoring_config.find_one({"repository": repo_id}, {"watchlist": 1})
+                wl_count = len(wl_doc.get("watchlist", [])) if wl_doc and isinstance(wl_doc.get("watchlist"), list) else 0
+                record_monitoring_metrics(alerts=alert_count or 0, degradations=degrad, watchlist_packages=wl_count)
         except Exception as monitor_err:
             logger.warning(f"Monitoring update failed for {repo_id}: {monitor_err}")
 

@@ -107,9 +107,15 @@ class RepositoryStatus(BaseModel):
 
 class GraphResponse(BaseModel):
     repository: str
-    nodes: List[Dict[str, Any]]
-    edges: List[Dict[str, Any]]
-    statistics: Dict[str, Any]
+    nodes: List[Dict[str, Any]] = Field(default_factory=list)
+    edges: List[Dict[str, Any]] = Field(default_factory=list)
+    statistics: Dict[str, Any] = Field(default_factory=dict)
+    status: Optional[str] = "completed"
+    progress: Optional[int] = 100
+    message: Optional[str] = None
+    analysis_id: Optional[str] = None
+    neo4j_available: Optional[bool] = None
+    neo4j_warning: Optional[str] = None
 
 class GraphBuildingResponse(BaseModel):
     repository: str

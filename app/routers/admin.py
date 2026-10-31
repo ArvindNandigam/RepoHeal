@@ -60,7 +60,9 @@ def _platform_metrics_status() -> dict:
         "performance",
         "failure_reasons",
     }
+    from app.worker.metrics import ensure_platform_metrics_initialized
     try:
+        ensure_platform_metrics_initialized()
         documents = list(
             get_mongo_db().platform_metrics.find(
                 {}, {"_id": 0, "metric": 1, "updated_at": 1}

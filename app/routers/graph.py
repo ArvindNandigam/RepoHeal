@@ -188,6 +188,26 @@ async def get_graph_visualization(
             }
 
         analysis_status = get_analysis_status(repo_owner, repo_name)
+        analysis = load_cached_analysis(repo_owner, repo_name)
+        
+        # Check if repository has never completed an analysis
+        is_unstarted = (
+            analysis_status.get("status") in {"not_analyzed", "queued"}
+            and analysis_status.get("progress", 0) == 0
+            and not analysis_status.get("last_analysis")
+        )
+        if not analysis and is_unstarted:
+            return {
+                "repository": repo_id,
+                "status": "not_analyzed",
+                "progress": 0,
+                "message": "Run analysis first",
+                "nodes": [],
+                "edges": [],
+                "statistics": {},
+                **_neo4j_info()
+            }
+
         if (
             _is_analysis_incomplete(analysis_status)
             and not _is_stale_finalizing_status(analysis_status)
@@ -199,33 +219,62 @@ async def get_graph_visualization(
                 "message": analysis_status["message"]
             }
 
-        analysis = load_cached_analysis(
-            repo_owner,
-            repo_name
-        )
+        # 1. Try reading live nodes and relationships from Neo4j if available
+        if neo4j_connection.is_available():
+            try:
+                from app.visualization.neo4j_graph_api import Neo4jGraphVisualizer
+                neo_data = Neo4jGraphVisualizer.to_cytoscape_format(repo_id)
+                neo_nodes = neo_data.get("nodes", [])
+                neo_edges = neo_data.get("edges", [])
+                if neo_nodes:
+                    stats = {
+                        "total_nodes": len(neo_nodes),
+                        "total_edges": len(neo_edges),
+                        "source": "neo4j",
+                    }
+                    return {
+                        "repository": repo_id,
+                        "nodes": neo_nodes,
+                        "edges": neo_edges,
+                        "statistics": stats,
+                        "status": "completed",
+                        "neo4j_available": True,
+                    }
+            except Exception as neo_read_err:
+                logger.warning(f"Neo4j live graph read failed for {repo_id}: {neo_read_err}")
 
+        # 2. Fall back to cached analysis graph
         cached_graph = _build_cached_graph(repo_id, analysis)
         if cached_graph:
             return {
                 "repository": repo_id,
-                **cached_graph
+                "status": "completed",
+                **cached_graph,
+                **_neo4j_info()
             }
 
+        # 3. Fall back to metadata branch graph
         metadata_graph = _build_metadata_graph(repo_id, installation["id"])
         if metadata_graph:
             return {
                 "repository": repo_id,
-                **metadata_graph
+                "status": "completed",
+                **metadata_graph,
+                **_neo4j_info()
             }
 
-        logger.warning(
-            f"No Cytoscape graph data found for {repo_id} in cache or metadata branch"
+        logger.info(
+            f"No graph nodes found for {repo_id} in Neo4j, cache, or metadata branch"
         )
         return {
             "repository": repo_id,
-            "status": "building",
-            "progress": analysis_status["progress"],
-            "message": analysis_status["message"]
+            "status": "empty",
+            "progress": 100,
+            "message": "No nodes or relationships found in repository",
+            "nodes": [],
+            "edges": [],
+            "statistics": {},
+            **_neo4j_info()
         }
     except RepositoryNotFoundError:
         raise

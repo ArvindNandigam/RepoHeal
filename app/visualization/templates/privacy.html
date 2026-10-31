@@ -3,102 +3,343 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Privacy Policy — RepoHeal</title>
+  <title>Privacy Policy · RepoHeal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    :root { color-scheme: dark; --bg: #101214; --surface: #181a1d; --text: #e8eaed; --muted: #9aa0a6; --accent: #42d6a4; --border: rgba(255,255,255,0.06); }
-    *, *::before, *::after { box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; }
-    .container { max-width: 720px; margin: 0 auto; padding: 48px 24px 80px; }
-    h1 { font-size: 28px; font-weight: 700; margin: 0 0 4px; }
-    .sub { color: var(--muted); font-size: 14px; margin: 0 0 40px; }
-    h2 { font-size: 18px; font-weight: 600; margin: 32px 0 12px; }
-    p { font-size: 15px; line-height: 1.7; color: var(--muted); margin: 0 0 16px; }
-    ul { margin: 0 0 16px; padding-left: 20px; }
-    li { font-size: 15px; line-height: 1.7; color: var(--muted); margin-bottom: 4px; }
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
-    .back { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; margin-bottom: 32px; text-decoration: none; }
-    .back:hover { color: var(--accent); }
-    .footer { font-size: 13px; color: var(--muted); text-align: center; margin-top: 48px; }
+    :root {
+      font-family: 'Manrope', Inter, system-ui, sans-serif;
+      color: #e7eee8;
+      background: #191c19;
+      --bg: #191c19;
+      --surface: #202520;
+      --surface-elevated: #262c26;
+      --border: #38433b;
+      --border-subtle: #2b332d;
+      --text: #e7eee8;
+      --text-muted: #9aa59c;
+      --accent: #a7e4c2;
+      --accent-dark: #17231d;
+      --mint: #3f8d70;
+      --mint-glow: rgba(167, 228, 194, 0.15);
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      padding: 0;
+      background: radial-gradient(circle at 15% 10%, #2d4035 0, transparent 40%), radial-gradient(circle at 85% 80%, #213327 0, transparent 35%), var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    header.topbar {
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 clamp(16px, 4vw, 40px);
+      border-bottom: 1px solid var(--border);
+      background: rgba(25, 28, 25, 0.85);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #f4faf5;
+      font-size: 18px;
+      font-weight: 800;
+      text-decoration: none;
+      letter-spacing: -0.5px;
+    }
+    .brand-mark {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      color: var(--accent-dark);
+      background: var(--accent);
+      border-radius: 9px 9px 9px 3px;
+      font-size: 17px;
+    }
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .nav-link {
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .nav-link:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .nav-btn {
+      color: var(--accent-dark);
+      background: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 7px 14px;
+      border-radius: 6px;
+      text-decoration: none;
+      transition: background 0.15s, transform 0.15s;
+    }
+    .nav-btn:hover {
+      background: #c0edd4;
+      transform: translateY(-1px);
+    }
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 48px clamp(16px, 4vw, 32px) 96px;
+    }
+    .hero {
+      margin-bottom: 40px;
+      padding-bottom: 28px;
+      border-bottom: 1px solid var(--border);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 999px;
+      color: var(--accent);
+      background: rgba(167, 228, 194, 0.1);
+      border: 1px solid rgba(167, 228, 194, 0.2);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: clamp(28px, 4vw, 42px);
+      font-weight: 800;
+      letter-spacing: -1.2px;
+      line-height: 1.15;
+      margin: 0 0 10px;
+      color: #f7faf7;
+    }
+    .hero p {
+      color: var(--text-muted);
+      font-size: 15px;
+      margin: 0;
+      max-width: 680px;
+    }
+    .legal-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: clamp(20px, 3vw, 32px);
+      margin-bottom: 24px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    }
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.4px;
+      color: #f5faf6;
+      margin: 0 0 14px;
+    }
+    .section-num {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--accent);
+      background: rgba(167, 228, 194, 0.08);
+      border: 1px solid rgba(167, 228, 194, 0.15);
+      border-radius: 4px;
+      padding: 2px 7px;
+    }
+    p {
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1.7;
+      margin: 0 0 14px;
+    }
+    p:last-child { margin-bottom: 0; }
+    ul {
+      margin: 0 0 14px;
+      padding-left: 20px;
+      color: var(--text-muted);
+    }
+    li {
+      font-size: 14px;
+      line-height: 1.7;
+      margin-bottom: 8px;
+    }
+    li strong {
+      color: #e2e8e3;
+    }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .highlight-box {
+      background: rgba(167, 228, 194, 0.05);
+      border: 1px solid rgba(167, 228, 194, 0.15);
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin: 14px 0;
+    }
+    .highlight-box p {
+      color: #d1dfd5;
+      font-size: 13px;
+      margin: 0;
+    }
+    footer.legal-footer {
+      margin-top: 64px;
+      padding-top: 28px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .footer-links {
+      display: flex;
+      gap: 16px;
+    }
+    .footer-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+    }
+    .footer-links a:hover {
+      color: var(--accent);
+    }
   </style>
 </head>
 <body>
-  <div class="container">
-    <a class="back" href="/">&larr; Back to RepoHeal</a>
-    <h1>Privacy Policy</h1>
-    <p class="sub">Effective date: June 15, 2026</p>
+  <header class="topbar">
+    <a class="brand" href="/dashboard">
+      <span class="brand-mark">♥</span>
+      <span>RepoHeal</span>
+    </a>
+    <nav class="nav-actions" aria-label="Legal navigation">
+      <a class="nav-link" href="/terms-of-service">Terms of Service</a>
+      <a class="nav-link" href="/dashboard">Dashboard</a>
+      <a class="nav-btn" href="/auth/login-page">Sign in</a>
+    </nav>
+  </header>
 
-    <h2>1. Introduction</h2>
-    <p>RepoHeal is a GitHub App that analyzes repositories to provide health reports, migration intelligence, and monitoring. This policy explains what data RepoHeal collects, why it is collected, where it is stored, and how it is handled.</p>
+  <main class="container">
+    <div class="hero">
+      <div class="badge">Legal Document · Privacy Policy</div>
+      <h1>RepoHeal Privacy Policy</h1>
+      <p>Effective date: June 15, 2026. This policy explains what data RepoHeal collects, why it is collected, where it is stored, and how it is handled.</p>
+    </div>
 
-    <h2>2. Information Collected</h2>
-    <p>RepoHeal collects the following information:</p>
-    <ul>
-      <li><strong>GitHub account identifiers</strong> — username, avatar URL, and GitHub user ID for authentication and repository access.</li>
-      <li><strong>Repository metadata</strong> — repository name, description, visibility (public or private), default branch, file listing, and commit history relevant to analysis.</li>
-      <li><strong>Dependency information</strong> — declared dependencies from requirements files and detected imports from source code.</li>
-      <li><strong>Analysis results</strong> — AST scan data, dependency graphs, fingerprints, health scores, risk assessments, and migration reports derived from repository contents.</li>
-      <li><strong>Health and monitoring data</strong> — health score snapshots, alert configurations, watchlists, and monitoring preferences.</li>
-      <li><strong>Application logs</strong> — operational logs including request timestamps, error events, and job status transitions. No credentials or sensitive payloads are logged.</li>
-    </ul>
-    <p>RepoHeal <strong>does not sell user data</strong>. Data is collected and processed solely to provide repository analysis and migration intelligence.</p>
+    <section class="legal-card">
+      <h2 class="section-title"><span class="section-num">01</span> Introduction</h2>
+      <p>RepoHeal is a developer intelligence platform and GitHub App that analyzes codebases to provide health reports, migration intelligence, dependency graphs, and continuous monitoring. We prioritize privacy, security, and data minimization at every step of our analysis pipeline.</p>
+    </section>
 
-    <h2>3. Repository Content</h2>
-    <p>Repository contents are downloaded temporarily to perform analysis. Source code is scanned for imports, API usage patterns, and dependency declarations. The following applies:</p>
-    <ul>
-      <li>Source code is processed in memory where possible. Disk extraction is used only when necessary and is cleaned up after analysis completes.</li>
-      <li>Analysis artifacts (dependency graphs, fingerprints, reports) may be retained. Extracted source code is not permanently stored.</li>
-      <li>No source code is shared with third parties beyond the analysis pipeline described in Section 4.</li>
-    </ul>
+    <section class="legal-card">
+      <h2 class="section-title"><span class="section-num">02</span> Information Collected</h2>
+      <p>RepoHeal collects and processes only the information strictly necessary to provide repository analysis and migration guidance:</p>
+      <ul>
+        <li><strong>GitHub account identifiers:</strong> Username, avatar URL, and GitHub user ID for authentication and repository authorization.</li>
+        <li><strong>Repository metadata:</strong> Repository name, description, visibility (public or private), default branch, file listings, and commit SHAs.</li>
+        <li><strong>Dependency manifests:</strong> Declared dependencies from package configuration files (such as <code>requirements.txt</code>, <code>pyproject.toml</code>) and detected AST import statements.</li>
+        <li><strong>Analysis artifacts:</strong> Syntax trees, dependency graph snapshots, API fingerprints, health scores, risk assessments, and migration findings derived from repository contents.</li>
+        <li><strong>Monitoring records:</strong> Health score timelines, alert configurations, watched dependencies, and notification preferences.</li>
+        <li><strong>Operational logs:</strong> Request timestamps, job transitions, and error events without sensitive tokens or source code payloads.</li>
+      </ul>
+      <div class="highlight-box">
+        <p><strong>Strict Promise:</strong> RepoHeal does not sell, lease, or monetize user data. Data is processed solely to provide repository health analysis and migration assistance.</p>
+      </div>
+    </section>
 
-    <h2>4. Third-Party Services</h2>
-    <p>RepoHeal uses the following third-party services. Each service receives only the data necessary for its function:</p>
-    <ul>
-      <li><strong>GitHub</strong> — repository content access, OAuth authentication, webhook events, and pull request creation.</li>
-      <li><strong>MongoDB Atlas</strong> — stores application state, analysis results, cache data, monitoring records, and session tokens.</li>
-      <li><strong>Neo4j AuraDB</strong> — stores knowledge graph data (repository structure, symbol relationships, dependency edges).</li>
-      <li><strong>Groq</strong> — LLM-based migration intelligence and patch generation. Library names and symbol names are sent; full source files are sent only during patch generation.</li>
-      <li><strong>Serper</strong> — web search for deprecated API discovery. Library and symbol names are sent as search queries.</li>
-      <li><strong>PyPI</strong> — version lookups for installed Python packages.</li>
-      <li><strong>Render</strong> — hosting platform for both RepoHeal and the Restricted Webtool microservice.</li>
-    </ul>
+    <section class="legal-card">
+      <h2 class="section-title"><span class="section-num">03</span> Repository Content & Security</h2>
+      <p>Source code is scanned for dependency imports, API signatures, and version compatibility:</p>
+      <ul>
+        <li>Source files are processed in-memory whenever possible. Disk cache is automatically governed by quota policies and cleaned up after job execution.</li>
+        <li>Only derived analysis metadata (graphs, fingerprints, health reports) is stored in the <code>repoheal.meta</code> branch or operational database. Raw repository source files are never permanently mirrored.</li>
+        <li>Source code is never used to train publicly available machine learning models.</li>
+      </ul>
+    </section>
 
-    <h2>5. Data Security</h2>
-    <p>RepoHeal implements the following security measures:</p>
-    <ul>
-      <li>All traffic between users, GitHub, and RepoHeal is encrypted over HTTPS.</li>
-      <li>API keys, credentials, and secrets are stored as environment variables, not in source code or databases.</li>
-      <li>Session tokens are encrypted at rest using Fernet symmetric encryption with a key stored in environment variables.</li>
-      <li>GitHub App permissions are scoped to the minimum required for analysis functionality. RepoHeal does not request admin or delete permissions.</li>
-      <li>Webhook payloads from GitHub are verified using HMAC-SHA256 signatures.</li>
-    </ul>
+    <section class="legal-card">
+      <h2 class="section-title"><span class="section-num">04</span> Third-Party Services</h2>
+      <p>RepoHeal utilizes selected infrastructure providers with minimal necessary data scope:</p>
+      <ul>
+        <li><strong>GitHub:</strong> Repository content retrieval, OAuth session verification, webhook processing, and authorized pull requests.</li>
+        <li><strong>MongoDB Atlas:</strong> Operational state, analysis jobs, monitoring alerts, and encrypted session data.</li>
+        <li><strong>Neo4j AuraDB:</strong> Semantic knowledge graph storage, dependency topology, and relationship indices.</li>
+        <li><strong>Groq / LLM Providers:</strong> Migration intelligence and patch generation. Library names, function signatures, and targeted snippets are passed only as needed.</li>
+        <li><strong>Serper / Search APIs:</strong> Public documentation and migration notes lookup for deprecated APIs.</li>
+        <li><strong>PyPI:</strong> Package version availability and release metadata.</li>
+      </ul>
+    </section>
 
-    <h2>6. Data Retention</h2>
-    <p>Data is retained only as long as necessary to provide analysis and monitoring functionality:</p>
-    <ul>
-      <li>Analysis history is capped at 2 records per repository.</li>
-      <li>Cache entries expire after 7 days.</li>
-      <li>Session tokens expire after 24 hours and are cleaned up automatically.</li>
-      <li>Evidence cache entries have a 30-day time-to-live.</li>
-    </ul>
-    <p>When you uninstall the RepoHeal GitHub App, analysis and monitoring data associated with your repositories may be retained in operational backups. Contact the address in Section 8 to request deletion of stored data.</p>
+    <section class="legal-card">
+      <h2 class="section-title"><span class="section-num">05</span> Security Architecture</h2>
+      <p>RepoHeal implements enterprise-grade technical safeguards:</p>
+      <ul>
+        <li>End-to-end TLS/HTTPS encryption for all web and API traffic.</li>
+        <li>Fernet symmetric encryption for session tokens at rest using environment-managed keys.</li>
+        <li>HMAC-SHA256 signature verification on all incoming GitHub webhook deliveries.</li>
+        <li>Strict adherence to least-privilege GitHub App permissions—no administrative or deletion rights are requested.</li>
+      </ul>
+    </section>
 
-    <h2>7. User Rights</h2>
-    <p>You have the following rights regarding your data:</p>
-    <ul>
-      <li><strong>Uninstall</strong> — you can remove RepoHeal from your GitHub account at any time through GitHub App settings.</li>
-      <li><strong>Access</strong> — you can view all analysis reports, health data, and monitoring configurations through the RepoHeal dashboard.</li>
-      <li><strong>Deletion</strong> — you can request deletion of stored data by contacting the address in Section 8.</li>
-      <li><strong>Correction</strong> — analysis results are automatically regenerated on each analysis run. Triggering a new analysis replaces prior results.</li>
-    </ul>
+    <section class="legal-card">
+      <h2 class="section-title"><span class="section-num">06</span> Data Retention & Deletion</h2>
+      <p>Data retention follows automated expiration limits:</p>
+      <ul>
+        <li>Analysis snapshots are capped at 2 historical versions per repository.</li>
+        <li>Temporary repository file caches expire within 7 days.</li>
+        <li>Session tokens expire after 24 hours and are cleaned up on cycle.</li>
+        <li>Evidence cache records maintain a 30-day time-to-live.</li>
+      </ul>
+      <p>Upon uninstalling the RepoHeal GitHub App, repository analysis records can be permanently deleted upon request by contacting our team.</p>
+    </section>
 
-    <h2>8. Contact</h2>
-    <p>For questions about this privacy policy or to request data deletion, contact:</p>
-    <p><a href="mailto:repoheal@gmail.com">repoheal@gmail.com</a></p>
+    <section class="legal-card">
+      <h2 class="section-title"><span class="section-num">07</span> User Rights & Controls</h2>
+      <p>You maintain full control over your repositories and data:</p>
+      <ul>
+        <li><strong>Revoke Access:</strong> Uninstall RepoHeal anytime via GitHub App installation settings.</li>
+        <li><strong>Inspect Findings:</strong> Review all generated graphs, scores, and reports directly in your workspace.</li>
+        <li><strong>Data Erasure:</strong> Request complete removal of all stored telemetry and analysis results.</li>
+        <li><strong>On-Demand Refresh:</strong> Triggering a reanalysis replaces prior cached snapshots with fresh data.</li>
+      </ul>
+    </section>
 
-    <hr>
-    <div class="footer">&copy; 2026 RepoHeal</div>
-  </div>
+    <section class="legal-card">
+      <h2 class="section-title"><span class="section-num">08</span> Contact & Inquiries</h2>
+      <p>If you have any questions regarding this Privacy Policy or wish to exercise data rights, please contact:</p>
+      <p><a href="mailto:repoheal@gmail.com">repoheal@gmail.com</a></p>
+    </section>
+
+    <footer class="legal-footer">
+      <div>&copy; 2026 RepoHeal. All rights reserved.</div>
+      <div class="footer-links">
+        <a href="/terms-of-service">Terms of Service</a>
+        <a href="/privacy">Privacy Policy</a>
+        <a href="/dashboard">Workspace</a>
+        <a href="mailto:repoheal@gmail.com">Support</a>
+      </div>
+    </footer>
+  </main>
 </body>
 </html>

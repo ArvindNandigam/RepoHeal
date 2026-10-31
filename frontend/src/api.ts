@@ -1,4 +1,4 @@
-﻿export type Repository = {
+export type Repository = {
   name: string
   owner: string
   repo: string
@@ -40,6 +40,8 @@ export type Graph = {
   statistics?: Record<string, unknown>
   status?: string
   message?: string
+  neo4j_available?: boolean
+  neo4j_warning?: string
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -54,11 +56,23 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 export const api = {
   dashboard: () => request<Dashboard>('/dashboard/data'),
   overview: (owner: string, repo: string) => request<Record<string, any>>(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/overview`),
-  graph: (owner: string, repo: string) => request<Graph>(`/graph/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),
-  compare: (owner: string, repo: string) => request<Record<string, any>>(`/reports/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/compare`),
-  health: (owner: string, repo: string) => request<Record<string, any>>(`/reports/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/health`),
-  history: (owner: string, repo: string) => request<Record<string, any>>(`/reports/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/history`),
-  monitoring: (owner: string, repo: string) => request<Record<string, any>>(`/monitor/dashboard/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),
+  graph: (owner: string, repo: string, analysisId?: string) =>
+    request<Graph>(`/graph/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}${analysisId ? `?analysis_id=${encodeURIComponent(analysisId)}` : ''}`),
+  compare: (owner: string, repo: string, leftId?: string, rightId?: string) => {
+    const params = new URLSearchParams()
+    if (leftId) params.set('left_analysis_id', leftId)
+    if (rightId) params.set('right_analysis_id', rightId)
+    const qs = params.toString() ? `?${params.toString()}` : ''
+    return request<Record<string, any>>(`/reports/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/compare${qs}`)
+  },
+  health: (owner: string, repo: string, analysisId?: string) =>
+    request<Record<string, any>>(`/reports/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/health${analysisId ? `?analysis_id=${encodeURIComponent(analysisId)}` : ''}`),
+  migration: (owner: string, repo: string, analysisId?: string) =>
+    request<{ content: string }>(`/reports/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/migration${analysisId ? `?analysis_id=${encodeURIComponent(analysisId)}` : ''}`),
+  history: (owner: string, repo: string, branch?: string) =>
+    request<Record<string, any>>(`/reports/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/history${branch ? `?branch=${encodeURIComponent(branch)}` : ''}`),
+  monitoring: (owner: string, repo: string) =>
+    request<Record<string, any>>(`/monitor/dashboard/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),
   adminMetrics: () => request<Record<string, any>>('/admin/metrics'),
   adminObservability: () => request<Record<string, any>>('/admin/observability'),
   startAnalysis: (owner: string, repo: string) => request<Record<string, any>>(`/analyze/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),

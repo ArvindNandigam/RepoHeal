@@ -388,3 +388,99 @@ def get_all_metrics() -> Dict[str, Any]:
     )
 
     return result
+
+
+def ensure_platform_metrics_initialized() -> None:
+    """Ensure all expected platform metric documents exist in MongoDB with actual collected counts."""
+    db = get_mongo_db()
+    now = datetime.now(timezone.utc)
+
+    defaults = {
+        "repositories_analyzed": {"metric": "repositories_analyzed", "values": [], "updated_at": now},
+        "analyses_performed": {"metric": "analyses_performed", "count": 0, "last_repo": None, "updated_at": now},
+        "commits_analyzed": {"metric": "commits_analyzed", "count": 0, "updated_at": now},
+        "branches_analyzed": {"metric": "branches_analyzed", "values": [], "updated_at": now},
+        "installations": {"metric": "installations", "values": [], "updated_at": now},
+        "code_scale": {
+            "metric": "code_scale",
+            "python_files_scanned": 0,
+            "notebooks_scanned": 0,
+            "functions_indexed": 0,
+            "classes_indexed": 0,
+            "apis_fingerprinted": 0,
+            "lines_of_code_scanned": 0,
+            "updated_at": now,
+        },
+        "graph_scale": {
+            "metric": "graph_scale",
+            "total_nodes": 0,
+            "total_edges": 0,
+            "graph_count": 0,
+            "largest_node_count": 0,
+            "largest_edge_count": 0,
+            "largest_repo": "",
+            "updated_at": now,
+        },
+        "dependency_intelligence": {
+            "metric": "dependency_intelligence",
+            "dependencies_detected": 0,
+            "unique_packages_seen": 0,
+            "deprecated_apis_found": 0,
+            "breaking_apis_found": 0,
+            "migration_candidates": 0,
+            "updated_at": now,
+        },
+        "impact_analysis": {
+            "metric": "impact_analysis",
+            "affected_files_identified": 0,
+            "affected_functions_traced": 0,
+            "call_chains_traversed": 0,
+            "updated_at": now,
+        },
+        "migration_metrics": {
+            "metric": "migration_metrics",
+            "migration_reports_generated": 0,
+            "upgrade_simulations_run": 0,
+            "auto_fix_opportunities": 0,
+            "updated_at": now,
+        },
+        "remediation": {
+            "metric": "remediation",
+            "prs_created": 0,
+            "files_modified": 0,
+            "imports_rewritten": 0,
+            "symbols_renamed": 0,
+            "updated_at": now,
+        },
+        "monitoring": {
+            "metric": "monitoring",
+            "alerts_generated": 0,
+            "health_degradations_detected": 0,
+            "watchlist_packages": 0,
+            "updated_at": now,
+        },
+        "performance": {
+            "metric": "performance",
+            "total_analysis_time_seconds": 0,
+            "analysis_count": 0,
+            "success_count": 0,
+            "failure_count": 0,
+            "min_analysis_time": 0,
+            "max_analysis_time": 0,
+            "updated_at": now,
+        },
+        "failure_reasons": {"metric": "failure_reasons", "reasons": {}, "updated_at": now},
+    }
+
+    try:
+        existing = {doc["metric"] for doc in db.platform_metrics.find({}, {"metric": 1})}
+        for metric_name, doc in defaults.items():
+            if metric_name not in existing:
+                db.platform_metrics.update_one(
+                    {"metric": metric_name},
+                    {"$setOnInsert": doc},
+                    upsert=True
+                )
+    except Exception as e:
+        logger.warning(f"Could not ensure platform metrics initialized: {e}")
+
