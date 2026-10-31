@@ -525,10 +525,15 @@ function App() {
 
   const startAnalysis = async () => {
     if (!selected) return
+    if (analysisCommit && !/^[0-9a-f]{7,40}$/i.test(analysisCommit.trim())) {
+      setError('Enter a commit SHA containing 7 to 40 hexadecimal characters, or choose a recent commit.')
+      return
+    }
     setQueueingAnalysis(true)
     try {
-      const result = await api.startAnalysis(selected.owner, selected.repo, analysisBranch, analysisCommit || undefined)
-      const targetDesc = analysisCommit ? `commit ${analysisCommit.slice(0, 7)}` : `branch ${analysisBranch || selected.default_branch || 'default'}`
+      const selectedCommit = analysisCommit.trim()
+      const result = await api.startAnalysis(selected.owner, selected.repo, analysisBranch, selectedCommit || undefined)
+      const targetDesc = selectedCommit ? `commit ${selectedCommit.slice(0, 7)}` : `branch ${analysisBranch || selected.default_branch || 'default'}`
       setStatus({ status: 'queued', progress: 0, message: result.deduplicated ? 'An analysis is already queued or running.' : `Analysis queued for ${targetDesc}.` })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not start analysis')
@@ -539,9 +544,13 @@ function App() {
 
   const rerunAnalysis = async () => {
     if (!selected) return
+    if (analysisCommit && !/^[0-9a-f]{7,40}$/i.test(analysisCommit.trim())) {
+      setError('Enter a commit SHA containing 7 to 40 hexadecimal characters, or choose a recent commit.')
+      return
+    }
     setQueueingAnalysis(true)
     try {
-      await api.reanalyze(selected.owner, selected.repo, analysisBranch, analysisCommit || undefined)
+      await api.reanalyze(selected.owner, selected.repo, analysisBranch, analysisCommit.trim() || undefined)
       setStatus({ status: 'queued', progress: 0, message: 'Full reanalysis queued' })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not rerun analysis')
@@ -681,11 +690,17 @@ function App() {
                     </select>
                   </label>
                   <label className="analysis-target-control commit-target-control">
-                    <span>Commit (optional)</span>
-                    <select value={analysisCommit} onChange={(event) => setAnalysisCommit(event.target.value)} disabled={!analysisCommits.length}>
-                      <option value="">Branch head</option>
-                      {analysisCommits.map((commit) => <option key={commit.sha} value={commit.sha}>{commit.sha.slice(0, 7)} · {commit.message.slice(0, 48)}</option>)}
-                    </select>
+                    <span>Commit SHA (optional)</span>
+                    <input
+                      value={analysisCommit}
+                      onChange={(event) => setAnalysisCommit(event.target.value)}
+                      list="analysis-commit-suggestions"
+                      placeholder="Branch head or paste any SHA"
+                      aria-label="Commit SHA to analyze"
+                    />
+                    <datalist id="analysis-commit-suggestions">
+                      {analysisCommits.map((commit) => <option key={commit.sha} value={commit.sha}>{commit.sha.slice(0, 7)} · {commit.message}</option>)}
+                    </datalist>
                   </label>
                   <button className="button secondary-button" onClick={startAnalysis}>
                     <Icon name="refresh" className={queueingAnalysis ? 'spin' : ''} size={16} />

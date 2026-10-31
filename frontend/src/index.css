@@ -194,8 +194,8 @@
 .progress-card progress { width: 100%; height: 6px; accent-color: #579575; }
 .graph-panel { min-width: 0; }
 .analysis-target-control { display: flex; flex-direction: column; gap: 3px; color: #687069; font-size: 8px; }
-.analysis-target-control select { max-width: 190px; min-width: 125px; height: 30px; padding: 0 7px; border: 1px solid #dce3dd; border-radius: 6px; color: #39423b; background: #fff; font-size: 9px; }
-.commit-target-control select { max-width: 260px; }
+.analysis-target-control select, .analysis-target-control input { max-width: 190px; min-width: 125px; height: 30px; padding: 0 7px; border: 1px solid #dce3dd; border-radius: 6px; color: #39423b; background: #fff; font-size: 9px; }
+.commit-target-control input { max-width: 260px; min-width: 220px; }
 .graph-tools { display: flex; gap: 7px; }
 .graph-tools input, .graph-tools select { height: 29px; padding: 0 8px; border: 1px solid #e0e2dd; border-radius: 6px; color: #596159; background: #fff; font-size: 9px; }
 .graph-list { display: flex; flex-wrap: wrap; gap: 7px; padding: 17px; max-height: 330px; overflow: auto; }

@@ -1,7 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi.middleware import SlowAPIMiddleware
 from app.auth.session_store import session_store
@@ -76,6 +76,17 @@ app = FastAPI(lifespan=lifespan)
 frontend_assets = dashboard.FRONTEND_DIST / "assets"
 if frontend_assets.is_dir():
     app.mount("/dashboard/assets", StaticFiles(directory=frontend_assets), name="dashboard-assets")
+
+
+@app.get("/favicon.svg", include_in_schema=False)
+@app.get("/dashboard/favicon.svg", include_in_schema=False)
+async def favicon():
+    favicon_file = dashboard.FRONTEND_DIST / "favicon.svg"
+    if not favicon_file.is_file():
+        favicon_file = dashboard.FRONTEND_ROOT / "public" / "favicon.svg"
+    if favicon_file.is_file():
+        return FileResponse(favicon_file, media_type="image/svg+xml")
+    return RedirectResponse(url="/dashboard")
 
 # Middleware
 app.state.limiter = limiter

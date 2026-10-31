@@ -37,7 +37,7 @@ See [Architecture](docs/ARCHITECTURE.md) for data flow, storage boundaries, and 
 ## Analysis workflow
 
 1. A user signs in with GitHub and selects a repository available to the RepoHeal GitHub App installation.
-2. From the repository page, select a branch. Optionally select one of its latest 50 commits. **Branch head** analyzes the selected branch's current head; selecting a commit analyzes that exact SHA.
+2. From the repository page, select a branch. The commit field suggests the latest 50 commits and also accepts a pasted 7–40 character hexadecimal SHA. Leave it blank to analyze the selected branch head; enter a SHA to analyze that exact commit.
 3. RepoHeal queues a background job, fetches the selected repository snapshot, scans Python files and dependency manifests, and records progress in MongoDB.
 4. The analyzer generates dependency and symbol data. The graph builder attempts to write graph data to Neo4j; metadata artifacts are persisted on the `repoheal.meta` branch.
 5. The migration pipeline queries external symbol intelligence, applies local/version-gap fallback checks, calculates health and risk findings, and writes a health report and migration document.
