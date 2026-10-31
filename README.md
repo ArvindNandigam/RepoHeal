@@ -1,116 +1,132 @@
 # RepoHeal
 
-RepoHeal analyzes installed GitHub repositories, builds dependency graphs, and generates health reports without exposing internal workspace URLs in the user dashboard.
-Link : https://repoheal.onrender.com/ (Note the render instance takes time to turn on and neo4j instances also run on free tier and might be asleep)
+RepoHeal is a GitHub-connected repository analysis service for inspecting Python code health, dependency usage, and migration risk. It analyzes a repository at a selected branch head or commit, stores versioned analysis artifacts, builds a dependency and code relationship graph, and presents health and migration reports in an authenticated dashboard.
 
-The public `/` route redirects browsers to `/auth/login-page`. Configure
-UptimeRobot's free monitor to use **HEAD** on `/healthz`: it returns HTTP 200
-when the web service is reachable and does not fail solely because Neo4j or
-MongoDB is unavailable. Use **GET** `/healthz` for diagnostics; it performs
-live dependency checks and returns `healthy` only when both MongoDB and Neo4j
-are connected, otherwise returning `degraded` with the affected dependency
-reported as `unavailable`. Dependency URLs and credentials are never included
-in the response.
+**Install the GitHub App:** [github.com/apps/repoheal](https://github.com/apps/repoheal)
 
-On Render, an unset `ENVIRONMENT` defaults to `production`; an explicitly
-configured non-production value is rejected so deployment misconfiguration
-remains visible. Render starts Uvicorn with `--port $PORT`, as required by the
-platform. Required production secrets remain deployment-provided and are not
-stored in the repository.
+**Open the live dashboard:** [repoheal.onrender.com](https://repoheal.onrender.com/) (the free-tier service and database may need time to wake up.)
 
-## Local frontend
+To try RepoHeal, install the GitHub App on the repositories you want to analyze, then sign in to the live dashboard with GitHub. The app needs repository access, and the dashboard only lists repositories that your account can access and that have the RepoHeal App installed.
 
-The redesigned dashboard lives in `frontend/` and is built with Vite. Run:
+## What it does
 
-```text
-cd frontend
-npm install
-npm run build
+- Connects GitHub OAuth user access with GitHub App installation access to discover and read installed repositories.
+- Scans Python source with AST-based import and symbol analysis, and reads dependency declarations from common Python packaging files such as `requirements.txt`, `pyproject.toml`, `Pipfile`, `setup.cfg`, and `setup.py`.
+- Compares imports with declared dependencies, looks up package versions on PyPI, and creates fingerprints for library API usage.
+- Builds a repository graph with file, package, function, class, and relationship nodes. Neo4j is used for graph storage when available; a graph can also be generated from cached analysis artifacts.
+- Produces health scores, dependency inventory, migration risk findings, recommendations, and a Markdown migration document. External symbol intelligence is provided through the configured Restricted Webtool service, with local/version-gap checks used as fallback signals where possible. Reports retain an intelligence status so unavailable external data is visible.
+- Saves branch- and commit-specific analysis history and supports comparisons between saved analyses.
+- Streams analysis progress with Server-Sent Events and supports repository monitoring, watchlists, alerts, and scheduled checks.
+
+The analysis is advisory. A clean report means the configured checks found no actionable issues; it does not prove that every API or migration risk was verified, especially when external intelligence is unavailable.
+
+## Stack
+
+| Area | Technology |
+| --- | --- |
+| API and workers | Python, FastAPI, Pydantic, Uvicorn, FastAPI background tasks |
+| Dashboard | React, TypeScript, Vite |
+| Code analysis | Python `ast`, dependency manifest parsers, PyGithub |
+| Persistence | MongoDB for sessions, job state, monitoring data, and platform metrics; `repoheal.meta` Git branch for durable analysis/report artifacts |
+| Graph | Neo4j with a cached-analysis graph fallback |
+| Integrations | GitHub OAuth, GitHub App, PyPI, Restricted Webtool; optional LLM-backed remediation configuration |
+| Deployment | Render |
+
+See [Architecture](docs/ARCHITECTURE.md) for data flow, storage boundaries, and API surfaces.
+
+## Analysis workflow
+
+1. A user signs in with GitHub and selects a repository available to the RepoHeal GitHub App installation.
+2. From the repository page, select a branch. Optionally select one of its latest 50 commits. **Branch head** analyzes the selected branch's current head; selecting a commit analyzes that exact SHA.
+3. RepoHeal queues a background job, fetches the selected repository snapshot, scans Python files and dependency manifests, and records progress in MongoDB.
+4. The analyzer generates dependency and symbol data. The graph builder attempts to write graph data to Neo4j; metadata artifacts are persisted on the `repoheal.meta` branch.
+5. The migration pipeline queries external symbol intelligence, applies local/version-gap fallback checks, calculates health and risk findings, and writes a health report and migration document.
+6. The dashboard loads graph data, reports, and history from the saved artifacts. A saved analysis can be compared with another analysis.
+
+The exact mode and target are passed to the analysis API. Use a branch head for an up-to-date view, or select a commit to inspect historical code. Rerunning an analysis creates a new saved record; it does not intentionally overwrite the prior history entry.
+
+## Local development
+
+### Prerequisites
+
+- Python 3.11 or newer (the deployment currently uses the Python runtime configured by Render)
+- Node.js and npm
+- MongoDB
+- A GitHub OAuth app and GitHub App installation for authenticated repository access
+- Neo4j for live graph persistence; cached graph rendering can be used as a fallback
+
+### Install and build the dashboard
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+npm install --prefix frontend
+npm run build --prefix frontend
 ```
 
-The FastAPI application serves `frontend/dist` at `/dashboard` when it exists and falls back to the existing server-rendered dashboard when it does not. Render builds the frontend before starting Uvicorn.
+The FastAPI service serves `frontend/dist` at `/dashboard` when the build exists. During frontend work, run `npm run dev --prefix frontend`; configure the Vite development server to proxy API requests to the FastAPI service if needed.
 
-The authenticated dashboard consumes `/dashboard/data` and the repository overview,
-status SSE, graph, report, comparison, and diagnostics endpoints. Repository detail
-views provide live metadata, analysis progress, graph filtering/path highlighting,
-JSON/Markdown/PNG exports, and browser-local issue triage. Missing analysis history,
-Neo4j, or report snapshots are shown as unavailable states rather than replaced with
-preview metrics.
+### Configure environment
 
-## Neo4j Aura setup
+Create an untracked `.env` file for local development. Configure the credentials for the services you intend to use; do not put secrets in Git.
 
-1. Create a free Neo4j AuraDB instance at https://console.neo4j.io/.
-2. Create or select a database, then copy its connection URI, username, and generated password.
-3. Add these Render environment variables to the RepoHeal service:
-   - `NEO4J_URI`: the Aura URI, usually `neo4j+s://...`
-   - `NEO4J_USERNAME`: usually `neo4j`
-   - `NEO4J_PASSWORD`: the generated database password
-4. Restart or redeploy the service. Check `/healthz`; the response should report Neo4j as available.
+| Variable | Purpose |
+| --- | --- |
+| `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` | GitHub user login |
+| `GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET` | GitHub App installation and webhook integration |
+| `GITHUB_TOKEN_ENCRYPTION_KEY`, `JWT_SECRET_KEY` | Session/token protection; required in production |
+| `MONGODB_URI`, `MONGODB_DATABASE` | Persistent job, session, monitoring, and metrics data (`RepoHeal` is the default database name) |
+| `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD` | Neo4j graph storage |
+| `WEBTOOL_API_URL`, `INTERNAL_API_KEY` | Restricted Webtool intelligence service |
+| `LLM_PROVIDER`, `LLM_MODEL`, `LLM_API_KEY` | Optional LLM-backed remediation features |
+| `MAX_CACHE_SIZE_MB`, `MAX_ANALYSIS_HISTORY`, `CACHE_RETENTION_DAYS` | Local cache retention limits |
 
-Aura free instances may pause when idle. Start or resume the instance in the Aura console before testing graph visualization. Never commit the Aura password or URI to the repository.
-## Dashboard
+The full settings list and defaults are in [`app/config.py`](app/config.py). Production requires `JWT_SECRET_KEY` and `GITHUB_TOKEN_ENCRYPTION_KEY`; the service also needs working GitHub and MongoDB configuration to provide authenticated repository analysis. Never publish actual values in documentation or logs.
 
-The dashboard shows installed repositories with:
+### Start the API
 
-- Last Analysis
-- Last Health Refresh
-- Current HEAD
-- Last Analyzed
-- Status
-- Visualize Graph
-- View Reports
-- Compare Analyses
-
-Repository cards do not display workspace URLs or internal metadata endpoints.
-
-The JSON dashboard response includes aggregate metrics plus per-repository health
-and analysis fields. Report exports are available at
-`/reports/{owner}/{repo}/export?format=json|markdown`; graph JSON is served by
-`/graph/{owner}/{repo}` and server-rendered PNG export by
-`/visualize/{owner}/{repo}/export.png`.
-
-The `/admin` page is restricted to `ArvindNandigam`. It reports live MongoDB and
-Neo4j status with a check timestamp. Platform statistics are read-only persisted
-metrics; when none have been collected, the page says so instead of presenting
-synthetic zero values. Repository analysis data is never deleted or reset by
-the admin page.
-
-## Analysis Workflows
-
-Analyze supports three modes:
-
-- Latest Commit: analyzes the latest commit on the repository default branch.
-- Specific Branch: analyzes HEAD for the selected branch, such as `main`, `develop`, `feature/*`, or `release/*`.
-- Specific Commit: analyzes an exact commit SHA.
-
-Analysis and health report regeneration accept a branch and optional commit SHA. New runs are stored as separate records and do not overwrite historical results.
-
-## Metadata Storage
-
-RepoHeal stores generated metadata on a single branch:
-
-```text
-repoheal.meta/
-  metadata.json
-  analyses/
-    main/
-      analysis_<commit>.json
-  health_reports/
-    main/
-      health_<commit>.json
-  comparisons/
-  migration_reports/
-  snapshots/
+```powershell
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Analysis runs and health reports never create new Git branches. Branches are only created for actual source-code changes and use the `repoheal.changes.<plan>` prefix.
+OAuth callback URLs and GitHub App webhooks must match the URL configured for your GitHub applications. The deployed OAuth flow currently uses the public RepoHeal host, so local sign-in may require a separately configured callback or development tunnel.
 
-## Records
+## Useful endpoints
 
-Analysis records include repository, branch, commit SHA, timestamp, analysis version, health score, dependency count, risk level, and report path.
+Most repository endpoints require an authenticated session and repository access.
 
-Health report records include repository, branch, commit SHA, generation timestamp, health score, issues, and recommendations.
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /healthz` | Live service and dependency diagnostics |
+| `GET /dashboard/data` | Authenticated repository list and dashboard metrics |
+| `GET /repos/{owner}/{repo}/branches` | Branch choices for analysis |
+| `GET /repos/{owner}/{repo}/commits?branch={branch}` | Recent commits for a branch |
+| `GET /analyze/{owner}/{repo}?mode=branch&branch={branch}` | Queue analysis for a branch head |
+| `GET /analyze/{owner}/{repo}?mode=commit&branch={branch}&commit_sha={sha}` | Queue analysis for a specific commit |
+| `GET /graph/{owner}/{repo}` | Latest dependency/code graph |
+| `GET /sse/status/{owner}/{repo}` | Server-Sent Events analysis progress stream |
+| `GET /reports/{owner}/{repo}/health` | Latest saved health report |
+| `GET /reports/{owner}/{repo}/migration` | Latest saved migration document |
+| `GET /reports/{owner}/{repo}/history` | Saved analysis history |
+| `GET /reports/{owner}/{repo}/compare` | Compare saved analysis records |
+| `GET /reports/{owner}/{repo}/export?format=markdown` | Export a health report |
 
-## Comparisons
+The complete route list is available from FastAPI's OpenAPI page at `/docs` when the service is running.
 
-Compare Analyses accepts Branch A + Commit A and Branch B + Commit B, then stores results under `repoheal.meta/comparisons/`. The comparison includes dependency additions/removals, health score changes, risk level changes, breaking API changes, and migration readiness changes.
+## Data and operations
+
+- MongoDB stores sessions, job state, monitoring configuration/history, and persisted platform metrics.
+- The GitHub `repoheal.meta` branch stores durable analysis snapshots, graph snapshots, manifests, health reports, and migration documents.
+- `.repoheal_cache/` is local working/cache data. On ephemeral hosts, it should not be treated as the sole durable source of analysis artifacts.
+- The admin metrics page reports persisted metrics and live MongoDB/Neo4j connectivity. A zero or missing metric should be interpreted in light of its collection status.
+- `HEAD /healthz` is suitable for basic uptime checks. `GET /healthz` performs live dependency checks; a reachable web process can return a degraded status if a database is unavailable.
+- On Render, the service runs Uvicorn on the platform-provided `$PORT`. `render.yaml` builds the frontend and installs Python dependencies before starting the API.
+
+## Resume-ready project description
+
+**RepoHeal — GitHub Repository Health & Migration Analysis Platform**
+
+Built a full-stack service that analyzes Python repositories at selected branches and commits, detects dependency and API risks, generates health and migration reports, and visualizes code/dependency relationships. Implemented a FastAPI/React dashboard, asynchronous analysis progress, GitHub App integration, MongoDB job and monitoring persistence, Neo4j graph storage with cached-analysis fallback, and versioned analysis/report history on a dedicated Git metadata branch.
+
+For a resume, add only measurements you can verify from production logs or a repeatable benchmark (for example: repositories analyzed, scan time, graph node counts, or report-generation latency). Avoid presenting configured limits or demo data as measured impact.
