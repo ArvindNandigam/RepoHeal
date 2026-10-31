@@ -35,6 +35,8 @@ flowchart LR
 6. **Migration analysis:** Fingerprints are correlated with the configured external intelligence provider. Local deprecation patterns and version-gap checks supplement results. Health scores, risk assessments, impacts, recommendations, and migration documents are generated and persisted. The report records whether external intelligence succeeded, degraded, or failed so missing provider data is not confused with a clean verified result.
 7. **History and comparison:** Each analysis receives an ID containing the selected branch, short commit SHA, and UTC timestamp. The manifest indexes analysis, graph, health, migration, and comparison artifacts on `repoheal.meta`.
 
+The repository dashboard exposes two task actions. **Analyze repository** runs the scan, graph construction, and health/migration pipeline for the selected target. **Refresh health & migration** invokes the health-refresh job against a saved analysis, skipping the source scan. Both use the repository job status record and SSE progress; the browser also polls the status endpoint every ten seconds to recover from a missed SSE completion event. The progress UI shows the task type, worker message, and percentage, and refreshes the report, graph, and dashboard after completion.
+
 ## Persistence boundaries
 
 | Data | Store | Role |

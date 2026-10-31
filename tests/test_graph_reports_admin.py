@@ -288,6 +288,19 @@ def test_admin_metrics_collection_and_status():
         assert "Values are persisted platform metrics" in status["message"]
 
 
+def test_zero_sized_graph_metrics_are_recorded_as_zero(monkeypatch):
+    from app.worker import metrics
+
+    mock_db = MagicMock()
+    mock_db.platform_metrics.find_one.return_value = None
+    monkeypatch.setattr(metrics, "get_mongo_db", lambda: mock_db)
+
+    metrics.record_graph_scale("owner/repo", 0, 0)
+
+    update = mock_db.platform_metrics.update_one.call_args.args[1]
+    assert update["$inc"] == {"total_nodes": 0, "total_edges": 0, "graph_count": 0}
+
+
 # --- 5. Legal Pages Design Language ---
 
 def test_legal_pages_rendered_with_repoheal_design():

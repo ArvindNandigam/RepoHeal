@@ -215,6 +215,7 @@ function App() {
   const [error, setError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [queueingAnalysis, setQueueingAnalysis] = useState(false)
+  const [queueingHealthRefresh, setQueueingHealthRefresh] = useState(false)
   const [analysisBranches, setAnalysisBranches] = useState<string[]>([])
   const [analysisBranch, setAnalysisBranch] = useState('')
   const [analysisCommits, setAnalysisCommits] = useState<Array<{ sha: string; message: string; date?: string }>>([])
@@ -355,6 +356,20 @@ function App() {
     }
   }
 
+  const resetAdminMetrics = async () => {
+    setRefreshing(true)
+    try {
+      await api.resetAdminMetrics()
+      const [metrics, observability] = await Promise.all([api.adminMetrics(), api.adminObservability()])
+      setAdminMetrics(metrics)
+      setAdminObservability(observability)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not reset platform metrics')
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   const loadReports = async (repoParam?: Repository | null, analysisId?: string) => {
     const repo = repoParam || selected || (dashboard?.repositories || [])[0]
     if (!repo) return
@@ -481,8 +496,27 @@ function App() {
   useEffect(() => {
     if (!selected) return
     let hadActiveAnalysis = ['queued', 'running', 'analyzing', 'generating_graph', 'generating_reports', 'generating_migrations', 'updating_metadata'].includes(selected.analysis_status)
+    let disposed = false
 
-    return subscribeToStatus(selected.owner, selected.repo, (next) => {
+    const refreshStatus = async () => {
+      try {
+        const latest = await api.repositoryStatus(selected.owner, selected.repo)
+        if (disposed) return
+        setStatus(latest)
+        const isActive = ['queued', 'running', 'analyzing', 'generating_graph', 'generating_reports', 'generating_migrations', 'updating_metadata'].includes(latest.status)
+        if (isActive) hadActiveAnalysis = true
+        else if (latest.status === 'completed' && hadActiveAnalysis) {
+          hadActiveAnalysis = false
+          void openRepository(selected, false, false)
+          void loadDashboard()
+        }
+      } catch {
+        // SSE remains the primary live update channel; this poll is a recovery path.
+      }
+    }
+    void refreshStatus()
+    const poll = window.setInterval(() => void refreshStatus(), 10000)
+    const unsubscribe = subscribeToStatus(selected.owner, selected.repo, (next) => {
       setStatus(next)
       const isActive = ['queued', 'running', 'analyzing', 'generating_graph', 'generating_reports', 'generating_migrations', 'updating_metadata'].includes(next.status)
       if (isActive) {
@@ -490,8 +524,14 @@ function App() {
       } else if (next.status === 'completed' && hadActiveAnalysis) {
         hadActiveAnalysis = false
         void openRepository(selected, false, false)
+        void loadDashboard()
       }
     })
+    return () => {
+      disposed = true
+      window.clearInterval(poll)
+      unsubscribe()
+    }
   }, [selected?.owner, selected?.repo])
 
   const repos = useMemo(
@@ -556,6 +596,28 @@ function App() {
       setError(reason instanceof Error ? reason.message : 'Could not rerun analysis')
     } finally {
       setQueueingAnalysis(false)
+    }
+  }
+
+  const refreshHealthAndMigration = async () => {
+    if (!selected) return
+    if (analysisCommit && !/^[0-9a-f]{7,40}$/i.test(analysisCommit.trim())) {
+      setError('Enter a commit SHA containing 7 to 40 hexadecimal characters, or choose a recent commit.')
+      return
+    }
+    setQueueingHealthRefresh(true)
+    try {
+      const result = await api.healthRefresh(selected.owner, selected.repo, analysisBranch, analysisCommit.trim() || undefined)
+      setStatus({
+        status: 'queued',
+        progress: 0,
+        job_type: 'health_refresh',
+        message: result.deduplicated ? 'An analysis task is already queued or running.' : 'Health and migration refresh queued.',
+      })
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not refresh health and migration analysis')
+    } finally {
+      setQueueingHealthRefresh(false)
     }
   }
 
@@ -652,10 +714,6 @@ function App() {
           </div>
           <div className="top-actions">
             <span className="sync-status"><span /> Authenticated workspace</span>
-            <a className="button secondary-button top-action-btn" href="/auth/switch-account" title="Change GitHub account">
-              <Icon name="users" size={13} />
-              <span>Change account</span>
-            </a>
             <a className="button secondary-button top-action-btn logout-btn" href="/auth/logout" title="Log out of RepoHeal">
               <Icon name="logout" size={13} />
               <span>Log out</span>
@@ -704,7 +762,11 @@ function App() {
                   </label>
                   <button className="button secondary-button" onClick={startAnalysis}>
                     <Icon name="refresh" className={queueingAnalysis ? 'spin' : ''} size={16} />
-                    {queueingAnalysis ? 'Queueing…' : 'Run analysis'}
+                    {queueingAnalysis ? 'Queueing…' : 'Analyze repository'}
+                  </button>
+                  <button className="button secondary-button" onClick={refreshHealthAndMigration} disabled={queueingHealthRefresh || !selected.last_analysis} title={!selected.last_analysis ? 'Run a repository analysis first' : 'Rebuild health and migration reports from the saved analysis'}>
+                    <Icon name="report" className={queueingHealthRefresh ? 'spin' : ''} size={16} />
+                    {queueingHealthRefresh ? 'Queueing…' : 'Refresh health & migration'}
                   </button>
                   <button
                     className="button primary-button"
@@ -718,12 +780,19 @@ function App() {
                 </div>
               </section>
 
-              {status && status.status !== 'completed' && (
+              {status && !['completed', 'failed', 'cancelled', 'orphaned'].includes(status.status) && (
                 <div className="progress-card">
-                  <strong>Analysis {status.status}</strong>
-                  <span>{status.message}</span>
+                  <strong>{status.job_type === 'health_refresh' ? 'Health & migration' : 'Repository analysis'} · {status.status}</strong>
+                  <span className="progress-message">{status.message || 'Working…'}</span>
                   <progress value={status.progress || 0} max="100" />
                   <b>{status.progress || 0}%</b>
+                </div>
+              )}
+              {status && ['failed', 'cancelled', 'orphaned'].includes(status.status) && (
+                <div className="progress-card progress-card-error" role="status">
+                  <strong>Task {status.status}</strong>
+                  <span className="progress-message">{status.message || 'The task did not complete.'}</span>
+                  <b>{status.status}</b>
                 </div>
               )}
 
@@ -766,7 +835,7 @@ function App() {
                     <p>This repository has not completed an analysis yet. Run an analysis to build the dependency graph, map module relationships, and calculate health metrics.</p>
                   </div>
                   <button className="button primary-button" onClick={startAnalysis}>
-                    <Icon name="refresh" size={16} /> Run analysis now
+                    <Icon name="refresh" size={16} /> Analyze repository now
                   </button>
                 </div>
               ) : null}
@@ -1103,7 +1172,7 @@ function App() {
           ) : page === 'Monitoring' ? (
             <MonitoringPage data={monitoring} refreshing={refreshing} onRefresh={() => void loadMonitoring(selected)} />
           ) : page === 'Admin' && dashboard?.user === 'ArvindNandigam' ? (
-            <AdminPage metrics={adminMetrics} observability={adminObservability} refreshing={refreshing} onRefresh={loadAdmin} />
+            <AdminPage metrics={adminMetrics} observability={adminObservability} refreshing={refreshing} onRefresh={loadAdmin} onResetMetrics={resetAdminMetrics} />
           ) : page === 'Diagnostics' ? (
             <Diagnostics />
           ) : (
@@ -1624,24 +1693,26 @@ function AdminPage({
   observability,
   refreshing,
   onRefresh,
+  onResetMetrics,
 }: {
   metrics: Record<string, any> | null
   observability: Record<string, any> | null
   refreshing: boolean
   onRefresh: () => void
+  onResetMetrics: () => void
 }) {
   const dependencies = metrics?.dependency_status || {}
   const metricStatus = metrics?.metrics_status || {}
   const platform = metrics || {}
   const cards = [
-    ['Repositories analyzed', platform.repositories_analyzed],
-    ['Analyses performed', platform.analyses_performed],
-    ['Commits analyzed', platform.commits_analyzed],
-    ['Lines of code scanned', platform.lines_of_code_scanned],
-    ['Graph nodes', platform.total_nodes],
-    ['Graph relationships', platform.total_edges],
-    ['Dependencies detected', platform.dependencies_detected],
-    ['Active jobs', observability?.active_jobs_count ?? 0],
+    ['Unique repositories scanned', platform.repositories_analyzed],
+    ['Source scans completed', platform.analyses_performed],
+    ['Worker runs completed', platform.success_count],
+    ['Worker runs failed', platform.failure_count],
+    ['Python lines scanned · cumulative', platform.lines_of_code_scanned],
+    ['Dependencies detected · cumulative', platform.dependencies_detected],
+    ['Average job runtime', platform.analysis_count ? `${platform.average_analysis_time} s` : '—'],
+    ['Active jobs now', observability?.active_jobs_count ?? 0],
   ]
   return (
     <section>
@@ -1649,9 +1720,18 @@ function AdminPage({
         <div>
           <p className="eyebrow">Owner-only operational view</p>
           <h1>Admin</h1>
-          <p>Live service health and persisted platform metrics. Nothing is estimated or fabricated.</p>
+          <p>Live service health and persisted counters since the last reset. Runtime values are current.</p>
         </div>
         <div className="heading-actions">
+          <button
+            className="button secondary-button"
+            disabled={refreshing}
+            onClick={() => {
+              if (window.confirm('Reset cumulative platform metrics? This preserves jobs, reports, alerts, and monitoring history.')) onResetMetrics()
+            }}
+          >
+            Reset metrics
+          </button>
           <button className="button secondary-button" onClick={onRefresh}>
             <Icon name="refresh" className={refreshing ? 'spin' : ''} size={16} /> Refresh
           </button>
@@ -1697,13 +1777,14 @@ function AdminPage({
         <div className="panel detail-panel">
           <div className="panel-header">
             <div>
-              <h2>Metric collection status</h2>
-              <p>Persistence coverage for core operational metrics</p>
+              <h2>Metric counters</h2>
+              <p>Persisted totals since reset</p>
             </div>
           </div>
           <div className="admin-metric-state">
             <strong>{metricStatus.state || 'unknown'}</strong>
             <span>{metricStatus.message || 'No collection status available.'}</span>
+            {metricStatus.reset_at && <small>Last reset: {new Date(metricStatus.reset_at).toLocaleString()}</small>}
             {Array.isArray(metricStatus.missing_metrics) && metricStatus.missing_metrics.length > 0 && (
               <small>Pending events: {metricStatus.missing_metrics.join(', ')}</small>
             )}
@@ -1720,8 +1801,8 @@ function AdminPage({
             </div>
             <div className="monitoring-stats">
               <div>
-                <span>Historical analysis success rate</span>
-                <strong>{observability?.success_rate_pct == null ? '—' : `${observability.success_rate_pct}%`}</strong>
+                <span>Worker run completion rate</span>
+                <strong>{!platform.analysis_count ? '—' : observability?.success_rate_pct == null ? '—' : `${observability.success_rate_pct}%`}</strong>
               </div>
               <div>
                 <span>Cache size</span>

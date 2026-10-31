@@ -39,10 +39,15 @@ Use a disposable GitHub repository with no sensitive source and a staging deploy
 1. Open the repository and verify the branch list loads.
 2. Select a non-default branch, leave the commit SHA blank, and queue an analysis. Verify the progress stream reaches a terminal status and the saved analysis identifies the chosen branch and commit.
 3. Paste a known commit SHA and run another analysis. Verify the new report/history entry uses that exact SHA.
-4. Open the graph. Confirm the API returns nodes/edges and the UI shows the same counts. Repeat with Neo4j unavailable to confirm the saved-analysis fallback works when cache/artifacts are available.
-5. Open the health report and migration document. Confirm the analysis ID and commit match the run, and check that external intelligence availability is clearly reported.
-6. Open analysis history and compare two saved runs.
-7. Check the service logs and MongoDB job record for failures; confirm the source branch has not been modified. Analysis artifacts are written to the `repoheal.meta` metadata branch.
+4. Use **Refresh health & migration**. Verify that the task is labeled as a health/migration refresh, displays its progress percentage and worker message, and completes without rescanning source files. Confirm it is disabled before any analysis exists.
+5. Open the graph. Confirm the API returns nodes/edges and the UI shows the same counts. Repeat with Neo4j unavailable to confirm the saved-analysis fallback works when cache/artifacts are available.
+6. Open the health report and migration document. Confirm the analysis ID and commit match the run, and check that external intelligence availability is clearly reported.
+7. Open analysis history and compare two saved runs.
+8. Check the service logs and MongoDB job record for failures; confirm the source branch has not been modified. Analysis artifacts are written to the `repoheal.meta` metadata branch.
+
+For progress recovery, disconnect or block the SSE request while a job runs. Verify that the ten-second status poll still updates task progress and reloads repository details after completion. Confirm the top bar offers Log out and has no Change account action.
+
+For Admin reset behavior, verify the counters return to zero and `Last reset` updates. Confirm old job, report, alert, and monitoring records remain available.
 
 Do not use a personal production repository for this checklist: each analysis can write history artifacts to the repository's metadata branch. Keep secrets and private repository details out of captured video.
 

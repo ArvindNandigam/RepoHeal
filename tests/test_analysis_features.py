@@ -466,6 +466,17 @@ def test_admin_metrics_exposes_live_dependency_status(monkeypatch):
     assert metrics["dependency_status"]["checked_at"]
 
 
+def test_admin_reset_metrics_resets_only_platform_counters(monkeypatch):
+    reset_at = datetime.now(timezone.utc)
+    monkeypatch.setattr(admin, "reset_platform_metrics", lambda: reset_at)
+
+    result = asyncio.run(admin.admin_reset_metrics({"github_login": "ArvindNandigam"}))
+
+    assert result["status"] == "reset"
+    assert result["reset_at"] == reset_at.isoformat()
+    assert "reports" in result["message"]
+
+
 def test_dashboard_route_serves_built_frontend_when_dist_exists(monkeypatch, tmp_path):
     index = tmp_path / "index.html"
     index.write_text("<html>latest frontend</html>", encoding="utf-8")

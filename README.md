@@ -46,6 +46,8 @@ GitHub Actions runs the backend checks and frontend typecheck/production build o
 5. The migration pipeline queries external symbol intelligence, applies local/version-gap fallback checks, calculates health and risk findings, and writes a health report and migration document.
 6. The dashboard loads graph data, reports, and history from the saved artifacts. A saved analysis can be compared with another analysis.
 
+On the repository page, **Analyze repository** scans the selected branch or commit and runs the full pipeline, including health and migration reports. **Refresh health & migration** reuses the latest saved code analysis and reruns report generation without rescanning repository files. Both actions show the current task, progress percentage, and worker message; the page receives live updates and polls status as a recovery path if the event stream disconnects. Health refresh requires a saved analysis.
+
 The exact mode and target are passed to the analysis API. Use a branch head for an up-to-date view, or select a commit to inspect historical code. Rerunning an analysis creates a new saved record; it does not intentionally overwrite the prior history entry.
 
 ## Local development

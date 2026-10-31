@@ -4,7 +4,7 @@ from app.config import settings
 from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.auth.jwt_manager import verify_session_token
-from app.worker.metrics import get_all_metrics
+from app.worker.metrics import get_all_metrics, reset_platform_metrics
 from app.db.database import get_mongo_db
 from app.worker.task_registry import get_active_jobs
 from app.db.database import check_mongo_health
@@ -28,6 +28,16 @@ async def admin_metrics_json(user=Depends(require_admin)):
         **get_all_metrics(),
         "dependency_status": _dependency_status(),
         "metrics_status": _platform_metrics_status(),
+    }
+
+
+@router.post("/admin/metrics/reset")
+async def admin_reset_metrics(user=Depends(require_admin)):
+    reset_at = reset_platform_metrics()
+    return {
+        "status": "reset",
+        "reset_at": reset_at.isoformat(),
+        "message": "Platform metric counters were reset. Jobs, reports, alerts, and monitoring history were preserved.",
     }
 
 
@@ -63,13 +73,17 @@ def _platform_metrics_status() -> dict:
         ensure_platform_metrics_initialized()
         documents = list(
             get_mongo_db().platform_metrics.find(
-                {}, {"_id": 0, "metric": 1, "updated_at": 1}
+                {}, {"_id": 0, "metric": 1, "updated_at": 1, "reset_at": 1}
             )
         )
     except Exception:
         return {"state": "unavailable", "message": "Platform metrics could not be read"}
     updated_at = max(
         (doc.get("updated_at") for doc in documents if doc.get("updated_at")),
+        default=None,
+    )
+    reset_at = max(
+        (doc.get("reset_at") for doc in documents if doc.get("reset_at")),
         default=None,
     )
     collected_metrics = {doc.get("metric") for doc in documents}
@@ -87,6 +101,7 @@ def _platform_metrics_status() -> dict:
         "metric_count": len(documents),
         "missing_metrics": missing_metrics,
         "updated_at": updated_at.isoformat() if hasattr(updated_at, "isoformat") else updated_at,
+        "reset_at": reset_at.isoformat() if hasattr(reset_at, "isoformat") else reset_at,
         "message": (
             "Values are persisted platform metrics"
             if state == "collected"

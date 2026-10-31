@@ -87,7 +87,7 @@ def record_graph_scale(repo_id: str, node_count: int, edge_count: int) -> None:
         "repo_id": repo_id,
         "node_count": node_count,
         "edge_count": edge_count,
-    } if is_largest else None
+    } if is_largest and (node_count > 0 or edge_count > 0) else None
 
     db.platform_metrics.update_one(
         {"metric": "graph_scale"},
@@ -95,7 +95,7 @@ def record_graph_scale(repo_id: str, node_count: int, edge_count: int) -> None:
             "$inc": {
                 "total_nodes": node_count,
                 "total_edges": edge_count,
-                "graph_count": 1,
+                "graph_count": 1 if node_count > 0 or edge_count > 0 else 0,
             },
             "$set": {"updated_at": datetime.now(timezone.utc)},
             "$max": {"largest_node_count": node_count if is_largest else 0},
@@ -105,7 +105,7 @@ def record_graph_scale(repo_id: str, node_count: int, edge_count: int) -> None:
             "$inc": {
                 "total_nodes": node_count,
                 "total_edges": edge_count,
-                "graph_count": 1,
+                "graph_count": 1 if node_count > 0 or edge_count > 0 else 0,
             },
             "$set": {
                 "updated_at": datetime.now(timezone.utc),
@@ -483,4 +483,14 @@ def ensure_platform_metrics_initialized() -> None:
                 )
     except Exception as e:
         logger.warning(f"Could not ensure platform metrics initialized: {e}")
+
+
+def reset_platform_metrics() -> datetime:
+    """Reset aggregate platform counters without deleting operational history."""
+    db = get_mongo_db()
+    reset_at = datetime.now(timezone.utc)
+    db.platform_metrics.delete_many({})
+    ensure_platform_metrics_initialized()
+    db.platform_metrics.update_many({}, {"$set": {"reset_at": reset_at}})
+    return reset_at
 

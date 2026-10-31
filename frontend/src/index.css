@@ -192,6 +192,8 @@
 .loading-state { padding: 70px 20px; color: #858c84; font-size: 12px; text-align: center; }
 .progress-card { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; margin-bottom: 14px; padding: 13px 16px; border: 1px solid #dcebe1; border-radius: 9px; color: #4a705b; background: #f2faf5; font-size: 9px; }
 .progress-card progress { width: 100%; height: 6px; accent-color: #579575; }
+.progress-card .progress-message { min-width: 0; }
+.progress-card-error { border-color: #f2d4d0; color: #9e4d45; background: #fff7f5; }
 .graph-panel { min-width: 0; }
 .analysis-target-control { display: flex; flex-direction: column; gap: 3px; color: #687069; font-size: 8px; }
 .analysis-target-control select, .analysis-target-control input { max-width: 190px; min-width: 125px; height: 30px; padding: 0 7px; border: 1px solid #dce3dd; border-radius: 6px; color: #39423b; background: #fff; font-size: 9px; }

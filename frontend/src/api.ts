@@ -57,6 +57,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 export const api = {
   dashboard: () => request<Dashboard>('/dashboard/data'),
   overview: (owner: string, repo: string) => request<Record<string, any>>(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/overview`),
+  repositoryStatus: (owner: string, repo: string) => request<Record<string, any>>(`/status/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),
   graph: (owner: string, repo: string, analysisId?: string) =>
     request<Graph>(`/graph/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}${analysisId ? `?analysis_id=${encodeURIComponent(analysisId)}` : ''}`),
   compare: (owner: string, repo: string, leftId?: string, rightId?: string) => {
@@ -75,6 +76,7 @@ export const api = {
   monitoring: (owner: string, repo: string) =>
     request<Record<string, any>>(`/monitor/dashboard/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),
   adminMetrics: () => request<Record<string, any>>('/admin/metrics'),
+  resetAdminMetrics: () => request<{ status: string; reset_at: string }>('/admin/metrics/reset', { method: 'POST' }),
   adminObservability: () => request<Record<string, any>>('/admin/observability'),
   branches: (owner: string, repo: string) => request<{ branches: string[] }>(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`),
   commits: (owner: string, repo: string, branch: string) => request<{ commits: Array<{ sha: string; message: string; date?: string }> }>(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits?branch=${encodeURIComponent(branch)}`),
@@ -87,6 +89,10 @@ export const api = {
   },
   reanalyze: (owner: string, repo: string, branch?: string, commitSha?: string) => request<Record<string, any>>(
     `/reanalyze/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: commitSha ? 'commit' : branch ? 'branch' : 'latest', branch: branch || null, commit_sha: commitSha || null }) }
+  ),
+  healthRefresh: (owner: string, repo: string, branch?: string, commitSha?: string) => request<Record<string, any>>(
+    `/health-refresh/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: commitSha ? 'commit' : branch ? 'branch' : 'latest', branch: branch || null, commit_sha: commitSha || null }) }
   ),
   diagnostics: () => request<Record<string, any>>('/healthz'),

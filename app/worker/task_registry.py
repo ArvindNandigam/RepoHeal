@@ -391,6 +391,58 @@ def get_repository_status(repo_owner: str, repo_name: str):
                         {"job_id": doc["job_id"], "status": {"$in": list(ACTIVE_STATUSES)}},
                         {"$set": {"status": JobStatus.ORPHANED.value, "progress": 0, "message": doc["message"], "updated_at": datetime.now(timezone.utc)}},
                     )
+    # The analysis artifacts are committed before optional monitoring and cache
+    # housekeeping. If one of those post-processing steps stalls, reconcile the
+    # UI-facing status from the durable analysis record instead of leaving the
+    # repository at 95% until the generic orphan timeout expires.
+    if doc.get("status") in ACTIVE_STATUSES and doc.get("progress", 0) >= 80:
+        updated_at = doc.get("updated_at")
+        if isinstance(updated_at, str):
+            try:
+                updated_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+            except ValueError:
+                updated_at = None
+        if isinstance(updated_at, datetime):
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=timezone.utc)
+            if updated_at < datetime.now(timezone.utc) - timedelta(minutes=5):
+                try:
+                    from app.routers.dependencies import load_cached_analysis
+                    analysis = load_cached_analysis(repo_owner, repo_name)
+                except Exception as exc:
+                    logger.warning("Could not reconcile stale analysis status for %s/%s: %s", repo_owner, repo_name, exc)
+                    analysis = None
+                if analysis:
+                    message = "Completed (final cleanup timed out)"
+                    completed_at = datetime.now(timezone.utc)
+                    reconciliation = {
+                            "status": JobStatus.COMPLETED.value,
+                            "progress": 100,
+                            "message": message,
+                            "updated_at": completed_at,
+                            "completed_at": completed_at,
+                            "last_analysis": doc.get("last_analysis") or completed_at,
+                    }
+                    if not doc.get("last_analysis") and doc.get("job_type") != "health_refresh":
+                        last_commit = doc.get("target_commit_sha")
+                        if last_commit:
+                            reconciliation["last_commit_analyzed"] = last_commit
+                    db.repository_analysis_status.update_one(
+                        {"repo_owner": repo_owner, "repo_name": repo_name, "job_id": doc.get("job_id")},
+                        {"$set": reconciliation},
+                    )
+                    if doc.get("job_id"):
+                        db.jobs.update_one(
+                            {"job_id": doc["job_id"], "status": {"$in": list(ACTIVE_STATUSES)}},
+                            {"$set": {
+                                "status": JobStatus.COMPLETED.value,
+                                "progress": 100,
+                                "message": message,
+                                "updated_at": completed_at,
+                                "completed_at": completed_at,
+                            }},
+                        )
+                    doc.update({"status": JobStatus.COMPLETED.value, "progress": 100, "message": message})
     for field in ("created_at", "updated_at", "completed_at", "last_analysis", "last_health_refresh"):
         if isinstance(doc.get(field), datetime):
             doc[field] = doc[field].isoformat()
@@ -786,7 +838,7 @@ def run_analysis_in_background(
             len(f.get("calls", [])) + len(f.get("apis", []))
             for f in (analysis.get("semantic_graph", {}).get("files", {}) or {}).values()
         )
-        record_graph_scale(repo_id, max(node_count, 1), max(edge_count, 1))
+        record_graph_scale(repo_id, node_count, edge_count)
 
         del graph_builder, node_count, edge_count
         gc.collect()
