@@ -1,0 +1,5 @@
+Flask==3.1.1
+pandas==2.3.3
+requests==2.32.5
+# Intentional unused dependency for RepoHeal's declared-vs-imported check.
+colorama==0.4.6
