@@ -43,12 +43,14 @@ GitHub Actions runs the backend checks and frontend typecheck/production build o
 2. From the repository page, select a branch. The commit field suggests the latest 50 commits and also accepts a pasted 7–40 character hexadecimal SHA. Leave it blank to analyze the selected branch head; enter a SHA to analyze that exact commit.
 3. RepoHeal queues a background job, fetches the selected repository snapshot, scans Python files and dependency manifests, and records progress in MongoDB.
 4. The analyzer generates dependency and symbol data. The graph builder attempts to write graph data to Neo4j; metadata artifacts are persisted on the `repoheal.meta` branch.
-5. The migration pipeline queries external symbol intelligence, applies local/version-gap fallback checks, calculates health and risk findings, and writes a health report and migration document.
+5. The migration pipeline first calculates and saves a preliminary health score from local code and dependency findings. It then queries external symbol intelligence in bounded parallel batches, enriches the score and risk findings, and writes the migration document. A provider timeout does not block the preliminary score from appearing.
 6. The dashboard loads graph data, reports, and history from the saved artifacts. A saved analysis can be compared with another analysis.
 
 On the repository page, **Analyze repository** scans the selected branch or commit and runs the full pipeline, including health and migration reports. **Refresh health & migration** reuses the latest saved code analysis and reruns report generation without rescanning repository files. Both actions show the current task, progress percentage, and worker message; the page receives live updates and polls status as a recovery path if the event stream disconnects. Health refresh requires a saved analysis.
 
 Health scoring uses local dependency and code findings first, so the dashboard can show a score while external API intelligence is still running. External enrichment is requested in small bounded parallel batches; each HTTP request has a 300-second timeout, and duplicate in-flight requests are coalesced. If the provider times out, the saved report retains its local score and indicates that migration intelligence is unavailable or degraded.
+
+The Reports page displays the active task type, progress percentage, and latest worker message. It reloads saved report data when the preliminary score is persisted and when the task finishes. The dependency graph supports filters for files, packages, functions, classes, and APIs; PNG export places graph nodes without a repository-root path in a fallback row so they remain renderable.
 
 The exact mode and target are passed to the analysis API. Use a branch head for an up-to-date view, or select a commit to inspect historical code. Rerunning an analysis creates a new saved record; it does not intentionally overwrite the prior history entry.
 

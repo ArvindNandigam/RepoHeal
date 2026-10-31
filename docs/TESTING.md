@@ -26,7 +26,8 @@ You can run each step independently. The backend tests use fake collections, moc
 - Job creation, deduplication, and repository status behavior.
 - Branch and exact commit target resolution.
 - Offline Python AST/dependency analysis with a deterministic in-memory fixture and mocked PyPI versions.
-- Graph generation from analysis data, including the saved dependency-only fallback.
+- Local health scoring without external intelligence, bounded concurrent Webtool batches, and analysis progress recovery.
+- Graph generation from analysis data, including the saved dependency-only fallback, package-type promotion, and PNG rendering of orphaned nodes.
 - Report generation, migration artifact persistence, comparison, Markdown export, and repository authorization.
 - Dashboard/admin/health route behavior and configuration checks.
 
@@ -39,11 +40,12 @@ Use a disposable GitHub repository with no sensitive source and a staging deploy
 1. Open the repository and verify the branch list loads.
 2. Select a non-default branch, leave the commit SHA blank, and queue an analysis. Verify the progress stream reaches a terminal status and the saved analysis identifies the chosen branch and commit.
 3. Paste a known commit SHA and run another analysis. Verify the new report/history entry uses that exact SHA.
-4. Use **Refresh health & migration**. Verify that the task is labeled as a health/migration refresh, displays its progress percentage and worker message, and completes without rescanning source files. Confirm it is disabled before any analysis exists.
-5. Open the graph. Confirm the API returns nodes/edges and the UI shows the same counts. Repeat with Neo4j unavailable to confirm the saved-analysis fallback works when cache/artifacts are available.
-6. Open the health report and migration document. Confirm the analysis ID and commit match the run, and check that external intelligence availability is clearly reported.
-7. Open analysis history and compare two saved runs.
-8. Check the service logs and MongoDB job record for failures; confirm the source branch has not been modified. Analysis artifacts are written to the `repoheal.meta` metadata branch.
+4. While external intelligence is pending, open Reports. Verify the preliminary health score appears before the lookup finishes and the active task message and percentage are visible. Confirm the final enriched report reloads when the task completes.
+5. Use **Refresh health & migration**. Verify that the task is labeled as a health/migration refresh, displays its progress percentage and worker message, and completes without rescanning source files. Confirm it is disabled before any analysis exists.
+6. Open the graph. Confirm the API returns nodes/edges and the UI shows the same counts. Check that package and class filters include their matching nodes, including saved package nodes. Repeat with Neo4j unavailable to confirm the saved-analysis fallback works when cache/artifacts are available. Export a PNG and confirm nodes with missing parent links still render.
+7. Open the health report and migration document. Confirm the analysis ID and commit match the run, and check that external intelligence availability is clearly reported.
+8. Open analysis history and compare two saved runs.
+9. Check the service logs and MongoDB job record for failures; confirm the source branch has not been modified. Analysis artifacts are written to the `repoheal.meta` metadata branch.
 
 For progress recovery, disconnect or block the SSE request while a job runs. Verify that the ten-second status poll still updates task progress and reloads repository details after completion. Confirm the top bar offers Log out and has no Change account action.
 
