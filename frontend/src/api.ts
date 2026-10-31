@@ -76,8 +76,19 @@ export const api = {
     request<Record<string, any>>(`/monitor/dashboard/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),
   adminMetrics: () => request<Record<string, any>>('/admin/metrics'),
   adminObservability: () => request<Record<string, any>>('/admin/observability'),
-  startAnalysis: (owner: string, repo: string) => request<Record<string, any>>(`/analyze/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),
-  reanalyze: (owner: string, repo: string) => request<Record<string, any>>(`/reanalyze/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, { method: 'POST' }),
+  branches: (owner: string, repo: string) => request<{ branches: string[] }>(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`),
+  commits: (owner: string, repo: string, branch: string) => request<{ commits: Array<{ sha: string; message: string; date?: string }> }>(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits?branch=${encodeURIComponent(branch)}`),
+  startAnalysis: (owner: string, repo: string, branch?: string, commitSha?: string) => {
+    const params = new URLSearchParams()
+    params.set('mode', commitSha ? 'commit' : branch ? 'branch' : 'latest')
+    if (branch) params.set('branch', branch)
+    if (commitSha) params.set('commit_sha', commitSha)
+    return request<Record<string, any>>(`/analyze/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}?${params}`)
+  },
+  reanalyze: (owner: string, repo: string, branch?: string, commitSha?: string) => request<Record<string, any>>(
+    `/reanalyze/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: commitSha ? 'commit' : branch ? 'branch' : 'latest', branch: branch || null, commit_sha: commitSha || null }) }
+  ),
   diagnostics: () => request<Record<string, any>>('/healthz'),
 }
 

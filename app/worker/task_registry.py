@@ -360,6 +360,37 @@ def get_repository_status(repo_owner: str, repo_name: str):
             "progress": 0,
             "message": "Analysis has not started",
         }
+    if doc.get("status") in ACTIVE_STATUSES:
+        updated_at = doc.get("updated_at")
+        if isinstance(updated_at, str):
+            try:
+                updated_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+            except ValueError:
+                updated_at = None
+        if isinstance(updated_at, datetime):
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=timezone.utc)
+            timeout = timedelta(hours=1) if doc.get("status") == JobStatus.QUEUED.value else timedelta(minutes=JOB_ORPHAN_TIMEOUT)
+            if updated_at < datetime.now(timezone.utc) - timeout:
+                doc.update({
+                    "status": JobStatus.ORPHANED.value,
+                    "progress": 0,
+                    "message": "Analysis stopped responding. You can queue a new analysis.",
+                })
+                db.repository_analysis_status.update_one(
+                    {"repo_owner": repo_owner, "repo_name": repo_name},
+                    {"$set": {
+                        "status": JobStatus.ORPHANED.value,
+                        "progress": 0,
+                        "message": doc["message"],
+                        "updated_at": datetime.now(timezone.utc),
+                    }},
+                )
+                if doc.get("job_id"):
+                    db.jobs.update_one(
+                        {"job_id": doc["job_id"], "status": {"$in": list(ACTIVE_STATUSES)}},
+                        {"$set": {"status": JobStatus.ORPHANED.value, "progress": 0, "message": doc["message"], "updated_at": datetime.now(timezone.utc)}},
+                    )
     for field in ("created_at", "updated_at", "completed_at", "last_analysis", "last_health_refresh"):
         if isinstance(doc.get(field), datetime):
             doc[field] = doc[field].isoformat()

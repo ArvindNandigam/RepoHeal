@@ -55,7 +55,7 @@ def _graph_has_nodes(graph: dict | None) -> bool:
 
 
 def _is_analysis_incomplete(status: dict) -> bool:
-    return status.get("status") not in {"completed", "up_to_date", "outdated"}
+    return status.get("status") not in {"completed", "up_to_date", "outdated", "orphaned", "failed", "cancelled"}
 
 
 def _neo4j_info() -> dict:

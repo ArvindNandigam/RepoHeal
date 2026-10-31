@@ -163,6 +163,8 @@ function RepositoryRow({ repo, onOpen }: { repo: Repository; onOpen: () => void 
       ? 'Healthy'
       : repo.analysis_status === 'not_analyzed'
       ? 'Not analyzed'
+      : ['orphaned', 'failed', 'cancelled'].includes(repo.analysis_status)
+      ? repo.analysis_status[0].toUpperCase() + repo.analysis_status.slice(1)
       : 'In progress'
   return (
     <div className="repo-row">
@@ -212,6 +214,11 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
+  const [queueingAnalysis, setQueueingAnalysis] = useState(false)
+  const [analysisBranches, setAnalysisBranches] = useState<string[]>([])
+  const [analysisBranch, setAnalysisBranch] = useState('')
+  const [analysisCommits, setAnalysisCommits] = useState<Array<{ sha: string; message: string; date?: string }>>([])
+  const [analysisCommit, setAnalysisCommit] = useState('')
   const [graphQuery, setGraphQuery] = useState('')
   const [graphType, setGraphType] = useState('all')
   const [graphViewMode, setGraphViewMode] = useState<'topology' | 'explorer'>('topology')
@@ -299,6 +306,40 @@ function App() {
       if (graphResult.status === 'fulfilled') setGraph(graphResult.value)
     else setGraph({ repository: `${repo.owner}/${repo.repo}`, status: 'error', message: graphResult.reason instanceof Error ? graphResult.reason.message : 'Graph data is unavailable', nodes: [], edges: [] })
   }
+
+  useEffect(() => {
+    if (!selected) return
+    let cancelled = false
+    setAnalysisBranches([])
+    setAnalysisCommits([])
+    setAnalysisCommit('')
+    setAnalysisBranch(selected.default_branch || '')
+    api.branches(selected.owner, selected.repo).then(({ branches }) => {
+      if (cancelled) return
+      setAnalysisBranches(branches)
+      setAnalysisBranch((current) => current && branches.includes(current) ? current : selected.default_branch || branches[0] || '')
+    }).catch((reason) => {
+      if (!cancelled) setError(reason instanceof Error ? reason.message : 'Could not load repository branches')
+    })
+    return () => { cancelled = true }
+  }, [selected?.owner, selected?.repo])
+
+  useEffect(() => {
+    if (!selected || !analysisBranch) {
+      setAnalysisCommits([])
+      setAnalysisCommit('')
+      return
+    }
+    let cancelled = false
+    setAnalysisCommits([])
+    setAnalysisCommit('')
+    api.commits(selected.owner, selected.repo, analysisBranch).then(({ commits }) => {
+      if (!cancelled) setAnalysisCommits(commits)
+    }).catch((reason) => {
+      if (!cancelled) setError(reason instanceof Error ? reason.message : 'Could not load commits')
+    })
+    return () => { cancelled = true }
+  }, [selected?.owner, selected?.repo, analysisBranch])
 
   const loadAdmin = async () => {
     if (dashboardRef.current?.user && dashboardRef.current.user !== 'ArvindNandigam') return
@@ -484,27 +525,28 @@ function App() {
 
   const startAnalysis = async () => {
     if (!selected) return
-    setRefreshing(true)
+    setQueueingAnalysis(true)
     try {
-      await api.startAnalysis(selected.owner, selected.repo)
-      setStatus({ status: 'queued', progress: 0, message: 'Analysis queued' })
+      const result = await api.startAnalysis(selected.owner, selected.repo, analysisBranch, analysisCommit || undefined)
+      const targetDesc = analysisCommit ? `commit ${analysisCommit.slice(0, 7)}` : `branch ${analysisBranch || selected.default_branch || 'default'}`
+      setStatus({ status: 'queued', progress: 0, message: result.deduplicated ? 'An analysis is already queued or running.' : `Analysis queued for ${targetDesc}.` })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not start analysis')
     } finally {
-      setRefreshing(false)
+      setQueueingAnalysis(false)
     }
   }
 
   const rerunAnalysis = async () => {
     if (!selected) return
-    setRefreshing(true)
+    setQueueingAnalysis(true)
     try {
-      await api.reanalyze(selected.owner, selected.repo)
+      await api.reanalyze(selected.owner, selected.repo, analysisBranch, analysisCommit || undefined)
       setStatus({ status: 'queued', progress: 0, message: 'Full reanalysis queued' })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not rerun analysis')
     } finally {
-      setRefreshing(false)
+      setQueueingAnalysis(false)
     }
   }
 
@@ -631,9 +673,23 @@ function App() {
                   <p>{overview?.metadata?.description || selected.description || 'Repository overview and analysis history'}</p>
                 </div>
                 <div className="heading-actions">
+                  <label className="analysis-target-control">
+                    <span>Branch</span>
+                    <select value={analysisBranch} onChange={(event) => setAnalysisBranch(event.target.value)} disabled={!analysisBranches.length}>
+                      {!analysisBranches.length && <option value="">Loading branches…</option>}
+                      {analysisBranches.map((branch) => <option key={branch} value={branch}>{branch}</option>)}
+                    </select>
+                  </label>
+                  <label className="analysis-target-control commit-target-control">
+                    <span>Commit (optional)</span>
+                    <select value={analysisCommit} onChange={(event) => setAnalysisCommit(event.target.value)} disabled={!analysisCommits.length}>
+                      <option value="">Branch head</option>
+                      {analysisCommits.map((commit) => <option key={commit.sha} value={commit.sha}>{commit.sha.slice(0, 7)} · {commit.message.slice(0, 48)}</option>)}
+                    </select>
+                  </label>
                   <button className="button secondary-button" onClick={startAnalysis}>
-                    <Icon name="refresh" className={refreshing ? 'spin' : ''} size={16} />
-                    {refreshing ? 'Starting…' : 'Run analysis'}
+                    <Icon name="refresh" className={queueingAnalysis ? 'spin' : ''} size={16} />
+                    {queueingAnalysis ? 'Queueing…' : 'Run analysis'}
                   </button>
                   <button
                     className="button primary-button"
