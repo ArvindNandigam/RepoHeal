@@ -126,6 +126,24 @@ def _build_networkx_png(graph: dict) -> bytes:
     direction = "right" if figure_width > figure_height * 1.15 else "down"
     positions = _hierarchical_positions(root_id, direction=direction)
 
+    # Some graph snapshots contain valid nodes without a parent chain leading
+    # to the repository root (for example, an imported package whose parent
+    # namespace was omitted). NetworkX requires every rendered node to have a
+    # position, so place these orphaned nodes in a deterministic extra row.
+    missing_nodes = [node_id for node_id in graph_nx.nodes if node_id not in positions]
+    if missing_nodes:
+        if positions:
+            max_x = max(point[0] for point in positions.values())
+            min_y = min(point[1] for point in positions.values())
+        else:
+            max_x = 0.0
+            min_y = 0.0
+        for index, node_id in enumerate(missing_nodes):
+            if direction == "right":
+                positions[node_id] = (max_x + 1.9, index * 1.35)
+            else:
+                positions[node_id] = (index * 1.35, min_y - 1.9)
+
     figure, axis = plt.subplots(figsize=(figure_width, figure_height), dpi=180)
     figure.patch.set_facecolor("#08121f")
     axis.set_facecolor("#08121f")

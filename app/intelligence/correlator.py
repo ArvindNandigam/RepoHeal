@@ -1,3 +1,4 @@
+import asyncio
 import sys
 import re
 from typing import Dict, List, Any
@@ -74,6 +75,39 @@ class MigrationCorrelator:
     def __init__(self, webtool_client: WebtoolClient):
         self.client = webtool_client
 
+    def correlate_local(self, analysis: Dict[str, Any], repo_id: str) -> CorrelationResult:
+        """Build a useful local assessment without waiting for Webtool."""
+        fingerprints = analysis.get("fingerprints", {})
+        dependency_graph = analysis.get("dependency_graph", {})
+        fingerprint_data = {
+            library: fp_data
+            for library, fp_data in fingerprints.items()
+            if fp_data.get("symbols")
+            and library in dependency_graph
+            and library not in sys.stdlib_module_names
+        }
+        assessments: List[SymbolAssessment] = []
+        errors: List[str] = []
+        self._add_version_gap_assessments(
+            assessments, fingerprint_data, dependency_graph, errors
+        )
+        for local in apply_local_fallback(
+            fingerprint_data, dependency_graph, [a.model_dump() for a in assessments]
+        ):
+            if (local.get("library"), local.get("symbol")) not in {
+                (assessment.library, assessment.symbol) for assessment in assessments
+            }:
+                assessments.append(SymbolAssessment(**local))
+        return CorrelationResult(
+            repository=repo_id,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            total_symbols=sum(len(fp.get("symbols", [])) for fp in fingerprint_data.values()),
+            assessments=assessments,
+            libraries_checked=len(fingerprint_data),
+            webtool_errors=errors,
+            intelligence_source="local_kb" if assessments else "none",
+        )
+
     async def correlate(self, analysis: Dict[str, Any], repo_id: str) -> CorrelationResult:
         fingerprints = analysis.get("fingerprints", {})
         dependency_graph = analysis.get("dependency_graph", {})
@@ -105,6 +139,7 @@ class MigrationCorrelator:
         if requests:
             try:
                 response = await self._fetch_batch_intelligence(requests)
+                errors.extend(response.get("errors", []))
             except Exception as e:
                 error_msg = str(e)
                 if hasattr(e, "response") and hasattr(e.response, "text"):
@@ -219,6 +254,35 @@ class MigrationCorrelator:
         )
 
     async def _fetch_batch_intelligence(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+        chunks = [batch[index:index + 5] for index in range(0, len(batch), 5)]
+        if len(chunks) > 1:
+            semaphore = asyncio.Semaphore(2)
+
+            async def fetch_chunk(chunk):
+                async with semaphore:
+                    return await self._fetch_batch_chunk(chunk)
+
+            responses = await asyncio.gather(
+                *(fetch_chunk(chunk) for chunk in chunks), return_exceptions=True
+            )
+            results = []
+            failures = []
+            for response in responses:
+                if isinstance(response, Exception):
+                    failures.append(response)
+                elif isinstance(response, dict):
+                    results.extend(response.get("results", []))
+            if failures and not results:
+                raise failures[0]
+            for failure in failures:
+                logger.warning("A bounded Webtool batch failed while other batches succeeded: %s", failure)
+            return {
+                "results": results,
+                "errors": [f"Webtool batch failed: {failure}" for failure in failures],
+            }
+        return await self._fetch_batch_chunk(batch)
+
+    async def _fetch_batch_chunk(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         if hasattr(self.client, "get_bulk_intelligence"):
             try:
                 response = await self.client.get_bulk_intelligence(batch)

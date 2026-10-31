@@ -129,6 +129,18 @@ const icons: Record<IconName, React.ReactNode> = {
   ),
 }
 
+function graphNodeType(data: Record<string, any>) {
+  const rawType = String(data.type || data.kind || '').trim().toLowerCase()
+  // Dependency metadata can identify a package even when an older graph
+  // snapshot still labels its namespace node as a module or symbol.
+  if (data.package_type || rawType === 'package' || rawType === 'packages') return 'package'
+  if (['class', 'classes', 'classdef', 'class_def'].includes(rawType)) return 'class'
+  if (['function', 'functions', 'method'].includes(rawType)) return 'function'
+  if (['api', 'apis', 'call'].includes(rawType)) return 'api'
+  if (['file', 'files'].includes(rawType)) return 'file'
+  return rawType
+}
+
 function Icon({ name, size = 18, className = '' }: { name: IconName; size?: number; className?: string }) {
   return (
     <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -497,18 +509,28 @@ function App() {
     if (!selected) return
     let hadActiveAnalysis = ['queued', 'running', 'analyzing', 'generating_graph', 'generating_reports', 'generating_migrations', 'updating_metadata'].includes(selected.analysis_status)
     let disposed = false
+    let loadedPreliminaryReport = false
+    const refreshPreliminaryReport = (latest: Record<string, any>) => {
+      if (loadedPreliminaryReport || !String(latest.message || '').includes('Local health score saved')) return
+      loadedPreliminaryReport = true
+      void openRepository(selected, false, false)
+      void loadDashboard()
+      void loadReports(selected)
+    }
 
     const refreshStatus = async () => {
       try {
         const latest = await api.repositoryStatus(selected.owner, selected.repo)
         if (disposed) return
         setStatus(latest)
+        refreshPreliminaryReport(latest)
         const isActive = ['queued', 'running', 'analyzing', 'generating_graph', 'generating_reports', 'generating_migrations', 'updating_metadata'].includes(latest.status)
         if (isActive) hadActiveAnalysis = true
         else if (latest.status === 'completed' && hadActiveAnalysis) {
           hadActiveAnalysis = false
           void openRepository(selected, false, false)
           void loadDashboard()
+          void loadReports(selected)
         }
       } catch {
         // SSE remains the primary live update channel; this poll is a recovery path.
@@ -518,6 +540,7 @@ function App() {
     const poll = window.setInterval(() => void refreshStatus(), 10000)
     const unsubscribe = subscribeToStatus(selected.owner, selected.repo, (next) => {
       setStatus(next)
+      refreshPreliminaryReport(next)
       const isActive = ['queued', 'running', 'analyzing', 'generating_graph', 'generating_reports', 'generating_migrations', 'updating_metadata'].includes(next.status)
       if (isActive) {
         hadActiveAnalysis = true
@@ -525,6 +548,7 @@ function App() {
         hadActiveAnalysis = false
         void openRepository(selected, false, false)
         void loadDashboard()
+        void loadReports(selected)
       }
     })
     return () => {
@@ -547,7 +571,7 @@ function App() {
   const visibleNodes = useMemo(() => {
     return (graph?.nodes || []).filter((node) => {
       const data = node.data
-      const typeMatch = graphType === 'all' || String(data.type || '').toLowerCase() === graphType.toLowerCase()
+      const typeMatch = graphType === 'all' || graphNodeType(data) === graphType.toLowerCase()
       const queryMatch =
         !graphQuery ||
         String(data.label || data.path || data.id || '')
@@ -1163,6 +1187,7 @@ function App() {
               history={history}
               healthReport={healthReport}
               migrationDoc={migrationDoc}
+              taskStatus={status}
               refreshing={refreshing}
               onRefresh={() => void loadReports(selected)}
               onRetry={() => void rerunAnalysis()}
@@ -1270,6 +1295,7 @@ function ReportsPage({
   history,
   healthReport,
   migrationDoc,
+  taskStatus,
   refreshing,
   onRefresh,
   onRetry,
@@ -1280,6 +1306,7 @@ function ReportsPage({
   history: Record<string, any> | null
   healthReport: Record<string, any> | null
   migrationDoc: string | null
+  taskStatus: Record<string, any> | null
   refreshing: boolean
   onRefresh: () => void
   onRetry: () => void
@@ -1300,6 +1327,8 @@ function ReportsPage({
   const isReportAvailable = Boolean(healthReport && (healthReport.overall_health_score !== undefined || healthReport.generated_at))
   const reportGenerationFailed = !isReportAvailable && hasHistory && selectedRepo?.analysis_status === 'completed'
   const intelligenceUnavailable = isReportAvailable && healthReport?.migration_intelligence_status === 'failed'
+  const activeTask = taskStatus && ['queued', 'running', 'analyzing', 'generating_graph', 'generating_reports', 'generating_migrations', 'updating_metadata'].includes(taskStatus.status)
+  const failedTask = taskStatus && ['failed', 'cancelled', 'orphaned'].includes(taskStatus.status)
 
   return (
     <section>
@@ -1351,16 +1380,39 @@ function ReportsPage({
         </article>
       </section>
 
+      {activeTask && (
+        <div className="progress-card reports-progress" role="status" aria-live="polite">
+          <strong>{taskStatus.job_type === 'health_refresh' ? 'Health & migration refresh' : 'Repository analysis'} · {taskStatus.status}</strong>
+          <span className="progress-message">{taskStatus.message || 'Working on this repository…'}</span>
+          <progress value={taskStatus.progress || 0} max="100" />
+          <b>{taskStatus.progress || 0}%</b>
+        </div>
+      )}
+
+      {failedTask && !isReportAvailable && (
+        <div className="callout-card warning" role="alert">
+          <div className="callout-content">
+            <h3>Background task {taskStatus.status}</h3>
+            <p>{taskStatus.message || 'The task stopped before a report became available.'}</p>
+          </div>
+          <button className="button secondary-button" onClick={onRefresh}>
+            <Icon name="refresh" className={refreshing ? 'spin' : ''} size={15} /> Check again
+          </button>
+        </div>
+      )}
+
       {/* Report state banner */}
       {!hasHistory && !isReportAvailable ? (
         <div className="callout-card warning">
           <div className="callout-content">
-            <h3>No report available</h3>
-            <p>This repository has not generated a health report yet. Run an analysis from the repository page to calculate health scores and generate migration docs.</p>
+            <h3>{activeTask ? 'Your report is being prepared' : refreshing ? 'Loading report data…' : 'No report available'}</h3>
+            <p>{activeTask
+              ? 'This page will update as soon as the preliminary health score is saved and again when migration analysis finishes.'
+              : refreshing
+              ? 'Checking saved analyses and report artifacts for this repository.'
+              : 'This repository has not generated a health report yet. Run an analysis from the repository page to calculate health scores and generate migration docs.'}</p>
           </div>
-          <button className="button primary-button" onClick={onOpenRepository}>
-            Go to repository
-          </button>
+          {!activeTask && !refreshing && <button className="button primary-button" onClick={onOpenRepository}>Go to repository</button>}
         </div>
       ) : reportGenerationFailed ? (
         <div className="callout-card warning">

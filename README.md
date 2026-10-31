@@ -48,6 +48,8 @@ GitHub Actions runs the backend checks and frontend typecheck/production build o
 
 On the repository page, **Analyze repository** scans the selected branch or commit and runs the full pipeline, including health and migration reports. **Refresh health & migration** reuses the latest saved code analysis and reruns report generation without rescanning repository files. Both actions show the current task, progress percentage, and worker message; the page receives live updates and polls status as a recovery path if the event stream disconnects. Health refresh requires a saved analysis.
 
+Health scoring uses local dependency and code findings first, so the dashboard can show a score while external API intelligence is still running. External enrichment is requested in small bounded parallel batches; each HTTP request has a 300-second timeout, and duplicate in-flight requests are coalesced. If the provider times out, the saved report retains its local score and indicates that migration intelligence is unavailable or degraded.
+
 The exact mode and target are passed to the analysis API. Use a branch head for an up-to-date view, or select a commit to inspect historical code. Rerunning an analysis creates a new saved record; it does not intentionally overwrite the prior history entry.
 
 ## Local development

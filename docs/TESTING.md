@@ -65,6 +65,6 @@ Use a clean browser profile with no personal tabs, tokens, or private repository
 
 ## Current baseline
 
-Local verification on 2026-10-31: **40 backend tests passed**, frontend TypeScript typecheck passed, Vite production build passed, and Ruff passed. The run emitted two dependency deprecation warnings (Starlette's `TestClient`/httpx integration and `astor`'s use of deprecated `ast.Num`); neither caused a failure. The broad mypy audit found existing annotation/stub errors in package normalization, AST transforms, dependency parsing, and graph visualization.
+Local verification on 2026-10-31: **45 backend tests passed**, frontend TypeScript typecheck passed, Vite production build passed, and Ruff passed. The run emitted two dependency deprecation warnings (Starlette's `TestClient`/httpx integration and `astor`'s use of deprecated `ast.Num`); neither caused a failure. The broad mypy audit remains non-blocking and reports existing annotation/stub errors in package normalization, AST transforms, dependency parsing, and graph visualization.
 
 Treat live integration checks as a separate result and include the staging date, tested branch/commit, and service configuration class (for example, Neo4j available/unavailable), never secret values.

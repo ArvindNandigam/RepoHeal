@@ -50,7 +50,7 @@ class MigrationPipeline:
             if progress_callback:
                 progress_callback(step, total_steps, msg)
         
-        total_steps = 6
+        total_steps = 7
 
         # --- Diagnostics ---
         fingerprints = analysis.get("fingerprints", {})
@@ -63,8 +63,47 @@ class MigrationPipeline:
             f"Dependencies: {dep_count} packages"
         )
         
-        # 1. Correlate
-        _report_progress(1, total_steps, "Querying Restricted Webtool for API intelligence")
+        # Persist a local score before making the external intelligence call.
+        # A slow or unavailable provider must not leave the repository without
+        # a health score while its migration report is being enriched.
+        _report_progress(1, total_steps, "Calculating local health and dependency risk")
+        try:
+            local_correlation = self.correlator.correlate_local(analysis, repo_id)
+            local_impacts = self.impact_analyzer.analyze(
+                analysis.get("semantic_graph", {}), local_correlation.assessments
+            )
+            local_risks = self.risk_classifier.classify(
+                local_correlation.assessments,
+                local_impacts,
+                len(analysis.get("semantic_graph", {}).get("files", {})),
+            )
+            local_report = self.report_generator.generate(
+                local_correlation, local_impacts, local_risks, analysis
+            )
+            local_report.migration_intelligence_status = "pending"
+            local_report.intelligence_source = local_correlation.intelligence_source
+            local_report.intelligence_warnings.append(
+                "Health score is available from local analysis. External migration intelligence is still running."
+            )
+            local_aid = analysis_id or analysis.get("analysis_id") or uuid.uuid4().hex[:10]
+            self.metadata_manager.save_health_report(
+                repo, local_report, local_aid, analysis,
+                source_branch=source_branch, commit_sha=commit_sha,
+            )
+            logger.info(
+                "Local health score %s persisted for %s before Webtool enrichment",
+                local_report.overall_health_score, repo_id,
+            )
+            _report_progress(
+                1, total_steps,
+                "Local health score saved; external API intelligence is still running",
+            )
+        except Exception as local_err:
+            logger.warning("Could not persist preliminary local health report for %s: %s", repo_id, local_err)
+        self._check_cancelled()
+
+        # 2. Enrich local findings with external symbol intelligence.
+        _report_progress(2, total_steps, "Querying Restricted Webtool for API intelligence")
         try:
             correlation = await self.correlator.correlate(analysis, repo_id)
         except Exception as e:
@@ -117,8 +156,8 @@ class MigrationPipeline:
             f"{len(webtool_errors)} errors"
         )
         
-        # 2. Impact
-        _report_progress(2, total_steps, "Analyzing impact on files and functions")
+        # 3. Impact
+        _report_progress(3, total_steps, "Analyzing impact on files and functions")
         try:
             impacts = self.impact_analyzer.analyze(
                 analysis.get("semantic_graph", {}),
@@ -129,8 +168,8 @@ class MigrationPipeline:
             impacts = {"affected_files": [], "affected_functions": [], "call_chain_details": []}
         self._check_cancelled()
         
-        # 3. Risk
-        _report_progress(3, total_steps, "Classifying migration risk")
+        # 4. Risk
+        _report_progress(4, total_steps, "Classifying migration risk")
         try:
             total_files = len(analysis.get("semantic_graph", {}).get("files", {}))
             risks = self.risk_classifier.classify(correlation.assessments, impacts, total_files)
@@ -139,8 +178,8 @@ class MigrationPipeline:
             risks = []
         self._check_cancelled()
         
-        # 4. Report
-        _report_progress(4, total_steps, "Generating health report")
+        # 5. Report
+        _report_progress(5, total_steps, "Generating health report")
         report = self.report_generator.generate(correlation, impacts, risks, analysis)
         report.migration_intelligence_status = intelligence_status
         report.intelligence_error = intelligence_error
@@ -163,8 +202,8 @@ class MigrationPipeline:
         except Exception as hr_err:
             logger.warning(f"Early health report save failed (non-fatal): {hr_err}")
 
-        # 5. Document
-        _report_progress(5, total_steps, "Generating migration document and compatibility shims")
+        # 6. Document
+        _report_progress(6, total_steps, "Generating migration document and compatibility shims")
         try:
             document = self.document_generator.generate(report)
         except Exception as e:
@@ -182,8 +221,8 @@ class MigrationPipeline:
         except Exception as shim_err:
             logger.warning("Compatibility shim generation failed: %s", shim_err)
         
-        # 6. Metadata Branch
-        _report_progress(6, total_steps, "Saving artifacts to repoheal.meta branch")
+        # 7. Metadata Branch
+        _report_progress(7, total_steps, "Saving artifacts to repoheal.meta branch")
         final_analysis_id = analysis_id or analysis.get("analysis_id") or uuid.uuid4().hex[:10]
         try:
             self.metadata_manager.save_migration_artifacts(

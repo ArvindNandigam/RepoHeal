@@ -209,6 +209,22 @@ def test_cached_graph_can_render_saved_dependency_graph_without_imports():
     assert any(node["data"].get("label") == "requests" for node in graph_payload["nodes"])
 
 
+def test_dependency_metadata_promotes_existing_namespace_to_package_node():
+    graph_payload = graph._build_cached_graph(
+        "owner/repo",
+        {
+            "imports": {"files": {"src/app.py": {"normalized": ["requests"]}}},
+            "dependency_graph": {"requests": {"version": "2.31.0", "type": "third-party"}},
+        },
+    )
+
+    package_node = next(
+        node for node in graph_payload["nodes"]
+        if node["data"].get("label") == "requests"
+    )
+    assert package_node["data"]["type"] == "package"
+
+
 def test_webhook_queue_adds_only_new_analysis(monkeypatch):
     background_tasks = FakeBackgroundTasks()
     job_ids = iter(["job-1", None])
@@ -748,6 +764,54 @@ def test_correlator_uses_bulk_and_filters_false_libraries():
     assert [item["library"] for item in client.calls[0]] == ["numpy", "torch"]
     assert result.libraries_checked == 2
     assert len(result.assessments) == 2
+
+
+def test_correlator_builds_local_version_gap_without_webtool():
+    class NoNetworkClient:
+        async def get_bulk_intelligence(self, _libraries):
+            raise AssertionError("Local correlation must not call Webtool")
+
+    result = MigrationCorrelator(NoNetworkClient()).correlate_local(
+        {
+            "fingerprints": {
+                "samplelib": {"version": "1.0.0", "symbols": ["samplelib.Widget"]}
+            },
+            "dependency_graph": {
+                "samplelib": {"version": "1.0.0", "latest_version": "2.0.0"}
+            },
+        },
+        "owner/repo",
+    )
+
+    assert result.intelligence_source == "local_kb"
+    assert result.assessments
+    assert result.assessments[0].status == "at_risk"
+
+
+def test_correlator_splits_large_batches_and_limits_parallel_requests():
+    class ConcurrentClient:
+        def __init__(self):
+            self.active = 0
+            self.max_active = 0
+            self.batch_sizes = []
+
+        async def get_bulk_intelligence(self, libraries):
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            self.batch_sizes.append(len(libraries))
+            await asyncio.sleep(0.01)
+            self.active -= 1
+            return {"results": [{"library": item["library"]} for item in libraries]}
+
+    client = ConcurrentClient()
+    correlator = MigrationCorrelator(client)
+    result = asyncio.run(correlator._fetch_batch_intelligence([
+        {"library": f"lib{i}", "symbols": ["Thing"]} for i in range(11)
+    ]))
+
+    assert sorted(client.batch_sizes) == [1, 5, 5]
+    assert client.max_active == 2
+    assert len(result["results"]) == 11
 
 
 def test_correlator_classifies_removed_symbols_and_version_distance():

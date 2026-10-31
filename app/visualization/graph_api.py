@@ -304,6 +304,11 @@ class GraphVisualizer:
 
                 nodes[node_index[package_id]]["data"].update(
                     {
+                        # A dependency may already exist as a namespace node.
+                        # Keep its semantic graph type as package so the UI's
+                        # Packages filter includes it consistently.
+                        "type": "package",
+                        "kind": "Package",
                         "package_type": package_type,
                         "version": details.get("version", "unknown"),
                         "latest_version": details.get("latest_version", "unknown"),
