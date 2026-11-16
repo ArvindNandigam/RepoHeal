@@ -1314,6 +1314,102 @@ function ReportsPage({
   onSelectAnalysis: (analysisId: string) => void
 }) {
   const [activeTab, setActiveTab] = useState<'health' | 'migration' | 'history'>('health')
+  const [remediating, setRemediating] = useState(false)
+  const [remediationResult, setRemediationResult] = useState<any[] | null>(null)
+  const [remediationError, setRemediationError] = useState<string | null>(null)
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [autoMergeOpt, setAutoMergeOpt] = useState(false)
+
+  const upgradeCandidates = useMemo(() => {
+    const list: Array<{ library: string; from_version: string; to_version: string }> = []
+    const seen = new Set<string>()
+
+    for (const dep of (healthReport?.dependency_inventory || [])) {
+      if (
+        dep.name &&
+        dep.version &&
+        dep.latest_version &&
+        dep.version !== 'unknown' &&
+        dep.latest_version !== 'unknown' &&
+        dep.version !== dep.latest_version &&
+        !seen.has(dep.name.toLowerCase())
+      ) {
+        seen.add(dep.name.toLowerCase())
+        list.push({
+          library: dep.name,
+          from_version: dep.version,
+          to_version: dep.latest_version,
+        })
+      }
+    }
+
+    for (const item of [...(healthReport?.deprecated_apis || []), ...(healthReport?.breaking_changes || [])]) {
+      const lib = item.library
+      if (
+        lib &&
+        item.installed_version &&
+        item.latest_version &&
+        item.installed_version !== 'unknown' &&
+        item.latest_version !== 'unknown' &&
+        !seen.has(lib.toLowerCase())
+      ) {
+        seen.add(lib.toLowerCase())
+        list.push({
+          library: lib,
+          from_version: item.installed_version,
+          to_version: item.latest_version,
+        })
+      }
+    }
+    return list
+  }, [healthReport])
+
+  const executeRemediation = async (singleUpgrade?: { library: string; from_version: string; to_version: string }) => {
+    if (!selectedRepo) return
+    setRemediating(true)
+    setRemediationError(null)
+    setRemediationResult(null)
+    setShowConfirmModal(false)
+
+    try {
+      const targets = singleUpgrade ? [singleUpgrade] : upgradeCandidates
+      if (targets.length > 0) {
+        const res = await api.approveUpgrades(
+          selectedRepo.owner,
+          selectedRepo.repo,
+          targets,
+          autoMergeOpt
+        )
+        setRemediationResult(res.results || [])
+      } else if (healthReport?.analysis_id) {
+        const res = await api.approveMigration(
+          selectedRepo.owner,
+          selectedRepo.repo,
+          healthReport.analysis_id
+        )
+        if (res.prs && res.prs.length > 0) {
+          setRemediationResult(res.prs.map((p) => ({
+            library: 'Repository Migration',
+            status: p.merged ? 'auto_merged' : 'pr_created',
+            pr_number: p.pr_number,
+            pr_url: p.pr_url,
+            files_patched: res.files_patched,
+          })))
+        } else if (res.pr_created === false) {
+          setRemediationError(res.error || res.message || 'No patchable code found.')
+        } else {
+          setRemediationResult([{ library: 'Migration', status: res.status, files_patched: res.files_patched }])
+        }
+      } else {
+        setRemediationError('No upgrades or deprecations found to remediate.')
+      }
+    } catch (err) {
+      setRemediationError(err instanceof Error ? err.message : 'Remediation failed.')
+    } finally {
+      setRemediating(false)
+    }
+  }
+
   const timeline = Array.isArray(history?.timeline) ? history.timeline : []
   const score = healthReport?.overall_health_score ?? healthReport?.health_score
   const risk = healthReport?.overall_risk_score ?? healthReport?.risk_score
@@ -1339,14 +1435,78 @@ function ReportsPage({
           <p>Verified health indicators, migration documents, and historical evolution.</p>
         </div>
         <div className="heading-actions">
+          <button
+            className="button primary-button"
+            style={{ background: '#27684f', borderColor: '#27684f', color: '#fff' }}
+            disabled={remediating || (!upgradeCandidates.length && !healthReport?.analysis_id)}
+            onClick={() => setShowConfirmModal(true)}
+            title={upgradeCandidates.length ? `Auto-fix ${upgradeCandidates.length} outdated packages and open PR` : 'Auto-remediate issues'}
+          >
+            <Icon name={remediating ? 'refresh' : 'spark'} className={remediating ? 'spin' : ''} size={15} />
+            {remediating ? 'Applying Fixes & Opening PR...' : 'Auto-Fix & Open PR'}
+          </button>
           <button className="button secondary-button" onClick={onRefresh}>
             <Icon name="refresh" className={refreshing ? 'spin' : ''} size={16} /> Refresh
           </button>
-          <button className="button primary-button" onClick={onOpenRepository}>
+          <button className="button secondary-button" onClick={onOpenRepository}>
             <Icon name="code" size={16} /> Open repository
           </button>
         </div>
       </div>
+
+      {remediationResult && (
+        <div className="callout-card" style={{ background: 'rgba(63, 141, 112, 0.12)', borderColor: 'rgba(63, 141, 112, 0.3)', padding: '16px', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <h3 style={{ color: '#27684f', margin: '0 0 6px 0', fontSize: '14px', fontWeight: 700 }}>
+                ✓ Remediation Pull Request Created
+              </h3>
+              <p style={{ margin: 0, fontSize: '12px', color: '#334038' }}>
+                Auto-patches and shims committed to new branch and opened on GitHub.
+              </p>
+            </div>
+            <button className="button tertiary-button" onClick={() => setRemediationResult(null)}>Dismiss</button>
+          </div>
+          <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {remediationResult.map((res, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #dce2dc' }}>
+                <div>
+                  <strong style={{ fontSize: '13px' }}>{res.library}</strong>
+                  <span style={{ marginLeft: '8px', padding: '2px 6px', borderRadius: '4px', background: '#eef2ee', fontSize: '11px', color: '#4d554e' }}>
+                    {res.status}
+                  </span>
+                  {res.files_patched !== undefined && (
+                    <span style={{ marginLeft: '8px', fontSize: '11px', color: '#7a8279' }}>
+                      ({res.files_patched} file(s) patched)
+                    </span>
+                  )}
+                </div>
+                {res.pr_url ? (
+                  <a href={res.pr_url} target="_blank" rel="noreferrer" className="button primary-button" style={{ padding: '0 12px', height: '28px', fontSize: '11px', textDecoration: 'none' }}>
+                    View PR #{res.pr_number} ↗
+                  </a>
+                ) : res.error ? (
+                  <span style={{ color: '#c94a29', fontSize: '11px' }}>{res.error}</span>
+                ) : (
+                  <span style={{ fontSize: '11px', color: '#444' }}>Branch: {res.branch || 'created'}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {remediationError && (
+        <div className="callout-card warning" style={{ padding: '16px', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <h3 style={{ margin: '0 0 6px 0', fontSize: '14px' }}>Remediation Notice</h3>
+              <p style={{ margin: 0, fontSize: '12px' }}>{remediationError}</p>
+            </div>
+            <button className="button tertiary-button" onClick={() => setRemediationError(null)}>Dismiss</button>
+          </div>
+        </div>
+      )}
 
       <section className="metrics-grid">
         <article className="metric-card featured">
@@ -1490,9 +1650,25 @@ function ReportsPage({
                 <div className="finding-card" key={i}>
                   <div className="finding-card-header">
                     <span className="finding-tag">{action.symbol || action.library || 'Finding'}</span>
-                    <span className={`finding-priority ${(action.priority || 'medium').toLowerCase()}`}>
-                      {action.priority || 'Action'}
-                    </span>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <span className={`finding-priority ${(action.priority || 'medium').toLowerCase()}`}>
+                        {action.priority || 'Action'}
+                      </span>
+                      {action.library && upgradeCandidates.some(u => u.library.toLowerCase() === action.library.toLowerCase()) && (
+                        <button
+                          className="button tertiary-button"
+                          style={{ height: '24px', fontSize: '10px', padding: '0 8px' }}
+                          disabled={remediating}
+                          onClick={() => {
+                            const match = upgradeCandidates.find(u => u.library.toLowerCase() === action.library.toLowerCase())
+                            if (match) void executeRemediation(match)
+                          }}
+                          title={`Auto-patch ${action.library} and open PR`}
+                        >
+                          <Icon name="spark" size={11} /> Auto-Fix
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <p style={{ margin: '4px 0', fontSize: '11px', color: '#444c45' }}>
                     {action.description || action.recommendation || action.message || 'Review and plan upgrade.'}
@@ -1509,7 +1685,23 @@ function ReportsPage({
                 <div className="finding-card" key={i}>
                   <div className="finding-card-header">
                     <span className="finding-tag">{dep.symbol || 'Deprecated API'}</span>
-                    <span className="finding-priority high">Deprecated</span>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <span className="finding-priority high">Deprecated</span>
+                      {dep.library && upgradeCandidates.some(u => u.library.toLowerCase() === dep.library.toLowerCase()) && (
+                        <button
+                          className="button tertiary-button"
+                          style={{ height: '24px', fontSize: '10px', padding: '0 8px' }}
+                          disabled={remediating}
+                          onClick={() => {
+                            const match = upgradeCandidates.find(u => u.library.toLowerCase() === dep.library.toLowerCase())
+                            if (match) void executeRemediation(match)
+                          }}
+                          title={`Auto-patch ${dep.library} and open PR`}
+                        >
+                          <Icon name="spark" size={11} /> Auto-Fix
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <p style={{ margin: '4px 0', fontSize: '11px', color: '#444c45' }}>
                     Found in {dep.files?.length || 1} file(s). Recommended replacement: {dep.replacement || 'Check documentation'}.
@@ -1556,14 +1748,25 @@ function ReportsPage({
               <h2>Migration Document</h2>
               <p>Generated step-by-step upgrade plan and compatibility shims</p>
             </div>
-            {migrationDoc && (
+            <div style={{ display: 'flex', gap: '8px' }}>
               <button
-                className="button secondary-button"
-                onClick={() => selectedRepo && download(`${selectedRepo.repo}-migration.md`, migrationDoc, 'text/markdown')}
+                className="button primary-button"
+                style={{ background: '#27684f', borderColor: '#27684f', color: '#fff' }}
+                disabled={remediating || (!upgradeCandidates.length && !healthReport?.analysis_id)}
+                onClick={() => setShowConfirmModal(true)}
               >
-                <Icon name="download" size={14} /> Download Markdown
+                <Icon name={remediating ? 'refresh' : 'spark'} className={remediating ? 'spin' : ''} size={14} />
+                {remediating ? 'Opening PR...' : 'Apply Fixes to GitHub'}
               </button>
-            )}
+              {migrationDoc && (
+                <button
+                  className="button secondary-button"
+                  onClick={() => selectedRepo && download(`${selectedRepo.repo}-migration.md`, migrationDoc, 'text/markdown')}
+                >
+                  <Icon name="download" size={14} /> Download Markdown
+                </button>
+              )}
+            </div>
           </div>
           {migrationDoc ? (
             <pre className="doc-viewer">{migrationDoc}</pre>
@@ -1622,6 +1825,93 @@ function ReportsPage({
             {timeline.length === 0 && (
               <div className="empty-state">No saved analyses or health reports are available.</div>
             )}
+          </div>
+        </div>
+      )}
+
+      {showConfirmModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.45)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: '#fff',
+            borderRadius: '12px',
+            maxWidth: '540px',
+            width: '100%',
+            padding: '24px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
+            border: '1px solid #dcded9'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <span className="live-icon" style={{ background: '#27684f', color: '#fff', borderRadius: '50%', padding: '6px' }}>
+                <Icon name="spark" size={18} />
+              </span>
+              <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#1f2421' }}>
+                Auto-Remediate & Create Pull Request
+              </h2>
+            </div>
+            
+            <p style={{ fontSize: '12px', color: '#555b55', lineHeight: 1.5, margin: '0 0 16px 0' }}>
+              RepoHeal will update <code>requirements.txt</code>, perform syntax-safe AST rewrites, generate compatibility shims (<code>repoheal_fixes.py</code>), and create a GitHub Pull Request via the RepoHeal GitHub App.
+            </p>
+
+            {upgradeCandidates.length > 0 ? (
+              <div style={{ maxHeight: '180px', overflowY: 'auto', background: '#f8f9f6', padding: '12px', borderRadius: '8px', border: '1px solid #e8eae5', marginBottom: '16px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#444c45', marginBottom: '8px' }}>
+                  Target Upgrades ({upgradeCandidates.length}):
+                </div>
+                {upgradeCandidates.map((u, idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '4px 0', borderBottom: idx < upgradeCandidates.length - 1 ? '1px solid #ebeeeb' : 'none' }}>
+                    <strong>{u.library}</strong>
+                    <code style={{ font: "11px 'DM Mono', monospace", color: '#27684f' }}>
+                      {u.from_version} → {u.to_version}
+                    </code>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: '12px', color: '#666', background: '#f8f9f6', padding: '12px', borderRadius: '8px', marginBottom: '16px' }}>
+                Will apply patches based on analysis <code>{healthReport?.analysis_id || 'latest'}</code>.
+              </div>
+            )}
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#333', marginBottom: '20px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={autoMergeOpt}
+                onChange={(e) => setAutoMergeOpt(e.target.checked)}
+              />
+              <span>Auto-merge if all compilation & syntax checks succeed</span>
+            </label>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                className="button secondary-button"
+                onClick={() => setShowConfirmModal(false)}
+                disabled={remediating}
+              >
+                Cancel
+              </button>
+              <button
+                className="button primary-button"
+                style={{ background: '#27684f', borderColor: '#27684f', color: '#fff' }}
+                onClick={() => void executeRemediation()}
+                disabled={remediating}
+              >
+                <Icon name={remediating ? 'refresh' : 'check'} className={remediating ? 'spin' : ''} size={14} />
+                {remediating ? 'Creating Pull Request...' : 'Confirm & Open PR'}
+              </button>
+            </div>
           </div>
         </div>
       )}

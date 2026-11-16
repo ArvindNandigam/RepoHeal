@@ -54,6 +54,35 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
+export type UpgradeSpec = {
+  library: string
+  from_version: string
+  to_version: string
+}
+
+export type ApproveUpgradesResponse = {
+  repository: string
+  results: Array<{
+    library: string
+    status: string
+    pr_number?: number
+    pr_url?: string
+    branch?: string
+    files_patched?: number
+    error?: string
+  }>
+}
+
+export type ApproveMigrationResponse = {
+  status: string
+  migration_id: string
+  pr_created: boolean
+  prs?: Array<{ pr_number: number; pr_url: string; merged: boolean }>
+  files_patched?: number
+  message?: string
+  error?: string
+}
+
 export const api = {
   dashboard: () => request<Dashboard>('/dashboard/data'),
   overview: (owner: string, repo: string) => request<Record<string, any>>(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/overview`),
@@ -95,6 +124,33 @@ export const api = {
     `/health-refresh/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: commitSha ? 'commit' : branch ? 'branch' : 'latest', branch: branch || null, commit_sha: commitSha || null }) }
   ),
+  approveUpgrades: (owner: string, repo: string, upgrades: UpgradeSpec[], autoMerge: boolean = false) =>
+    request<ApproveUpgradesResponse>(
+      `/migrations/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/approve-upgrades`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ upgrades, auto_merge: autoMerge }),
+      }
+    ),
+  approveMigration: (owner: string, repo: string, migrationId: string, symbols?: string[]) => {
+    const params = new URLSearchParams()
+    params.set('repo_owner', owner)
+    params.set('repo_name', repo)
+    if (symbols && symbols.length > 0) {
+      params.set('symbols', symbols.join(','))
+    }
+    return request<ApproveMigrationResponse>(
+      `/migrations/${encodeURIComponent(migrationId)}/approve?${params}`,
+      { method: 'POST' }
+    )
+  },
+  listMigrations: (owner: string, repo: string, status?: string) => {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : ''
+    return request<{ migrations: any[]; repository: string }>(
+      `/migrations/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}${qs}`
+    )
+  },
   diagnostics: () => request<Record<string, any>>('/healthz'),
 }
 
