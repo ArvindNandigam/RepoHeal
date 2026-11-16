@@ -16,7 +16,6 @@ from app.discovery.validation import validate_relationship
 from app.validators.sources import is_approved_source_url
 from app.services.version_resolver import resolve_library_metadata
 from app.services.cache import IntelligenceCache
-from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -314,6 +313,7 @@ class MigrationEngine:
             item.get("relationships") for item in results
         ) and (not groq_pending or not groq_results)
         status = "degraded" if _overall_budget_exhausted or provider_unavailable else "success"
+        intelligence_status = "degraded" if _overall_budget_exhausted or provider_unavailable else "ok"
         intelligence_reason = (
             "budget_exhausted" if _overall_budget_exhausted
             else "provider_unavailable" if provider_unavailable

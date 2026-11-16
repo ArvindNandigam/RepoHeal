@@ -243,3 +243,17 @@ async def test_symbol_errors_do_not_return_traceback_or_exception_details():
         "status": "provider_unavailable",
         "reason": "failed_to_parse_request",
     }
+
+
+def test_migration_engine_resolve_returns_valid_intelligence_status(monkeypatch):
+    from app.services.migration_engine import MigrationEngine
+    from app.runtime_backends import InMemoryKnowledgeRepository
+
+    settings = Settings(mongodb_uri="mongodb://example")
+    monkeypatch.setattr("app.services.migration_engine.get_settings", lambda: settings)
+
+    engine = MigrationEngine(InMemoryKnowledgeRepository())
+    res = engine.resolve("pandas", [])
+    assert res["intelligence_status"] == "ok"
+    assert res["status"] == "success"
+    assert res["library"] == "pandas"
